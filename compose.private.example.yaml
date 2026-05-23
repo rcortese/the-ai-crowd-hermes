@@ -1,6 +1,7 @@
-# Private deployment override example.
-# Copy to compose.private.yaml and keep the real file out of git.
-# Use this only on deployments where a private reverse proxy needs to reach Hermes.
+# Legacy private deployment override example.
+# The canonical deployment path uses only compose.yaml.
+# Keep this as a custom-extension or rollback example only; do not use it for
+# normal deployments that can set THE_AI_CROWD_PROXY_NETWORK in ignored .env.
 # The private proxy should use the stable network alias `hermes:9119`,
 # not the Compose service/container name.
 

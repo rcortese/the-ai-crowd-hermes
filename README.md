@@ -71,7 +71,9 @@ tests/                    # Public-safe validation and smoke scripts
 
 ## Deploy template
 
-Use a private deployment checkout and provide environment-specific paths, DNS, credentials, environment files, and reverse-proxy configuration outside git. The base `compose.yaml` intentionally does not require `.env` so public validation works from a clean checkout. If a private deployment needs `.env` and a reverse-proxy network, copy `compose.private.example.yaml` to the ignored `compose.private.yaml`, set the deployment-specific external network name, and include both files in Compose commands.
+Use a private deployment checkout and provide environment-specific paths, DNS, credentials, environment files, and reverse-proxy configuration outside git. The canonical deployment uses a single `compose.yaml`; do not require a second Compose file for normal operation.
+
+`moss` joins an external reverse-proxy network through the public-safe `private_proxy` network definition. The default external Docker network name is `network_default`; deployments that use a different proxy network can set `THE_AI_CROWD_PROXY_NETWORK` in their ignored `.env` file without adding another Compose file.
 
 ```bash
 cd <deployment-checkout>
@@ -80,12 +82,7 @@ docker compose up -d --build moss
 docker compose ps
 ```
 
-With a private override:
-
-```bash
-docker compose -f compose.yaml -f compose.private.yaml config
-docker compose -f compose.yaml -f compose.private.yaml up -d --build moss
-```
+If an ignored `compose.private.yaml` exists in a deployment directory, treat it as legacy/custom-extension or rollback material only. Do not include it in the canonical deploy command unless deliberately restoring an older two-file deployment.
 
 Optional profiles, not yet production-enabled:
 

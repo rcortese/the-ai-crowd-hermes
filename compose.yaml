@@ -47,7 +47,10 @@ services:
       - ./agents/private/moss:/agents/moss/private:rw
       - ./state/shared:/mnt/hermes-shared
     networks:
-      - internal
+      internal:
+      private_proxy:
+        aliases:
+          - hermes
     expose:
       - "9119"
     healthcheck:
@@ -111,3 +114,6 @@ services:
 networks:
   internal:
     name: the-ai-crowd_internal
+  private_proxy:
+    external: true
+    name: ${THE_AI_CROWD_PROXY_NETWORK:-network_default}
