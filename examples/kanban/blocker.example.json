@@ -1,0 +1,21 @@
+{
+  "id": "missing-review-evidence",
+  "type": "blocker",
+  "title": "Review gate evidence is missing immutable artifact version",
+  "owner": "moss",
+  "decision_owner": "moss",
+  "executor": "moss",
+  "status": "blocked",
+  "scope": "A review gate cannot approve a public artifact until the artifact version is recorded as a commit or content hash.",
+  "artifact_refs": ["file:docs/architecture/kanban-workflow.md"],
+  "evidence_refs": ["review:architecture-review"],
+  "blocked_by": ["review-gate-without-artifact-version"],
+  "blocker_cause": "The review record references a mutable working tree without a pre-commit reason.",
+  "next_action": "Record a commit SHA or sha256 content hash, then rerun the review gate.",
+  "unblock_condition": "Review gate has immutable artifact_version and reviewer verdict is current.",
+  "risk": "medium",
+  "private_data_level": "public",
+  "requires_human_authorization": false,
+  "created_at": "2026-05-21T18:45:00Z",
+  "updated_at": "2026-05-21T18:45:00Z"
+}

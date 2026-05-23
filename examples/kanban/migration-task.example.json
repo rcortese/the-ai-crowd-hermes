@@ -1,0 +1,19 @@
+{
+  "id": "kanban-lifecycle",
+  "type": "ops-task",
+  "title": "Define Hermes kanban lifecycle and review gates",
+  "owner": "moss",
+  "decision_owner": "moss",
+  "executor": "moss",
+  "status": "under_review",
+  "scope": "Document lifecycle transitions, ownership roles, review-gate artifact versioning, and public-safe examples.",
+  "source_refs": ["file:docs/architecture/kanban-workflow.md"],
+  "artifact_refs": ["file:docs/architecture/kanban-workflow.md", "file:schemas/kanban-card.schema.json"],
+  "evidence_refs": ["test:tests/validate-schemas.sh", "test:tests/release-scan.sh"],
+  "attached_review_gate_refs": ["architecture-review"],
+  "risk": "medium",
+  "private_data_level": "public",
+  "requires_human_authorization": false,
+  "created_at": "2026-05-21T18:40:00Z",
+  "updated_at": "2026-05-21T18:45:00Z"
+}
