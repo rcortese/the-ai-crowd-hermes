@@ -10,9 +10,9 @@ Drift detection keeps the public scaffold, private deployment, and running conta
 The public scaffold provides `tests/drift-detection.sh`. It verifies:
 
 - the checkout is a Git worktree;
-- public Git does not track `agents/moss/private/`;
+- public Git does not track `agents/private/moss/`;
 - ignored private runtime state is not accidentally prepared as public content;
-- `agents/moss/private/` remains a nested Git repo if present;
+- `agents/private/moss/` remains a nested Git repo if present;
 - the nested private repo has no remote during scaffold hardening.
 
 Run through:

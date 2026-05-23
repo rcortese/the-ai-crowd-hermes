@@ -6,30 +6,35 @@ cd "$(dirname "$0")/.."
 python3 - <<'PY'
 from pathlib import Path
 
-boundary = Path('docs/operations/private-mount-boundary.md').read_text(errors='ignore')
-public_private = Path('docs/architecture/public-private-boundary.md').read_text(errors='ignore')
 compose = Path('compose.yaml').read_text(errors='ignore')
 ignore = Path('.gitignore').read_text(errors='ignore')
+boundary = Path('docs/operations/private-mount-boundary.md').read_text(errors='ignore')
 
-required = [
-    '`/workspace/the-ai-crowd` is **not automatically public-safe**',
-    'agents/*/private/',
-    'sentinel test',
-    'public-source mount',
+for forbidden in ['.:/workspace/the-ai-crowd:ro', './agents:/', './agents/moss:/opt/data', '/mnt/moss-workspace']:
+    if forbidden in compose:
+        raise SystemExit('private_mount_boundary_failed: forbidden mount pattern in compose: ' + forbidden)
+
+agents = ['moss', 'richmond', 'the-elders']
+for agent in agents:
+    public_mount = f'./agents/public/{agent}:/agents/{agent}/public:ro'
+    private_mount = f'./agents/private/{agent}:/agents/{agent}/private:rw'
+    if public_mount not in compose:
+        raise SystemExit('private_mount_boundary_failed: missing public mount ' + public_mount)
+    if private_mount not in compose:
+        raise SystemExit('private_mount_boundary_failed: missing private rw mount ' + private_mount)
+
+if '/agents/private/' not in ignore:
+    raise SystemExit('private_mount_boundary_failed: .gitignore must ignore /agents/private/')
+
+required_terms = [
+    'agents/public/<agent>/',
+    'agents/private/<agent>/',
+    '/agents/<agent>/public',
+    '/agents/<agent>/private',
 ]
-missing = [item for item in required if item not in boundary]
+missing = [term for term in required_terms if term not in boundary]
 if missing:
-    raise SystemExit('private_mount_boundary_failed: missing boundary terms: ' + ', '.join(missing))
-
-if './agents/moss:/opt/data' not in compose or '.:/workspace/the-ai-crowd:ro' not in compose:
-    raise SystemExit('private_mount_boundary_failed: expected base mount pattern changed; update boundary doc/test')
-
-for rule in ['agents/*/private/', 'agents/*/sessions/*', 'agents/*/cache/*', 'agents/*/logs/*']:
-    if rule not in ignore:
-        raise SystemExit('private_mount_boundary_failed: missing ignore rule ' + rule)
-
-if 'Private and ignored' not in public_private or 'agents/moss/private/' not in public_private:
-    raise SystemExit('private_mount_boundary_failed: public/private architecture doc lost private-root guidance')
+    raise SystemExit('private_mount_boundary_failed: boundary doc missing ' + ', '.join(missing))
 
 print('private_mount_boundary_ok')
 PY

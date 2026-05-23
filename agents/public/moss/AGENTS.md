@@ -15,7 +15,7 @@ Do not duplicate every rule here. This file routes Moss to the right contracts.
 ## Runtime anchors
 
 - Treat `/opt/data` as the Moss agent home and private runtime state location.
-- Treat `/workspace/the-ai-crowd` as the public scaffold source when mounted.
+- Treat `/agents/moss/public` as the public scaffold source when mounted.
 - Treat `/mnt/hermes-shared` as explicit handoff material, not a dumping ground.
 - Verify every mount, credential, tool, and network path before claiming access.
 

@@ -1,6 +1,6 @@
 # Private memory migration runbook
 
-This runbook governs future imports into `agents/moss/private/`.
+This runbook governs future imports into `agents/private/moss/`.
 
 ## Scope
 
@@ -24,7 +24,7 @@ Every candidate source must be classified before import:
 | Classification | Destination |
 |---|---|
 | Public contract | Public repo docs/contracts |
-| Moss private versioned memory | `agents/moss/private/<category>/` |
+| Moss private versioned memory | `agents/private/moss/<category>/` |
 | Other-domain private state | Owning agent/domain private location |
 | Unversioned runtime state | Runtime storage only, no Git |
 | Private history/archive | Private archive/quarantine until curated |
@@ -33,10 +33,10 @@ Every candidate source must be classified before import:
 ## Import checklist
 
 1. Confirm public repo has no unrelated dirty state.
-2. Confirm `agents/moss/private/` is ignored by public Git.
+2. Confirm `agents/private/moss/` is ignored by public Git.
 3. Confirm private repo has no remote unless explicitly approved.
 4. Create a small import batch with a single purpose.
-5. Start from `agents/moss/private.example/import-manifest.template.md` in the private repo or private deployment notes.
+5. Start from `agents/public/moss/private.example/import-manifest.template.md` in the private repo or private deployment notes.
 6. Redact or summarize sensitive evidence.
 7. Use `private-ref:*` in public cards/docs instead of sensitive private paths.
 8. Run public validation.
@@ -60,7 +60,7 @@ Each real import batch needs a review gate with:
 If an import is wrong but contains no secrets:
 
 ```bash
-git -C agents/moss/private revert <commit>
+git -C agents/private/moss revert <commit>
 ```
 
 If an import may contain secrets or sensitive data:

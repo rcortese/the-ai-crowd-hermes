@@ -8,7 +8,7 @@
       "status": "default",
       "description": "Inspect the public Hermes scaffold mounted read-only in the container.",
       "requires": ["public source mount"],
-      "preflight": "Check that /workspace/the-ai-crowd or the configured workdir exists.",
+      "preflight": "Check that /agents/moss/public or the configured workdir exists.",
       "evidence": "File listing or git status output."
     },
     {

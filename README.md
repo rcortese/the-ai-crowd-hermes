@@ -40,12 +40,15 @@ ops/
   manifests/              # Installed-tool inventories and capability examples
   policies/               # Capability, mount, and private-overlay policy
 agents/
-  moss/                   # Moss home, contracts, wrappers, tests
-  richmond/               # Profile-gated ArchiveOps-oriented scaffold
-  the-elders/             # Profile-gated packet-only scaffold
+  public/
+    moss/                 # Moss public contract, wrappers, tests, templates
+    richmond/             # Richmond public contract, profile-gated
+    the-elders/           # The Elders public contract, profile-gated
+  private/                # Ignored private workspace slots per agent
+runtime/                  # Ignored per-agent runtime homes, e.g. runtime/moss-home
+state/shared/             # Ignored shared handoff state for deployments
 schemas/                  # Public JSON schema contracts
 examples/                 # Public sample cards/handoffs/review gates
-shared/                   # Public shared handoff placeholder
 docs/                     # Runbooks, architecture, operations, decisions
 tests/                    # Public-safe validation and smoke scripts
 ```

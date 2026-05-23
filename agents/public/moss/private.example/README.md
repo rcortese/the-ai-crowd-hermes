@@ -1,13 +1,13 @@
 # Moss private repo template
 
-This public-safe template documents the expected shape of the ignored nested private repo at `agents/moss/private/`.
+This public-safe template documents the expected shape of the ignored nested private repo at `agents/private/moss/`.
 
-Do not put real private data in `agents/moss/private.example/`.
+Do not put real private data in `agents/public/moss/private.example/`.
 
 ## Intended private repo shape
 
 ```text
-agents/moss/private/
+agents/private/moss/
 ├── README.md
 ├── standing/
 ├── memory/

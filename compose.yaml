@@ -1,13 +1,15 @@
 name: the-ai-crowd
 
-x-hermes-common: &hermes-common
-  restart: unless-stopped
-  environment:
+x-hermes-env: &hermes-env
     TZ: ${TZ:-UTC}
     HERMES_DASHBOARD_TUI: ${HERMES_DASHBOARD_TUI:-1}
     HERMES_UID: ${HERMES_UID:-1000}
     HERMES_GID: ${HERMES_GID:-1000}
     HOME: /opt/data
+x-hermes-common: &hermes-common
+  restart: unless-stopped
+  environment:
+    <<: *hermes-env
   networks:
     - internal
 
@@ -18,6 +20,14 @@ services:
       context: .
       dockerfile: ops/images/Dockerfile.moss
     image: the-ai-crowd/moss:local
+    environment:
+      <<: *hermes-env
+      AGENT_NAME: moss
+      AGENT_ROOT: /agents/moss
+      AGENT_PUBLIC: /agents/moss/public
+      AGENT_PRIVATE: /agents/moss/private
+      AGENT_RUNTIME: /opt/data
+      AGENT_SHARED: /mnt/hermes-shared
     command:
       - hermes
       - dashboard
@@ -30,9 +40,10 @@ services:
       - --tui
       - --skip-build
     volumes:
-      - ./agents/moss:/opt/data
-      - ./shared:/mnt/hermes-shared
-      - .:/workspace/the-ai-crowd:ro
+      - ./runtime/moss-home:/opt/data
+      - ./agents/public/moss:/agents/moss/public:ro
+      - ./agents/private/moss:/agents/moss/private:rw
+      - ./state/shared:/mnt/hermes-shared
     networks:
       - internal
     expose:
@@ -51,11 +62,20 @@ services:
       context: .
       dockerfile: ops/images/Dockerfile.richmond
     image: the-ai-crowd/richmond:local
+    environment:
+      <<: *hermes-env
+      AGENT_NAME: richmond
+      AGENT_ROOT: /agents/richmond
+      AGENT_PUBLIC: /agents/richmond/public
+      AGENT_PRIVATE: /agents/richmond/private
+      AGENT_RUNTIME: /opt/data
+      AGENT_SHARED: /mnt/hermes-shared
     command: ["hermes", "dashboard", "--host", "0.0.0.0", "--port", "9120", "--insecure", "--no-open", "--tui", "--skip-build"]
     volumes:
-      - ./agents/richmond:/opt/data
-      - ./shared:/mnt/hermes-shared:ro
-      - ./agents/richmond:/workspace/richmond
+      - ./runtime/richmond-home:/opt/data
+      - ./agents/public/richmond:/agents/richmond/public:ro
+      - ./agents/private/richmond:/agents/richmond/private:rw
+      - ./state/shared:/mnt/hermes-shared
     expose:
       - "9120"
 
@@ -66,13 +86,23 @@ services:
       context: .
       dockerfile: ops/images/Dockerfile.the-elders
     image: the-ai-crowd/the-elders:local
+    environment:
+      <<: *hermes-env
+      AGENT_NAME: the-elders
+      AGENT_ROOT: /agents/the-elders
+      AGENT_PUBLIC: /agents/the-elders/public
+      AGENT_PRIVATE: /agents/the-elders/private
+      AGENT_RUNTIME: /opt/data
+      AGENT_SHARED: /mnt/hermes-shared
     command: ["hermes", "dashboard", "--host", "0.0.0.0", "--port", "9130", "--insecure", "--no-open", "--skip-build"]
     read_only: true
     tmpfs:
       - /tmp
     volumes:
-      - ./agents/the-elders:/opt/data:ro
-      - ./shared:/mnt/hermes-shared:ro
+      - ./runtime/the-elders-home:/opt/data
+      - ./agents/public/the-elders:/agents/the-elders/public:ro
+      - ./agents/private/the-elders:/agents/the-elders/private:rw
+      - ./state/shared:/mnt/hermes-shared:ro
     expose:
       - "9130"
 

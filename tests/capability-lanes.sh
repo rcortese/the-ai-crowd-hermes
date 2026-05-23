@@ -27,24 +27,24 @@ for capability in ['messaging_direct_notice', 'ssh_readonly_preflight', 'compose
 print('capability_lanes_docs_ok')
 PY
 
-agents/moss/tools/wrappers/messaging-dry-run.sh \
+agents/public/moss/tools/wrappers/messaging-dry-run.sh \
   --channel direct-message \
   --recipient private-ref:operator-direct \
   --message 'public scaffold dry run' \
   --dry-run >/dev/null
 
-if agents/moss/tools/wrappers/messaging-dry-run.sh --channel direct-message --recipient private-ref:operator --message test --live >/tmp/hermes-message-live.out 2>/tmp/hermes-message-live.err; then
+if agents/public/moss/tools/wrappers/messaging-dry-run.sh --channel direct-message --recipient private-ref:operator --message test --live >/tmp/hermes-message-live.out 2>/tmp/hermes-message-live.err; then
   echo 'capability_lanes_failed: messaging live mode unexpectedly succeeded' >&2
   exit 1
 fi
 
-agents/moss/tools/wrappers/ssh-readonly-preflight.sh \
+agents/public/moss/tools/wrappers/ssh-readonly-preflight.sh \
   --host-ref private-ref:private-infra-host \
   --user-ref private-ref:private-infra-user \
   --command-class host-summary \
   --dry-run >/dev/null
 
-agents/moss/tools/wrappers/compose-readonly-preflight.sh \
+agents/public/moss/tools/wrappers/compose-readonly-preflight.sh \
   --repo . \
   --mode config \
   --dry-run >/dev/null

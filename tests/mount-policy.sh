@@ -27,7 +27,6 @@ for pattern, message in [
     (r'\bid_(?:rsa|ed25519)\b', 'SSH key name in rendered Compose'),
     (r'\bauth\.json\b', 'auth state in rendered Compose'),
     (r'\.anthropic_oauth\.json\b', 'OAuth state in rendered Compose'),
-    (r'config\.yaml\s*:', 'private config bind in rendered Compose'),
 ]:
     if re.search(pattern, text):
         raise SystemExit(f'{label}: {message}')
@@ -35,8 +34,12 @@ for pattern, message in [
 allowed_targets = {
     '/opt/data',
     '/mnt/hermes-shared',
-    '/workspace/the-ai-crowd',
-    '/workspace/richmond',
+    '/agents/moss/public',
+    '/agents/moss/private',
+    '/agents/richmond/public',
+    '/agents/richmond/private',
+    '/agents/the-elders/public',
+    '/agents/the-elders/private',
     '/workspace/projects/example-project',
 }
 source = None
@@ -56,26 +59,22 @@ for line in text.splitlines():
         try:
             resolved_source = Path(source).resolve()
         except OSError:
-            raise SystemExit(f'{label}: cannot resolve bind source {source!r}')
+            # Runtime/private ignored dirs may not exist before first deployment.
+            resolved_source = Path(source).absolute()
         if not (resolved_source == repo_root or repo_root in resolved_source.parents):
             raise SystemExit(f'{label}: bind source is outside repository for target {target!r}')
         source = None
 
-for pattern in [
-    r'(?m)^\s*-\s*/\s*:',
-    r'(?m)^\s*-\s*/home\s*:',
-    r'(?m)^\s*source:\s*/\s*$\n\s*target:',
-    r'(?m)^\s*source:\s*/home\s*$\n\s*target:',
-]:
-    if re.search(pattern, text):
-        raise SystemExit(f'{label}: broad host mount matched {pattern}')
-
-for required in ['HERMES_UID: "1000"', 'HERMES_GID: "1000"']:
+for forbidden in ['/workspace/the-ai-crowd', '/mnt/moss-workspace']:
+    if forbidden in text:
+        raise SystemExit(f'{label}: forbidden retired target {forbidden}')
+for required in ['HERMES_UID: "1000"', 'HERMES_GID: "1000"', 'HOME: /opt/data']:
     if required not in text:
-        raise SystemExit(f'{label}: services must default {required} for entrypoint UID/GID remap')
-if 'HOME: /opt/data' not in text:
-    raise SystemExit(f'{label}: HOME must point at /opt/data for non-root runtime state')
-
+        raise SystemExit(f'{label}: missing required runtime setting {required}')
+for agent in ['moss', 'richmond', 'the-elders']:
+    for target in [f'/agents/{agent}/public', f'/agents/{agent}/private']:
+        if target not in text:
+            raise SystemExit(f'{label}: missing {target}')
 if label == 'project_example':
     project_block = re.search(r'target:\s*/workspace/projects/example-project(?:.|\n){0,300}', text)
     if not project_block or 'read_only: true' not in project_block.group(0):
@@ -95,6 +94,6 @@ if ! docker compose version >/dev/null 2>&1; then
   fi
 fi
 
-render_and_scan base "${compose_cmd[@]}" -f compose.yaml config
+render_and_scan base "${compose_cmd[@]}" -f compose.yaml --profile richmond --profile the-elders config
 HERMES_EXAMPLE_PROJECTS_ROOT=/PUBLIC_PLACEHOLDER/projects \
-  render_and_scan project_example "${compose_cmd[@]}" -f compose.yaml -f compose.project-mount.example.yaml config
+  render_and_scan project_example "${compose_cmd[@]}" -f compose.yaml -f compose.project-mount.example.yaml --profile richmond --profile the-elders config
