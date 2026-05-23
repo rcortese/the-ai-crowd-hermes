@@ -20,6 +20,7 @@ services:
       context: .
       dockerfile: ops/images/Dockerfile.moss
     image: the-ai-crowd/moss:local
+    working_dir: /agents/moss/private
     environment:
       <<: *hermes-env
       AGENT_NAME: moss
@@ -28,6 +29,7 @@ services:
       AGENT_PRIVATE: /agents/moss/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      TERMINAL_CWD: /agents/moss/private
     command:
       - hermes
       - dashboard
