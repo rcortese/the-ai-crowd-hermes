@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/../../.."
+cd "$(dirname "$0")/../../../.."
 
 python3 - <<'PY'
 from pathlib import Path
 
 required = [
-    'agents/moss/AGENTS.md',
-    'agents/moss/SOUL.md',
-    'agents/moss/README.md',
-    'agents/moss/contracts/operating-contract.md',
-    'agents/moss/contracts/capability-boundary.md',
-    'agents/moss/contracts/memory-contract.md',
-    'agents/moss/contracts/kanban-contract.md',
-    'agents/moss/contracts/ownership-boundary.md',
-    'agents/moss/contracts/startup-checklist.md',
-    'agents/moss/contracts/git-versioning.md',
-    'agents/moss/contracts/review-gates.md',
+    'agents/public/moss/AGENTS.md',
+    'agents/public/moss/SOUL.md',
+    'agents/public/moss/README.md',
+    'agents/public/moss/contracts/operating-contract.md',
+    'agents/public/moss/contracts/capability-boundary.md',
+    'agents/public/moss/contracts/memory-contract.md',
+    'agents/public/moss/contracts/kanban-contract.md',
+    'agents/public/moss/contracts/ownership-boundary.md',
+    'agents/public/moss/contracts/startup-checklist.md',
+    'agents/public/moss/contracts/git-versioning.md',
+    'agents/public/moss/contracts/review-gates.md',
 ]
 missing = [p for p in required if not Path(p).is_file()]
 if missing:
@@ -53,7 +53,7 @@ for claim in forbidden_claims:
     if claim.lower() in bundle.lower():
         raise SystemExit(f'forbidden default-capability claim: {claim}')
 
-agents = Path('agents/moss/AGENTS.md').read_text()
+agents = Path('agents/public/moss/AGENTS.md').read_text()
 for link in [
     'contracts/startup-checklist.md',
     'contracts/operating-contract.md',

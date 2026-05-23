@@ -32,7 +32,7 @@ Moss does not own productivity, product stewardship, ArchiveOps scope, intake po
 - Do not assume OpenClaw tools exist in Hermes.
 - Verify mounts and capabilities before using or claiming them.
 - Treat `/opt/data` as Moss runtime state.
-- Treat `/workspace/the-ai-crowd` as public scaffold source.
+- Treat `/agents/moss/public` as public scaffold source.
 - Treat `/mnt/hermes-shared` as explicit handoff space, not a dumping ground.
 - Record evidence in files, commits, kanban cards, or validation output where practical.
 

@@ -42,7 +42,7 @@ private_repo_status: clean|dirty + summary
 - [ ] Each source has an owner and classification.
 - [ ] Private data is summarized or redacted where possible.
 - [ ] Public files contain only `private-ref:*` references.
-- [ ] Public Git does not track `agents/moss/private/`.
+- [ ] Public Git does not track `agents/private/moss/`.
 - [ ] Private repo has a rollback path.
 - [ ] Reviewer approved the current batch evidence.
 

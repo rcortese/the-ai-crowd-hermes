@@ -36,15 +36,21 @@ These checks are intended to be public-safe and non-privileged. They do not star
 ## Individual checks
 
 ```bash
-./agents/moss/tests/contract-smoke-test.sh
-./agents/moss/tools/wrappers/preflight-template.sh --capability project_files --target example-project
-./agents/moss/tools/wrappers/workspace-dirty-watch.sh --repo . --label hermes-public-scaffold
+./agents/public/moss/tests/contract-smoke-test.sh
+./agents/public/moss/tools/wrappers/preflight-template.sh --capability project_files --target example-project
+./agents/public/moss/tools/wrappers/workspace-dirty-watch.sh --repo . --label hermes-public-scaffold
+./agents/public/moss/tools/wrappers/messaging-dry-run.sh --channel direct-message --recipient private-ref:operator-direct --message 'public scaffold dry run' --dry-run
+./agents/public/moss/tools/wrappers/ssh-readonly-preflight.sh --host-ref private-ref:private-infra-host --user-ref private-ref:private-infra-user --command-class host-summary --dry-run
+./agents/public/moss/tools/wrappers/compose-readonly-preflight.sh --repo . --mode config --dry-run
 ./tests/image-pin.sh
 ./tests/health-check.sh
 ./tests/drift-detection.sh
 ./tests/validate-schemas.sh
 ./tests/release-scan.sh
 ./tests/private-state-policy.sh
+./tests/private-mount-boundary.sh
+./tests/cutover-policy.sh
+./tests/capability-lanes.sh
 ./tests/mount-policy.sh
 ./tests/history-scan.sh
 git diff --check
@@ -64,6 +70,9 @@ Expected outputs include:
 - `schema_validation_ok`
 - `release_scan_ok`
 - `private_state_policy_ok`
+- `private_mount_boundary_ok`
+- `cutover_policy_ok`
+- `capability_lanes_ok`
 - `base_mount_policy_ok`
 - `project_example_mount_policy_ok`
 - `history_scan_ok`
