@@ -7,10 +7,17 @@ display:
   personality: friendly
   reasoning: off
 
+agent:
+  name: moss
+  public_root: /agents/moss/public
+  private_root: /agents/moss/private
+  runtime_root: /opt/data
+  shared_root: /mnt/hermes-shared
+
 terminal:
   backend: local
   timeout: 180
-  working_dir: /workspace/the-ai-crowd
+  working_dir: /agents/moss/public
 
 context:
   compression:

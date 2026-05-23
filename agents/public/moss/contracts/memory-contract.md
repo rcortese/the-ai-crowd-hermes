@@ -14,12 +14,12 @@ Public files may contain:
 
 ## Moss private versioned memory
 
-`agents/moss/private/` is the approved nested private Git repo for versionable Moss private state.
+`agents/private/moss/` is the approved nested private Git repo for versionable Moss private state.
 
 Initial shape:
 
 ```text
-agents/moss/private/
+agents/private/moss/
 ├── standing/
 ├── memory/
 ├── operations/
@@ -55,7 +55,7 @@ Do not version these in public or private Git:
 
 ## Split rule
 
-`agents/moss/private/` is the Moss private root. A subdomain becomes a separate private repository only when it has an independent lifecycle, deploy surface, ownership boundary, risk boundary, or sharing boundary.
+`agents/private/moss/` is the Moss private root. A subdomain becomes a separate private repository only when it has an independent lifecycle, deploy surface, ownership boundary, risk boundary, or sharing boundary.
 
 ## Ownership boundary
 
@@ -65,7 +65,7 @@ If Moss stores a private reference for another domain, the card/handoff must rec
 
 ## Migration rule
 
-Do not bulk-copy OpenClaw memory into the public Hermes scaffold or into `agents/moss/private/`. Classify by data class and owner, redact where needed, then import only curated slices.
+Do not bulk-copy OpenClaw memory into the public Hermes scaffold or into `agents/private/moss/`. Classify by data class and owner, redact where needed, then import only curated slices.
 
 ## Source-of-truth rule
 

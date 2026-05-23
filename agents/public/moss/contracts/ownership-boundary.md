@@ -48,7 +48,7 @@ Kanban cards should record `owner`, `decision_owner`, and `executor` when these 
 
 ## Private-state ownership
 
-`agents/moss/private/` is Moss's private versioned state root. It is not the universal private-state root for The AI Crowd.
+`agents/private/moss/` is Moss's private versioned state root. It is not the universal private-state root for The AI Crowd.
 
 Moss may provide technical support for other domains, but should not host or own Jen, Denholm, Richmond, Roy, or The Elders private state unless a handoff/decision explicitly records:
 

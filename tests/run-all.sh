@@ -8,12 +8,12 @@ run() {
   "$@"
 }
 
-run agents/moss/tests/contract-smoke-test.sh
-run agents/moss/tools/wrappers/preflight-template.sh --capability project_files --target example-project
-run agents/moss/tools/wrappers/workspace-dirty-watch.sh --repo . --label hermes-public-scaffold
-run agents/moss/tools/wrappers/messaging-dry-run.sh --channel direct-message --recipient private-ref:operator-direct --message 'public scaffold dry run' --dry-run
-run agents/moss/tools/wrappers/ssh-readonly-preflight.sh --host-ref private-ref:private-infra-host --user-ref private-ref:private-infra-user --command-class host-summary --dry-run
-run agents/moss/tools/wrappers/compose-readonly-preflight.sh --repo . --mode config --dry-run
+run agents/public/moss/tests/contract-smoke-test.sh
+run agents/public/moss/tools/wrappers/preflight-template.sh --capability project_files --target example-project
+run agents/public/moss/tools/wrappers/workspace-dirty-watch.sh --repo . --label hermes-public-scaffold
+run agents/public/moss/tools/wrappers/messaging-dry-run.sh --channel direct-message --recipient private-ref:operator-direct --message 'public scaffold dry run' --dry-run
+run agents/public/moss/tools/wrappers/ssh-readonly-preflight.sh --host-ref private-ref:private-infra-host --user-ref private-ref:private-infra-user --command-class host-summary --dry-run
+run agents/public/moss/tools/wrappers/compose-readonly-preflight.sh --repo . --mode config --dry-run
 run tests/image-pin.sh
 run tests/health-check.sh
 run tests/drift-detection.sh
