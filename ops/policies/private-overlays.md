@@ -1,6 +1,6 @@
 # Private overlays
 
-Private overlays are deployment-specific Compose or config files that add local authority without committing private state to the public scaffold.
+Private overlays are deployment-specific config files that add local authority without committing private state to the public scaffold. Compose deployment stays in the canonical root `compose.yaml`.
 
 ## Public examples
 
@@ -15,7 +15,6 @@ Public examples may show shape only, using placeholders such as:
 
 Private deployments may create ignored files such as:
 
-- `compose.private.yaml`
 - private `.env` files;
 - private agent `config.yaml`;
 - private nested repos.

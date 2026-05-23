@@ -19,7 +19,6 @@
 /backups/
 ops/secrets/*
 !ops/secrets/.gitkeep
-compose.private.yaml
 .private-backups/
 
 # Python/node local noise

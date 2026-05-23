@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 ignore = Path('.gitignore').read_text(errors='ignore')
-required = ['/agents/private/', '/runtime/', '/state/', '/secrets/', '/backups/', 'compose.private.yaml']
+required = ['/agents/private/', '/runtime/', '/state/', '/secrets/', '/backups/']
 missing = [entry for entry in required if entry not in ignore]
 if missing:
     raise SystemExit('missing private/runtime ignore rules: ' + ', '.join(missing))
