@@ -1,0 +1,19 @@
+ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:b6e41c155d6bfce5ad83c5d0fec670086db8a43250e4511c9474134be5482d33
+FROM ${HERMES_AGENT_IMAGE}
+
+USER root
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        jq \
+        python3 \
+        ripgrep \
+        sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+LABEL the-ai-crowd.agent="the-elders" \
+      the-ai-crowd.role="packet-only-archive-knowledge" \
+      the-ai-crowd.runtime="hermes-agent-packet-readonly"
+
+WORKDIR /workspace

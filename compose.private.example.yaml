@@ -1,0 +1,23 @@
+# Private deployment override example.
+# Copy to compose.private.yaml and keep the real file out of git.
+# Use this only on deployments where a private reverse proxy needs to reach Hermes.
+# The private proxy should use the stable network alias `hermes:9119`,
+# not the Compose service/container name.
+
+x-private-env: &private-env
+  env_file:
+    - .env
+
+services:
+  moss:
+    <<: *private-env
+    networks:
+      internal:
+      private_proxy:
+        aliases:
+          - hermes
+
+networks:
+  private_proxy:
+    external: true
+    name: <private-proxy-network-name>

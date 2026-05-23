@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/the-ai-crowd-hermes/schemas/capability-manifest.schema.json",
+  "title": "Agent Capability Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agent", "runtime", "default_posture", "capabilities"],
+  "properties": {
+    "agent": { "type": "string", "enum": ["moss", "richmond", "the-elders", "jen", "denholm", "roy"] },
+    "runtime": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "default_posture": { "type": "string", "enum": ["minimal", "ops", "read_only", "profile_gated"] },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "description"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{2,80}$" },
+          "status": { "type": "string", "enum": ["default", "available", "private_config_required", "review_required", "disabled"] },
+          "description": { "type": "string", "minLength": 3, "maxLength": 500 },
+          "requires": { "type": "array", "items": { "type": "string" }, "default": [] },
+          "preflight": { "type": "string", "maxLength": 1000 },
+          "evidence": { "type": "string", "maxLength": 1000 }
+        }
+      }
+    }
+  }
+}

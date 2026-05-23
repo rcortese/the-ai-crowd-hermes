@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/the-ai-crowd-hermes/schemas/review-gate.schema.json",
+  "title": "Hermes Review Gate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "artifact_ref", "artifact_version", "reviewer_lens", "status", "created_at"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,80}$" },
+    "artifact_ref": { "type": "string", "minLength": 1, "maxLength": 300 },
+    "artifact_version": { "type": "string", "pattern": "^(commit:[0-9a-f]{7,64}|sha256:[0-9a-f]{64}|working-tree:[a-z0-9][a-z0-9-]{2,80})$" },
+    "reviewer_lens": { "type": "string", "minLength": 3, "maxLength": 160 },
+    "status": { "type": "string", "enum": ["requested", "under_review", "approved", "changes_required", "blocked", "stale"] },
+    "verdict": { "type": "string", "enum": ["APPROVED", "CHANGES_REQUIRED", "BLOCKED"] },
+    "rationale": { "type": "string", "maxLength": 4000 },
+    "required_changes": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "evidence_refs": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "stale_reason": { "type": "string", "maxLength": 1000 },
+    "superseded_by": { "type": "string", "maxLength": 120 },
+    "private_data_level": { "type": "string", "enum": ["public", "internal", "private", "secret"], "default": "public" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

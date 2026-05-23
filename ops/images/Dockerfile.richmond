@@ -1,0 +1,23 @@
+ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:b6e41c155d6bfce5ad83c5d0fec670086db8a43250e4511c9474134be5482d33
+FROM ${HERMES_AGENT_IMAGE}
+
+USER root
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+        poppler-utils \
+        python3 \
+        python3-venv \
+        ripgrep \
+        sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+LABEL the-ai-crowd.agent="richmond" \
+      the-ai-crowd.role="archiveops-stewardship" \
+      the-ai-crowd.runtime="hermes-agent-archiveops-constrained"
+
+WORKDIR /workspace

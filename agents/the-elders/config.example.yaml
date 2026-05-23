@@ -1,0 +1,21 @@
+model:
+  default: anthropic/claude-opus-4.6
+  provider: auto
+
+display:
+  personality: terse
+  reasoning: off
+
+terminal:
+  backend: local
+  timeout: 60
+  working_dir: /opt/data
+
+context:
+  compression:
+    enabled: true
+    threshold: 0.40
+    target_ratio: 0.30
+    protect_last: 40
+
+timezone: UTC

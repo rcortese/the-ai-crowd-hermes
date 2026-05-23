@@ -1,0 +1,22 @@
+agent: the-elders
+source_openclaw_agent: the-elders
+runtime: hermes-agent-packet-readonly
+model_source: configured-outside-git
+image: the-ai-crowd/the-elders:local
+status: profile-gated-not-started
+installed_tools:
+  - jq
+  - ripgrep
+  - sqlite3
+  - python3
+openclaw_equivalent_capabilities:
+  - prepared packet inspection
+  - local citation-oriented summarization
+intentionally_absent:
+  - writes
+  - external web
+  - host exec beyond minimal local inspection
+  - messaging
+  - runtime control
+security_note: >-
+  the-elders should remain packet-only. The Compose service is read-only in the scaffold.

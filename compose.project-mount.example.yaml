@@ -1,0 +1,12 @@
+# Public-safe example only. Do not put real private paths here.
+# Render with:
+#   HERMES_EXAMPLE_PROJECTS_ROOT=/PUBLIC_PLACEHOLDER/projects \
+#   docker compose -f compose.yaml -f compose.project-mount.example.yaml config
+
+services:
+  moss:
+    volumes:
+      - type: bind
+        source: ${HERMES_EXAMPLE_PROJECTS_ROOT:?set-placeholder-project-root}/example-project
+        target: /workspace/projects/example-project
+        read_only: true

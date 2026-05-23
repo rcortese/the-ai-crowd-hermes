@@ -1,0 +1,49 @@
+ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:b6e41c155d6bfce5ad83c5d0fec670086db8a43250e4511c9474134be5482d33
+FROM ${HERMES_AGENT_IMAGE}
+
+USER root
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        dnsutils \
+        fd-find \
+        gh \
+        git \
+        iputils-ping \
+        jq \
+        netcat-openbsd \
+        openssh-client \
+        python3 \
+        python3-venv \
+        ripgrep \
+        rsync \
+        sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+LABEL the-ai-crowd.agent="moss" \
+      the-ai-crowd.role="technical-operations" \
+      the-ai-crowd.runtime="hermes-agent-ops"
+
+# Hermes terminal sessions do not necessarily inherit the entrypoint's activated
+# virtualenv, so expose Hermes CLI binaries and Python on the base image PATH.
+# This keeps `hermes` and `python` available from tool subprocesses as well as
+# from the dashboard process itself.
+ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
+
+# Runtime UID/GID are remapped by the Hermes entrypoint in private deployments.
+# The base entrypoint already re-owns the venv after remap; extend that to ui-tui because
+# the WebUI/TUI can rebuild dist/entry.js at runtime.
+RUN python3 - <<'PY'
+from pathlib import Path
+path = Path('/opt/hermes/docker/entrypoint.sh')
+text = path.read_text()
+old = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" 2>/dev/null || \\\n            echo "Warning: chown .venv failed (rootless container?) — continuing anyway"'
+new = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" "$INSTALL_DIR/ui-tui" 2>/dev/null || \\\n            echo "Warning: chown .venv/ui-tui failed (rootless container?) — continuing anyway"'
+if old not in text:
+    raise SystemExit('entrypoint chown block not found')
+path.write_text(text.replace(old, new))
+PY
+
+WORKDIR /workspace
