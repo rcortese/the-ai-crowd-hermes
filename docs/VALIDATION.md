@@ -118,6 +118,6 @@ If a private reverse proxy is configured, verify from the intended private netwo
 - authenticated or otherwise authorized requests reach the Hermes dashboard;
 - requests from unintended networks are blocked;
 - the public Compose file still has no host `ports:` binding;
-- canonical deploy commands use only `compose.yaml`; ignored private Compose overrides are legacy/custom-extension or rollback material.
+- canonical deploy commands use only `compose.yaml`.
 
 Keep private hostnames, paths, routes, and credentials in private deployment notes, not in this repository.

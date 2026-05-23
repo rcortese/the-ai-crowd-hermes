@@ -6,7 +6,7 @@ This is the minimum hardening backlog before expanding Hermes beyond the Moss MV
 
 - Keep `moss` without host `ports:` bindings.
 - Keep dashboard hostnames, credentials, and access rules in private deployment config, not in this public repository.
-- Keep the public Compose file on a single canonical deploy path; use ignored private Compose overrides only for deliberate custom extensions or rollback.
+- Keep the public Compose file on a single canonical deploy path.
 - Use private-network DNS and authenticated reverse-proxy rules for access.
 - Do not add public DNS or public tunnel exposure without a separate security review.
 - Rotate any deployment credentials if they are exposed outside the private deployment environment.

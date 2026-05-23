@@ -82,8 +82,6 @@ docker compose up -d --build moss
 docker compose ps
 ```
 
-If an ignored `compose.private.yaml` exists in a deployment directory, treat it as legacy/custom-extension or rollback material only. Do not include it in the canonical deploy command unless deliberately restoring an older two-file deployment.
-
 Optional profiles, not yet production-enabled:
 
 ```bash
