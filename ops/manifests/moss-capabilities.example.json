@@ -1,0 +1,79 @@
+{
+  "agent": "moss",
+  "runtime": "hermes-agent-ops",
+  "default_posture": "ops",
+  "capabilities": [
+    {
+      "id": "read_public_repo",
+      "status": "default",
+      "description": "Inspect the public Hermes scaffold mounted read-only in the container.",
+      "requires": ["public source mount"],
+      "preflight": "Check that /workspace/the-ai-crowd or the configured workdir exists.",
+      "evidence": "File listing or git status output."
+    },
+    {
+      "id": "project_files",
+      "status": "private_config_required",
+      "description": "Inspect or modify explicitly mounted project repositories.",
+      "requires": ["private Compose overlay", "named project mount"],
+      "preflight": "Confirm mount path, access mode, and repository status.",
+      "evidence": "Scoped git status/diff from the mounted project."
+    },
+    {
+      "id": "workspace_dirty_watch",
+      "status": "default",
+      "description": "Read-only Git workspace inspection for dirty state, branch, HEAD, and upstream evidence.",
+      "requires": ["Git worktree", "read access to target repository"],
+      "preflight": "Run workspace-dirty-watch.sh with an explicit --repo and public-safe --label.",
+      "evidence": "Line-oriented wrapper output with dirty flag, status count, branch, HEAD, and local-evidence-only delivery."
+    },
+    {
+      "id": "messaging_direct_notice",
+      "status": "private_config_required",
+      "description": "Send direct operator notices through an explicitly configured private channel.",
+      "requires": ["private channel credentials", "recipient policy", "disable switch", "review gate"],
+      "preflight": "Run messaging-dry-run.sh with a private-ref recipient before any live send.",
+      "evidence": "Dry-run output, live smoke ref when authorized, and sanitized message summary."
+    },
+    {
+      "id": "ssh_readonly_preflight",
+      "status": "review_required",
+      "description": "Prepare read-only SSH checks against authorized private hosts without granting mutation authority.",
+      "requires": ["private SSH material", "allowed host/user policy", "wrapper policy", "review gate"],
+      "preflight": "Run ssh-readonly-preflight.sh with private-ref host/user values; live SSH requires private wrapper approval.",
+      "evidence": "Sanitized connectivity/read-only command summary and wrapper refusal evidence for out-of-scope targets."
+    },
+    {
+      "id": "compose_readonly_preflight",
+      "status": "review_required",
+      "description": "Prepare read-only Docker/Compose inspection through a narrow wrapper or private Docker context.",
+      "requires": ["private wrapper or Docker context", "allowed stack policy", "review gate"],
+      "preflight": "Run compose-readonly-preflight.sh against an explicit repository before any host-control operation.",
+      "evidence": "Compose config/status summary, affected service scope, and no-mutation proof."
+    },
+    {
+      "id": "ssh_remote_ops",
+      "status": "review_required",
+      "description": "Use SSH client tooling against authorized private hosts.",
+      "requires": ["private SSH material", "wrapper policy", "review gate"],
+      "preflight": "Confirm key path, target, command, and rollback/undo expectations.",
+      "evidence": "Sanitized command result and host/action summary."
+    },
+    {
+      "id": "container_ops",
+      "status": "review_required",
+      "description": "Control Docker or Compose on a host through reviewed wrapper or context.",
+      "requires": ["private wrapper or Docker context", "review gate"],
+      "preflight": "Render compose config and show target service scope before mutation.",
+      "evidence": "Compose config, ps/health output, and scoped change summary."
+    },
+    {
+      "id": "openclaw_transition_support",
+      "status": "disabled",
+      "description": "Support OpenClaw runtime tasks during migration without assuming Hermes-native OpenClaw tools.",
+      "requires": ["OpenClaw fallback or reviewed admin wrapper"],
+      "preflight": "Record which task stays in OpenClaw, which wrapper is used, and whether heartbeat/reminders remain OpenClaw-owned.",
+      "evidence": "Task matrix entry, fallback status, or reviewed wrapper evidence."
+    }
+  ]
+}

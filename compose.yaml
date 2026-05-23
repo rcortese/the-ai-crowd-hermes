@@ -1,0 +1,81 @@
+name: the-ai-crowd
+
+x-hermes-common: &hermes-common
+  restart: unless-stopped
+  environment:
+    TZ: ${TZ:-UTC}
+    HERMES_DASHBOARD_TUI: ${HERMES_DASHBOARD_TUI:-1}
+    HERMES_UID: ${HERMES_UID:-1000}
+    HERMES_GID: ${HERMES_GID:-1000}
+    HOME: /opt/data
+  networks:
+    - internal
+
+services:
+  moss:
+    <<: *hermes-common
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.moss
+    image: the-ai-crowd/moss:local
+    command:
+      - hermes
+      - dashboard
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9119"
+      - --insecure
+      - --no-open
+      - --tui
+      - --skip-build
+    volumes:
+      - ./agents/moss:/opt/data
+      - ./shared:/mnt/hermes-shared
+      - .:/workspace/the-ai-crowd:ro
+    networks:
+      - internal
+    expose:
+      - "9119"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9119/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  richmond:
+    <<: *hermes-common
+    profiles: ["richmond"]
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.richmond
+    image: the-ai-crowd/richmond:local
+    command: ["hermes", "dashboard", "--host", "0.0.0.0", "--port", "9120", "--insecure", "--no-open", "--tui", "--skip-build"]
+    volumes:
+      - ./agents/richmond:/opt/data
+      - ./shared:/mnt/hermes-shared:ro
+      - ./agents/richmond:/workspace/richmond
+    expose:
+      - "9120"
+
+  the-elders:
+    <<: *hermes-common
+    profiles: ["the-elders"]
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.the-elders
+    image: the-ai-crowd/the-elders:local
+    command: ["hermes", "dashboard", "--host", "0.0.0.0", "--port", "9130", "--insecure", "--no-open", "--skip-build"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./agents/the-elders:/opt/data:ro
+      - ./shared:/mnt/hermes-shared:ro
+    expose:
+      - "9130"
+
+networks:
+  internal:
+    name: the-ai-crowd_internal

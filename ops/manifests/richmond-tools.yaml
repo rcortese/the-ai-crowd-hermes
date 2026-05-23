@@ -1,0 +1,25 @@
+agent: richmond
+source_openclaw_agent: richmond
+runtime: hermes-agent-archiveops-constrained
+model_source: configured-outside-git
+image: the-ai-crowd/richmond:local
+status: profile-gated-not-started
+installed_tools:
+  - git
+  - jq
+  - ripgrep
+  - sqlite3
+  - python3
+  - python3-venv
+  - poppler-utils
+openclaw_equivalent_capabilities:
+  - read/write/edit within archive workspace when service is enabled
+  - local document/PDF inspection
+  - bounded web/research only if provider/toolsets are configured later
+intentionally_absent:
+  - Docker socket
+  - private-host SSH key mount
+  - messaging send tools
+  - cron/runtime/gateway control
+security_note: >-
+  Richmond is separated from Moss because ArchiveOps needs stewardship and document tooling, not broad host control.

@@ -1,0 +1,61 @@
+# Runtime/secrets
+# OpenClaw/OpenClaw-like runtime context can be materialized in the checkout
+# during local operator work. These files are private context, not public
+# Hermes scaffold artifacts.
+/.openclaw/
+/AGENTS.md
+/HEARTBEAT.md
+/IDENTITY.md
+/SOUL.md
+/TOOLS.md
+/USER.md
+.env
+*.env
+!.env.example
+agents/*/.env
+agents/*/config.yaml
+agents/*/auth.json
+agents/*/auth.lock
+agents/*/.anthropic_oauth.json
+agents/*/.claude.json
+agents/*/.skills_prompt_snapshot.json
+agents/*/.update_check
+agents/*/.hermes_history
+agents/*/context_length_cache.yaml
+agents/*/models_dev_cache.json
+agents/*/ollama_cloud_models_cache.json
+agents/*/.gitconfig
+agents/*/state.db*
+agents/*/.claude/
+agents/*/.codex/
+agents/*/.npm/
+agents/*/.local/
+agents/*/auth/
+agents/*/bin/
+agents/*/home/
+agents/*/logs/*
+agents/*/cache/*
+agents/*/sessions/*
+agents/*/runtime/
+agents/*/state/
+agents/*/skills/*
+!agents/*/skills/.gitkeep
+agents/*/checkpoints/*
+agents/*/backups/*
+agents/*/private/
+agents/*/.hermes-auth*
+ops/secrets/*
+!ops/secrets/.gitkeep
+compose.private.yaml
+.private-backups/
+
+# Python/node local noise
+__pycache__/
+*.py[cod]
+node_modules/
+.venv/
+venv/
+
+# macOS/editor
+.DS_Store
+*.swp

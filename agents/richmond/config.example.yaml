@@ -1,0 +1,21 @@
+model:
+  default: anthropic/claude-opus-4.6
+  provider: auto
+
+display:
+  personality: calm
+  reasoning: off
+
+terminal:
+  backend: local
+  timeout: 120
+  working_dir: /workspace/richmond
+
+context:
+  compression:
+    enabled: true
+    threshold: 0.50
+    target_ratio: 0.25
+    protect_last: 30
+
+timezone: UTC

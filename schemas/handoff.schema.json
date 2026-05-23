@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/the-ai-crowd-hermes/schemas/handoff.schema.json",
+  "title": "Hermes Agent Handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "handoff_type", "from_owner", "to_owner", "decision_owner", "objective", "context", "next_action", "return_to_owner", "created_at"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{2,80}$" },
+    "handoff_type": { "type": "string", "enum": ["consultation", "execution", "ownership_transfer", "return"] },
+    "from_owner": { "type": "string", "enum": ["moss", "jen", "denholm", "richmond", "roy", "the-elders", "operator"] },
+    "to_owner": { "type": "string", "enum": ["moss", "jen", "denholm", "richmond", "roy", "the-elders", "operator"] },
+    "decision_owner": { "type": "string", "enum": ["moss", "jen", "denholm", "richmond", "roy", "the-elders", "operator"] },
+    "return_to_owner": { "type": "string", "enum": ["moss", "jen", "denholm", "richmond", "roy", "the-elders", "operator"] },
+    "objective": { "type": "string", "minLength": 3, "maxLength": 500 },
+    "context": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "decisions_made": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "open_constraints": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "blockers": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "next_action": { "type": "string", "minLength": 3, "maxLength": 1000 },
+    "privacy_constraints": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "private_data_level": { "type": "string", "enum": ["public", "internal", "private", "secret"], "default": "public" },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}

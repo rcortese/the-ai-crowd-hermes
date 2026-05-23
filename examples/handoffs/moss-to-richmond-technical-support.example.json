@@ -1,0 +1,23 @@
+{
+  "id": "moss-to-richmond-technical-support",
+  "handoff_type": "consultation",
+  "from_owner": "moss",
+  "to_owner": "richmond",
+  "decision_owner": "richmond",
+  "return_to_owner": "richmond",
+  "objective": "Confirm ArchiveOps scope before Moss performs technical access support.",
+  "context": "Moss can support mounts and access mechanics, but Richmond owns ArchiveOps scope and packet/refresh intent.",
+  "decisions_made": [],
+  "open_constraints": [
+    "Moss must not decide archive scope or refresh intent."
+  ],
+  "blockers": [
+    "ArchiveOps scope has not been confirmed by Richmond."
+  ],
+  "next_action": "Richmond confirms the public-safe scope summary, then opens a bounded technical execution request for Moss if needed.",
+  "privacy_constraints": [
+    "No raw archive contents or sensitive packet details in the public handoff."
+  ],
+  "private_data_level": "public",
+  "created_at": "2026-05-21T18:45:00Z"
+}

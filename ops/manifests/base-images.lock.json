@@ -1,0 +1,18 @@
+{
+  "schema": "the-ai-crowd-hermes.base-images-lock.v1",
+  "status": "pinned-for-public-scaffold",
+  "updated_at": "2026-05-22T13:00:00Z",
+  "images": [
+    {
+      "name": "hermes-agent",
+      "image": "nousresearch/hermes-agent@sha256:b6e41c155d6bfce5ad83c5d0fec670086db8a43250e4511c9474134be5482d33",
+      "source_tag_checked": "nousresearch/hermes-agent:latest",
+      "used_by": [
+        "ops/images/Dockerfile.moss",
+        "ops/images/Dockerfile.richmond",
+        "ops/images/Dockerfile.the-elders"
+      ],
+      "update_policy": "Change only through the release process with validation, review, and rollback notes. Record deployed digest in private deployment evidence."
+    }
+  ]
+}

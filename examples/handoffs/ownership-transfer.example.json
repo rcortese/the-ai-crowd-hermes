@@ -1,0 +1,23 @@
+{
+  "id": "moss-to-denholm-owner-boundary-transfer",
+  "handoff_type": "ownership_transfer",
+  "from_owner": "moss",
+  "to_owner": "denholm",
+  "decision_owner": "denholm",
+  "return_to_owner": "denholm",
+  "objective": "Transfer a product/stewardship decision card from Moss to Denholm.",
+  "context": "Moss identified that the next action changes agent role boundaries, which belongs to Denholm rather than technical operations.",
+  "decisions_made": [
+    "Technical implementation is paused until product/stewardship direction is explicit."
+  ],
+  "open_constraints": [
+    "Moss may resume only after Denholm creates a bounded technical execution request."
+  ],
+  "blockers": [],
+  "next_action": "Denholm decides whether the owner boundary should change and records the decision before any technical implementation.",
+  "privacy_constraints": [
+    "No private product notes or user-sensitive context in the public transfer example."
+  ],
+  "private_data_level": "public",
+  "created_at": "2026-05-21T18:50:00Z"
+}

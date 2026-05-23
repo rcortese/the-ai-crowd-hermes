@@ -1,0 +1,22 @@
+model:
+  # Provider credentials are intentionally configured outside git.
+  default: anthropic/claude-opus-4.6
+  provider: auto
+
+display:
+  personality: friendly
+  reasoning: off
+
+terminal:
+  backend: local
+  timeout: 180
+  working_dir: /workspace/the-ai-crowd
+
+context:
+  compression:
+    enabled: true
+    threshold: 0.50
+    target_ratio: 0.20
+    protect_last: 20
+
+timezone: UTC
