@@ -109,9 +109,15 @@ The smoke script uses a temporary Compose project and cleans up containers it st
 
 If a private reverse proxy is configured, verify from the intended private network that:
 
-- unauthenticated requests are blocked;
-- authenticated requests reach the Hermes dashboard;
+- the configured external proxy Docker network exists before deployment;
+- the reverse-proxy container is attached to that same network;
+- the agent container is attached to both the internal project network and the configured proxy network after deployment;
+- the stable alias `hermes` resolves from the reverse-proxy container;
+- `http://hermes:9119/` is reachable from the reverse-proxy container;
+- unauthenticated requests are blocked where the private proxy policy requires it;
+- authenticated or otherwise authorized requests reach the Hermes dashboard;
 - requests from unintended networks are blocked;
-- the public Compose file still has no host `ports:` binding.
+- the public Compose file still has no host `ports:` binding;
+- canonical deploy commands use only `compose.yaml`; ignored private Compose overrides are legacy/custom-extension or rollback material.
 
 Keep private hostnames, paths, routes, and credentials in private deployment notes, not in this repository.
