@@ -1,0 +1,319 @@
+#!/usr/bin/env python3
+"""Jen-side Todoist self-healing probe/escalation contract.
+
+This helper intentionally talks to Todoist only through Jen's canonical
+`bin/jen-task-runtime` boundary. It performs read-only probes, bounded retries
+for transient failures, emits sanitized Moss handoff payloads when unresolved,
+and records durable verification state only after canonical verification.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_RUNTIME = WORKSPACE_ROOT / "bin" / "jen-task-runtime"
+DEFAULT_STATE_FILE = WORKSPACE_ROOT / ".local" / "state" / "todoist-self-heal-verification.json"
+CONTRACT_VERSION = "jen-todoist-self-heal.v1"
+FIXED_RUNTIME_RESTORED = "runtime restaurado; verificação pendente"
+FIXED_HEALTH_OK = "health Todoist ok via caminho canônico; escrita não testada"
+FIXED_READ_VERIFIED = "captura/leitura verificada no Todoist; pode chamar de corrigido"
+TRANSIENT_FAILURES = {"network_failure", "rate_limited", "request_failure", "server_error", "timeout"}
+RUNTIME_CONFIG_FAILURES = {
+    "runtime_absent",
+    "runtime_not_executable",
+    "adapter_missing",
+    "missing_dependency",
+    "provider_shape_invalid",
+    "invalid_json",
+    "state_write_failed",
+    "invalid_argument",
+    "command_failed_no_json",
+}
+CREDENTIAL_FAILURES = {"missing_token", "auth_failure", "oauth_required", "reauth_required", "token_expired", "token_revoked"}
+SECRET_PATTERNS = [
+    re.compile(r"(?i)(TODOIST_API_TOKEN\s*=\s*)([^\s'\"]+)"),
+    re.compile(r"(?i)(authorization\s*:\s*bearer\s+)([A-Za-z0-9._~+/=-]+)"),
+    re.compile(r"(?i)(bearer\s+)([A-Za-z0-9._~+/=-]{12,})"),
+    re.compile(r"(?i)((?:token|secret|password|api[_-]?key)\s*[:=]\s*[\"']?)([^\s\"',}]+)"),
+]
+LONG_SECRET = re.compile(r"\b[A-Za-z0-9_./+=-]{32,}\b")
+
+
+def now_utc() -> str:
+    forced = os.environ.get("JEN_TODOIST_SELF_HEAL_NOW_UTC")
+    if forced:
+        return forced
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def sanitize_text(value: Any, limit: int = 4000) -> str:
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
+    for pattern in SECRET_PATTERNS:
+        text = pattern.sub(lambda m: f"{m.group(1)}[REDACTED]", text)
+    text = LONG_SECRET.sub("[REDACTED]", text)
+    if len(text) > limit:
+        return text[:limit] + "...[truncated]"
+    return text
+
+
+def safe_json_loads(text: str) -> dict[str, Any] | None:
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def classify_failure(failure_class: str | None, runtime_absent: bool = False, runtime_not_executable: bool = False) -> str:
+    if runtime_absent or runtime_not_executable:
+        return "runtime/config"
+    if failure_class in CREDENTIAL_FAILURES:
+        return "credential/auth"
+    if failure_class in TRANSIENT_FAILURES:
+        return "transient"
+    if failure_class in RUNTIME_CONFIG_FAILURES or failure_class is None:
+        return "runtime/config"
+    return "runtime/config"
+
+
+def extract_failure_class(stdout: str, stderr: str, returncode: int) -> tuple[str | None, dict[str, Any] | None]:
+    parsed = safe_json_loads(stdout.strip())
+    if parsed:
+        fc = parsed.get("failure_class") or parsed.get("last_failure_class")
+        if not fc and parsed.get("token_status") == "missing":
+            fc = "missing_token"
+        if not fc and parsed.get("status") == "unavailable":
+            fc = "adapter_missing"
+        if not fc and parsed.get("status") in {"degraded", "failed"}:
+            fc = parsed.get("reason") or parsed.get("degraded_reason") or "request_failure"
+        return (str(fc) if fc else None), parsed
+    err = safe_json_loads(stderr.strip())
+    if err and err.get("error"):
+        return str(err["error"]), err
+    if returncode == 127:
+        return "runtime_absent", None
+    if returncode != 0:
+        return "command_failed_no_json", None
+    if stdout.strip():
+        return "invalid_json", None
+    return None, None
+
+
+def run_runtime(runtime: Path, runtime_args: list[str]) -> dict[str, Any]:
+    cmd = [str(runtime), *runtime_args]
+    if not runtime.exists():
+        return {
+            "command": cmd,
+            "returncode": 127,
+            "stdout": "",
+            "stderr": "runtime path is absent",
+            "runtime_absent": True,
+            "runtime_not_executable": False,
+            "failure_class": "runtime_absent",
+            "parsed_stdout": None,
+        }
+    if not os.access(runtime, os.X_OK):
+        return {
+            "command": cmd,
+            "returncode": 126,
+            "stdout": "",
+            "stderr": "runtime path is not executable",
+            "runtime_absent": False,
+            "runtime_not_executable": True,
+            "failure_class": "runtime_not_executable",
+            "parsed_stdout": None,
+        }
+    try:
+        proc = subprocess.run(cmd, cwd=str(WORKSPACE_ROOT), text=True, capture_output=True, timeout=30, check=False)
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "command": cmd,
+            "returncode": 124,
+            "stdout": sanitize_text(exc.stdout or ""),
+            "stderr": sanitize_text(exc.stderr or "runtime command timed out"),
+            "runtime_absent": False,
+            "runtime_not_executable": False,
+            "failure_class": "timeout",
+            "parsed_stdout": None,
+        }
+    failure_class, parsed = extract_failure_class(proc.stdout, proc.stderr, proc.returncode)
+    return {
+        "command": cmd,
+        "returncode": proc.returncode,
+        "stdout": proc.stdout,
+        "stderr": proc.stderr,
+        "runtime_absent": False,
+        "runtime_not_executable": False,
+        "failure_class": failure_class,
+        "parsed_stdout": parsed,
+    }
+
+
+def command_success(probe: str, attempt: dict[str, Any]) -> bool:
+    parsed = attempt.get("parsed_stdout")
+    if not isinstance(parsed, dict):
+        return False
+    if attempt.get("returncode") != 0:
+        return False
+    status = parsed.get("status")
+    if probe == "health":
+        return status == "ok"
+    return status == "ok" and parsed.get("source") == "live"
+
+
+def verification_state_for(probe: str) -> str:
+    if probe == "health":
+        return FIXED_HEALTH_OK
+    return FIXED_READ_VERIFIED
+
+
+def write_verification_state(state_file: Path, payload: dict[str, Any]) -> None:
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = state_file.with_suffix(state_file.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(state_file)
+
+
+def build_incident(args: argparse.Namespace, attempt: dict[str, Any], failure_class: str, failure_group: str) -> dict[str, Any]:
+    command = " ".join(attempt.get("command", []))
+    stdout = sanitize_text(attempt.get("stdout", ""))
+    stderr = sanitize_text(attempt.get("stderr", ""))
+    pending = sanitize_text(args.pending_item or "")
+    requires_human = failure_group == "credential/auth"
+    request = (
+        "Human authorization required before repair: OAuth/token/auth state is absent, expired, revoked, or requires reauth."
+        if requires_human
+        else "Restore the already-approved Todoist integration through Jen's canonical runtime path."
+    )
+    return {
+        "contract_version": CONTRACT_VERSION,
+        "incident_type": "jen_tool_access_failure",
+        "source_agent": "jen",
+        "affected_provider_or_tool": "todoist",
+        "created_at": now_utc(),
+        "user_visible_context": sanitize_text(args.user_visible_context or "Todoist source-of-truth operation needed by Jen."),
+        "observed_symptom": f"Canonical Todoist runtime probe unresolved: {failure_group}/{failure_class}",
+        "command_or_tool_path": command,
+        "failure_class": failure_class,
+        "failure_group": failure_group,
+        "runtime_output_summary": {
+            "returncode": attempt.get("returncode"),
+            "stdout": stdout,
+            "stderr": stderr,
+            "runtime_absent": bool(attempt.get("runtime_absent")),
+            "command_failed": attempt.get("returncode") != 0,
+        },
+        "fallback_used": "No live Todoist mutation performed; pending item preserved for canonical retry." if pending else "No live Todoist mutation performed.",
+        "pending_unresolved_item": pending,
+        "requested_moss_action": request,
+        "fixed_state_vocabulary": [FIXED_RUNTIME_RESTORED, FIXED_HEALTH_OK, FIXED_READ_VERIFIED],
+        "boundaries": "no_new_credentials_or_scopes_requested; no_task_policy_change_requested; jen_not_repairing_runtime; no_live_write_replay",
+        "human_authorization_required": requires_human,
+        "human_authorization_boundary": "Stop for OAuth/token expired/revoked/absent, interactive login/2FA, new scopes, credential rotation/storage, non-idempotent write replay, or autonomy/reach/permission expansion.",
+    }
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Probe Jen Todoist runtime and emit sanitized Moss handoff when unresolved.")
+    parser.add_argument("probe", choices=["health", "read-active", "read-recent-completed"], help="Read-only canonical runtime probe to perform.")
+    parser.add_argument("--runtime", default=str(DEFAULT_RUNTIME), help="Canonical Jen runtime path; override only in tests.")
+    parser.add_argument("--max-retries", type=int, default=2, help="Retries for transient failures only, 0-3.")
+    parser.add_argument("--retry-sleep", type=float, default=0.0, help="Seconds between transient retries; default 0 for fast contract use.")
+    parser.add_argument("--pending-item", default="", help="Pending unresolved item text to include in sanitized incident evidence.")
+    parser.add_argument("--user-visible-context", default="", help="Short sanitized context for why Jen needed Todoist.")
+    parser.add_argument("--handoff-file", default="", help="Optional file path for unresolved incident payload.")
+    parser.add_argument("--state-file", default=str(DEFAULT_STATE_FILE), help="Durable verification state file path.")
+    parser.add_argument("--since", default="", help="RFC3339 since for read-recent-completed; optional.")
+    parser.add_argument("--until", default="", help="RFC3339 until for read-recent-completed; optional.")
+    args = parser.parse_args(argv)
+    args.max_retries = max(0, min(args.max_retries, 3))
+    return args
+
+
+def runtime_args_for(args: argparse.Namespace) -> list[str]:
+    if args.probe == "read-recent-completed":
+        parts = ["read-recent-completed", "--tasks"]
+        if args.since:
+            parts += ["--since", args.since]
+        if args.until:
+            parts += ["--until", args.until]
+        return parts
+    return [args.probe]
+
+
+def main(argv: list[str]) -> int:
+    args = parse_args(argv)
+    runtime = Path(args.runtime).expanduser().resolve()
+    attempts: list[dict[str, Any]] = []
+    runtime_args = runtime_args_for(args)
+    attempt_limit = 1 + args.max_retries
+    final_group = "runtime/config"
+    final_failure = "unknown"
+
+    for attempt_no in range(1, attempt_limit + 1):
+        attempt = run_runtime(runtime, runtime_args)
+        attempts.append(attempt)
+        if command_success(args.probe, attempt):
+            state = verification_state_for(args.probe)
+            verification = {
+                "contract_version": CONTRACT_VERSION,
+                "verified_at": now_utc(),
+                "runtime_path": str(runtime),
+                "probe": args.probe,
+                "command_attempted": attempt.get("command"),
+                "verification_state": state,
+                "stdout_summary": sanitize_text(attempt.get("stdout", ""), limit=1200),
+                "live_write_tested": False,
+            }
+            write_verification_state(Path(args.state_file), verification)
+            print(json.dumps({
+                "contract_version": CONTRACT_VERSION,
+                "status": "ok",
+                "failure_group": None,
+                "attempt_count": attempt_no,
+                "verification_state": state,
+                "state_file": str(Path(args.state_file)),
+                "live_write_tested": False,
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
+
+        failure_class = attempt.get("failure_class") or "request_failure"
+        group = classify_failure(failure_class, bool(attempt.get("runtime_absent")), bool(attempt.get("runtime_not_executable")))
+        final_group = group
+        final_failure = failure_class
+        if group != "transient" or attempt_no >= attempt_limit:
+            break
+        if args.retry_sleep > 0:
+            time.sleep(args.retry_sleep)
+
+    final_attempt = attempts[-1]
+    incident = build_incident(args, final_attempt, final_failure, final_group)
+    if args.handoff_file:
+        handoff_path = Path(args.handoff_file).expanduser()
+        handoff_path.parent.mkdir(parents=True, exist_ok=True)
+        handoff_path.write_text(json.dumps(incident, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+    status = "blocked" if incident["human_authorization_required"] else "unresolved"
+    print(json.dumps({
+        "contract_version": CONTRACT_VERSION,
+        "status": status,
+        "failure_class": final_failure,
+        "failure_group": final_group,
+        "attempt_count": len(attempts),
+        "incident": incident,
+        "handoff_file": args.handoff_file or None,
+    }, ensure_ascii=False, sort_keys=True))
+    return 2 if status == "blocked" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
