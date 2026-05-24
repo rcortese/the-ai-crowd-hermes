@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Mocked Todoist write-safety gate for Jen Cycle 6.
+
+This contract decides which copy state is allowed after task-capture intent and
+Todoist adapter evidence. It does not call Todoist and performs no external
+reads or writes.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from typing import Any
+
+CONTRACT_VERSION = "jen-todoist-write-safety-gate.v1"
+
+
+def decision(payload: dict[str, Any]) -> dict[str, Any]:
+    intent = payload.get("intent") or {}
+    write = payload.get("todoist_write")
+    verify = payload.get("read_after_write")
+
+    labels = intent.get("labels") or []
+    if "task_capture" not in labels and "ambiguous_task_capture" not in labels:
+        return base(
+            status="blocked",
+            copy_state="source_honest_answer",
+            reason="no_task_capture_intent",
+            allowed_copy="Não identifiquei uma tarefa do Todoist para registrar.",
+            forbidden_phrases=["registrei", "anotei"],
+        )
+
+    if not write:
+        return base(
+            status="needs_confirmation",
+            copy_state="real_chat_pre_write",
+            reason="no_write_attempt_present",
+            allowed_copy="Posso registrar no Todoist?",
+            forbidden_phrases=["registrei", "anotei", "eu registraria"],
+        )
+
+    write_status = write.get("status")
+    if write_status == "failed":
+        return base(
+            status="failed",
+            copy_state="write_failed",
+            reason="todoist_write_failed",
+            allowed_copy="Não consegui confirmar o registro no Todoist. Quer que eu tente de novo?",
+            forbidden_phrases=["registrei", "anotei"],
+        )
+
+    if write_status != "created":
+        return base(
+            status="blocked",
+            copy_state="write_unverified",
+            reason="unsupported_write_status",
+            allowed_copy="Não consegui confirmar o estado do registro no Todoist.",
+            forbidden_phrases=["registrei", "anotei"],
+        )
+
+    if not verify:
+        return base(
+            status="blocked",
+            copy_state="write_unverified",
+            reason="missing_read_after_write",
+            allowed_copy="Tentei registrar no Todoist, mas ainda não confirmei que ficou salvo.",
+            forbidden_phrases=["registrei", "anotei"],
+        )
+
+    if not verify.get("found"):
+        return base(
+            status="blocked",
+            copy_state="write_unverified",
+            reason="read_after_write_not_found",
+            allowed_copy="Tentei registrar no Todoist, mas não encontrei a tarefa na verificação.",
+            forbidden_phrases=["registrei", "anotei"],
+        )
+
+    write_id = write.get("id")
+    verify_id = verify.get("id")
+    if write_id and verify_id and write_id != verify_id:
+        return base(
+            status="blocked",
+            copy_state="write_unverified",
+            reason="read_after_write_id_mismatch",
+            allowed_copy="Tentei registrar no Todoist, mas a verificação retornou outra tarefa.",
+            forbidden_phrases=["registrei", "anotei"],
+        )
+
+    return base(
+        status="verified",
+        copy_state="post_write_verified",
+        reason="write_and_read_after_write_confirmed",
+        allowed_copy="Registrei no Todoist e confirmei que ficou salvo.",
+        allowed_phrases=["registrei", "anotei"],
+        requires="verified_write_result",
+        proof={"write_id": write_id, "verified_id": verify_id, "content": verify.get("content") or write.get("content")},
+        forbidden_phrases=["eu registraria", "posso registrar?"],
+    )
+
+
+def base(**fields: Any) -> dict[str, Any]:
+    return {
+        "contract_version": CONTRACT_VERSION,
+        "external_writes_performed": False,
+        "write_scope": "mocked_write_safety_decision",
+        **fields,
+    }
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Evaluate mocked Todoist write-safety evidence")
+    parser.add_argument("--stdin", action="store_true", help="read JSON payload from stdin")
+    parser.add_argument("payload", nargs="?", help="JSON payload")
+    args = parser.parse_args(argv)
+    raw = sys.stdin.read() if args.stdin else args.payload
+    if not raw:
+        print(json.dumps(base(status="failed", copy_state="invalid", reason="missing_payload"), ensure_ascii=False, sort_keys=True))
+        return 1
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(json.dumps(base(status="failed", copy_state="invalid", reason="invalid_json", detail=str(exc)), ensure_ascii=False, sort_keys=True))
+        return 1
+    print(json.dumps(decision(payload), ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
