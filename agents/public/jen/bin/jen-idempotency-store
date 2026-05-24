@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""Small SQLite idempotency store for Jen mutation planning."""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sqlite3
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+CONTRACT_VERSION = "jen-idempotency-store.v0"
+DEFAULT_DIR = Path(os.environ.get("JEN_IDEMPOTENCY_DIR", "/opt/data/state/jen/idempotency"))
+
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc).replace(microsecond=0)
+
+
+def parse_ttl(ttl: str) -> datetime | None:
+    if ttl in {"none", "forever", ""}:
+        return None
+    unit = ttl[-1]
+    value = int(ttl[:-1])
+    if unit == "d":
+        return now_utc() + timedelta(days=value)
+    if unit == "h":
+        return now_utc() + timedelta(hours=value)
+    if unit == "m":
+        return now_utc() + timedelta(minutes=value)
+    raise ValueError("ttl must be like 7d, 12h, 30m, or none")
+
+
+def db_path(kind: str, base: Path) -> Path:
+    mapping = {
+        "message": "messages.sqlite",
+        "intent": "intents.sqlite",
+        "external_object": "external_objects.sqlite",
+    }
+    return base / mapping[kind]
+
+
+def connect(kind: str, base: Path) -> sqlite3.Connection:
+    base.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path(kind, base))
+    conn.execute(
+        """
+        create table if not exists idempotency_records (
+          key text primary key,
+          kind text not null,
+          normalized_hash text not null,
+          user_ref text,
+          channel_ref text,
+          target_system text,
+          external_object_id text,
+          status text not null,
+          audit_log_ref text,
+          result_json text,
+          created_at text not null,
+          updated_at text not null,
+          expires_at text
+        )
+        """
+    )
+    conn.execute("create index if not exists idx_idempotency_expires on idempotency_records(expires_at)")
+    return conn
+
+
+def clean_expired(conn: sqlite3.Connection) -> None:
+    now = now_utc().isoformat().replace("+00:00", "Z")
+    conn.execute("delete from idempotency_records where expires_at is not null and expires_at < ?", (now,))
+
+
+def load_json_arg(value: str | None) -> Any:
+    if not value:
+        return None
+    if value == "-":
+        return json.load(sys.stdin)
+    return json.loads(value)
+
+
+def cmd_put(args: argparse.Namespace) -> int:
+    base = Path(args.dir)
+    result = load_json_arg(args.result_json)
+    expires = parse_ttl(args.ttl)
+    now = now_utc().isoformat().replace("+00:00", "Z")
+    expires_text = expires.isoformat().replace("+00:00", "Z") if expires else None
+    conn = connect(args.kind, base)
+    with conn:
+        clean_expired(conn)
+        existing = conn.execute("select normalized_hash, status, result_json from idempotency_records where key = ?", (args.key,)).fetchone()
+        if existing and existing[0] != args.normalized_hash:
+            conn.execute(
+                "update idempotency_records set status = ?, updated_at = ? where key = ?",
+                ("collision", now, args.key),
+            )
+            print(json.dumps({"contract_version": CONTRACT_VERSION, "status": "collision", "kind": args.kind, "key": args.key}, ensure_ascii=False))
+            return 0
+        conn.execute(
+            """
+            insert into idempotency_records(key,kind,normalized_hash,user_ref,channel_ref,target_system,external_object_id,status,audit_log_ref,result_json,created_at,updated_at,expires_at)
+            values(?,?,?,?,?,?,?,?,?,?,?,?,?)
+            on conflict(key) do update set
+              status=excluded.status,
+              audit_log_ref=excluded.audit_log_ref,
+              result_json=excluded.result_json,
+              updated_at=excluded.updated_at,
+              expires_at=excluded.expires_at
+            """,
+            (
+                args.key,
+                args.kind,
+                args.normalized_hash,
+                args.user_ref,
+                args.channel_ref,
+                args.target_system,
+                args.external_object_id,
+                args.status,
+                args.audit_log_ref,
+                json.dumps(result, ensure_ascii=False, sort_keys=True) if result is not None else None,
+                now,
+                now,
+                expires_text,
+            ),
+        )
+    print(json.dumps({"contract_version": CONTRACT_VERSION, "status": "ok", "kind": args.kind, "key": args.key, "expires_at": expires_text}, ensure_ascii=False))
+    return 0
+
+
+def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    d = dict(row)
+    if d.get("result_json"):
+        d["result"] = json.loads(d.pop("result_json"))
+    else:
+        d.pop("result_json", None)
+        d["result"] = None
+    return d
+
+
+def cmd_get(args: argparse.Namespace) -> int:
+    conn = connect(args.kind, Path(args.dir))
+    conn.row_factory = sqlite3.Row
+    with conn:
+        clean_expired(conn)
+        row = conn.execute("select * from idempotency_records where key = ?", (args.key,)).fetchone()
+    record = row_to_dict(row)
+    print(json.dumps({"contract_version": CONTRACT_VERSION, "status": "hit" if record else "miss", "kind": args.kind, "key": args.key, "record": record}, ensure_ascii=False, sort_keys=True))
+    return 0 if record else 1
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    conn = connect(args.kind, Path(args.dir))
+    conn.row_factory = sqlite3.Row
+    with conn:
+        clean_expired(conn)
+        row = conn.execute("select * from idempotency_records where key = ?", (args.key,)).fetchone()
+    record = row_to_dict(row)
+    if not record:
+        status = "miss"
+    elif record["normalized_hash"] == args.normalized_hash:
+        status = "duplicate"
+    else:
+        status = "collision"
+    print(json.dumps({"contract_version": CONTRACT_VERSION, "status": status, "kind": args.kind, "key": args.key, "record": record}, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Jen idempotency SQLite store")
+    parser.add_argument("--dir", default=str(DEFAULT_DIR))
+    sub = parser.add_subparsers(dest="command", required=True)
+    common_kinds = ["message", "intent", "external_object"]
+
+    put = sub.add_parser("put")
+    put.add_argument("--kind", choices=common_kinds, required=True)
+    put.add_argument("--key", required=True)
+    put.add_argument("--normalized-hash", required=True)
+    put.add_argument("--ttl", default="14d")
+    put.add_argument("--status", default="planned")
+    put.add_argument("--user-ref")
+    put.add_argument("--channel-ref")
+    put.add_argument("--target-system")
+    put.add_argument("--external-object-id")
+    put.add_argument("--audit-log-ref")
+    put.add_argument("--result-json")
+    put.set_defaults(func=cmd_put)
+
+    get = sub.add_parser("get")
+    get.add_argument("--kind", choices=common_kinds, required=True)
+    get.add_argument("--key", required=True)
+    get.set_defaults(func=cmd_get)
+
+    check = sub.add_parser("check")
+    check.add_argument("--kind", choices=common_kinds, required=True)
+    check.add_argument("--key", required=True)
+    check.add_argument("--normalized-hash", required=True)
+    check.set_defaults(func=cmd_check)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

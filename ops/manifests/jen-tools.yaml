@@ -14,6 +14,8 @@ external_capabilities:
     mcp_endpoint: https://ai.todoist.net/mcp
     credential_storage: ignored Jen runtime home only
     direct_write_authority: false
+    runtime_wrappers: configured
+    idempotency_store: configured
   google_calendar:
     status: planned
     route: gogcli plus Jen calendar runtime wrappers

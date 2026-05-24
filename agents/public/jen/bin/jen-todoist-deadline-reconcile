@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""Reconcile Todoist deadlines for critical obligations from current due dates.
+
+Dry-run by default. With --apply, writes only through bin/jen-task-runtime update-deadline.
+"""
+from __future__ import annotations
+
+import argparse
+import calendar
+import json
+import os
+import subprocess
+import sys
+from datetime import date, timedelta, datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+CONTRACT_VERSION = "jen-todoist-deadline-reconcile.v1"
+RULES_VERSION = "jen-todoist-deadline-rules.v1"
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_RUNTIME = ROOT / "bin" / "jen-task-runtime"
+
+
+def emit(obj: Dict[str, Any], code: int = 0) -> None:
+    print(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
+    raise SystemExit(code)
+
+
+def parse_ymd(value: str) -> date:
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def ymd(value: date) -> str:
+    return value.isoformat()
+
+
+def add_months(base: date, months: int, day: int) -> date:
+    month_index = base.month - 1 + months
+    year = base.year + month_index // 12
+    month = month_index % 12 + 1
+    last_day = calendar.monthrange(year, month)[1]
+    if day < 1 or day > last_day:
+        raise ValueError(f"day {day} is invalid for {year:04d}-{month:02d}")
+    return date(year, month, day)
+
+
+def compute_deadline(due_date: str, rule: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    rule_type = rule.get("type")
+    if rule_type == "manual":
+        return None, "manual_deadline_rule"
+    try:
+        base = parse_ymd(due_date)
+    except Exception:
+        return None, "invalid_due_date"
+
+    try:
+        if rule_type == "due_offset_days":
+            days = rule.get("days")
+            if not isinstance(days, int):
+                return None, "invalid_rule_days"
+            return ymd(base + timedelta(days=days)), None
+        if rule_type == "due_month_day":
+            day = rule.get("day")
+            month_offset = rule.get("month_offset", 0)
+            if not isinstance(day, int) or not isinstance(month_offset, int):
+                return None, "invalid_rule_month_day"
+            return ymd(add_months(base, month_offset, day)), None
+    except Exception as exc:
+        return None, f"invalid_rule:{exc}"
+    return None, "unsupported_deadline_rule"
+
+
+def run_runtime(runtime: Path, args: List[str], env: Dict[str, str]) -> Tuple[int, str, str]:
+    proc = subprocess.run([str(runtime), *args], text=True, capture_output=True, env=env, check=False)
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def load_json_file(path: Path, failure_class: str) -> Any:
+    try:
+        return json.loads(path.read_text())
+    except Exception as exc:
+        emit({
+            "contract_version": CONTRACT_VERSION,
+            "command": "reconcile-deadlines",
+            "status": "failed",
+            "failure_class": failure_class,
+            "error": str(exc),
+        }, 1)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Reconcile Todoist deadlines from current due dates")
+    parser.add_argument("--rules", required=True, help="Path to jen-todoist-deadline-rules.v1 JSON")
+    parser.add_argument("--apply", action="store_true", help="Apply updates through bin/jen-task-runtime update-deadline")
+    parser.add_argument("--runtime", default=str(DEFAULT_RUNTIME), help="jen-task-runtime path")
+    args = parser.parse_args()
+
+    runtime = Path(args.runtime)
+    rules_path = Path(args.rules)
+    checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    rules_doc = load_json_file(rules_path, "rules_read_failed")
+    if not isinstance(rules_doc, dict) or rules_doc.get("contract_version") != RULES_VERSION or not isinstance(rules_doc.get("rules"), list):
+        emit({
+            "contract_version": CONTRACT_VERSION,
+            "command": "reconcile-deadlines",
+            "status": "failed",
+            "failure_class": "rules_invalid",
+            "checked_at": checked_at,
+        }, 1)
+
+    env = os.environ.copy()
+    status, stdout, stderr = run_runtime(runtime, ["read-active"], env)
+    if status != 0:
+        emit({
+            "contract_version": CONTRACT_VERSION,
+            "command": "reconcile-deadlines",
+            "status": "failed",
+            "failure_class": "read_active_failed",
+            "checked_at": checked_at,
+            "runtime_status": status,
+            "stderr": stderr,
+        }, 1)
+    try:
+        active = json.loads(stdout)
+    except Exception:
+        emit({
+            "contract_version": CONTRACT_VERSION,
+            "command": "reconcile-deadlines",
+            "status": "failed",
+            "failure_class": "read_active_invalid_json",
+            "checked_at": checked_at,
+        }, 1)
+    if active.get("status") != "ok" or not isinstance(active.get("tasks"), list):
+        emit({
+            "contract_version": CONTRACT_VERSION,
+            "command": "reconcile-deadlines",
+            "status": "failed",
+            "failure_class": "read_active_unavailable",
+            "checked_at": checked_at,
+            "read_active": active,
+        }, 1)
+
+    tasks = {str(task.get("id")): task for task in active["tasks"] if task.get("id") is not None}
+    results: List[Dict[str, Any]] = []
+    updates_attempted = 0
+    updates_succeeded = 0
+
+    for rule in rules_doc["rules"]:
+        if not isinstance(rule, dict):
+            results.append({"status": "invalid_rule", "reason": "rule_not_object"})
+            continue
+        task_id = str(rule.get("task_id") or "")
+        result: Dict[str, Any] = {
+            "task_id": task_id or None,
+            "name": rule.get("name"),
+            "kind": rule.get("kind"),
+        }
+        if not task_id:
+            result.update({"status": "invalid_rule", "reason": "missing_task_id"})
+            results.append(result)
+            continue
+        task = tasks.get(task_id)
+        if task is None:
+            result.update({"status": "missing_task", "reason": "task_not_in_active_read"})
+            results.append(result)
+            continue
+        due = task.get("due") if isinstance(task.get("due"), dict) else None
+        deadline = task.get("deadline") if isinstance(task.get("deadline"), dict) else None
+        due_date = due.get("date") if due else None
+        current_deadline = deadline.get("date") if deadline else None
+        result.update({
+            "content": task.get("content"),
+            "due": due,
+            "current_deadline": current_deadline,
+        })
+        if not due_date:
+            result.update({"status": "needs_question", "reason": "missing_due_date"})
+            results.append(result)
+            continue
+        if rule.get("kind") == "recurring_hard_obligation" and due.get("is_recurring") is not True:
+            result.update({"status": "needs_question", "reason": "due_not_recurring_for_recurring_hard_obligation"})
+            results.append(result)
+            continue
+        expected, reason = compute_deadline(due_date, rule.get("deadline_rule") if isinstance(rule.get("deadline_rule"), dict) else {})
+        result["expected_deadline"] = expected
+        result["deadline_rule"] = rule.get("deadline_rule")
+        if expected is None:
+            result.update({"status": "needs_question", "reason": reason or "deadline_not_computable"})
+            results.append(result)
+            continue
+        try:
+            if rule.get("allow_deadline_before_due") is not True and parse_ymd(expected) < parse_ymd(due_date):
+                result.update({"status": "needs_question", "reason": "deadline_before_due_date"})
+                results.append(result)
+                continue
+        except Exception:
+            result.update({"status": "needs_question", "reason": "deadline_due_order_unverifiable"})
+            results.append(result)
+            continue
+        if current_deadline == expected:
+            result.update({"status": "ok", "reason": "deadline_matches_due_cycle"})
+            results.append(result)
+            continue
+        if not args.apply:
+            result.update({"status": "would_update", "reason": "deadline_differs_from_due_cycle", "apply_required": True})
+            results.append(result)
+            continue
+
+        updates_attempted += 1
+        update_status, update_stdout, update_stderr = run_runtime(runtime, ["update-deadline", "--task-id", task_id, "--deadline", expected], env)
+        if update_status == 0:
+            try:
+                update_json = json.loads(update_stdout)
+            except Exception:
+                update_json = {"raw_stdout": update_stdout}
+            if isinstance(update_json, dict) and update_json.get("status") == "ok":
+                updates_succeeded += 1
+                result.update({"status": "updated", "reason": "deadline_updated_from_due_cycle", "update": update_json})
+            else:
+                result.update({"status": "update_failed", "reason": "runtime_update_not_ok", "update": update_json})
+        else:
+            result.update({"status": "update_failed", "reason": "runtime_update_failed", "runtime_status": update_status, "stdout": update_stdout, "stderr": update_stderr})
+        results.append(result)
+
+    summary: Dict[str, Any] = {
+        "rule_count": len(rules_doc["rules"]),
+        "updates_attempted": updates_attempted,
+        "updates_succeeded": updates_succeeded,
+    }
+    counts: Dict[str, int] = {}
+    for result in results:
+        counts[str(result.get("status"))] = counts.get(str(result.get("status")), 0) + 1
+    summary["status_counts"] = counts
+
+    emit({
+        "contract_version": CONTRACT_VERSION,
+        "command": "reconcile-deadlines",
+        "status": "ok",
+        "mode": "apply" if args.apply else "dry-run",
+        "source": "live",
+        "checked_at": checked_at,
+        "rules_path": str(rules_path),
+        "results": results,
+        "summary": summary,
+        "complete": True,
+    })
+
+
+if __name__ == "__main__":
+    main()

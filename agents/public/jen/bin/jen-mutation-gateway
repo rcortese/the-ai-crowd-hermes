@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""Jen Mutation Gateway v0.
+
+Safe planning/validation boundary for external mutations. v0 does not execute
+provider writes; it classifies risk, validates the operation record, derives an
+idempotency key, and emits a canonical mutation record.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+CONTRACT_VERSION = "jen-mutation-gateway.v0"
+STATUSES = {"planned", "awaiting_confirmation", "executed", "verified", "failed", "cancelled", "blocked"}
+RISK_LEVELS = {"low", "medium", "high", "blocked"}
+OPERATION_TYPES = {
+    "create",
+    "update",
+    "delete",
+    "complete",
+    "move",
+    "invite",
+    "color_change",
+    "reminder_change",
+}
+TARGET_SYSTEMS = {"todoist", "google_calendar", "filesystem", "other"}
+CANONICAL_OBJECT_TYPES = {
+    "task",
+    "recurring_task",
+    "event",
+    "recurring_event",
+    "focus_block",
+    "reminder",
+    "deadline",
+    "routine",
+}
+PRE_STATE_REQUIRED = {"update", "delete", "complete", "move"}
+CONFIRMATION_REQUIRED_RISKS = {"high", "blocked"}
+
+
+def now_utc() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def json_dump(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def stable_hash(obj: Any) -> str:
+    return hashlib.sha256(json_dump(obj).encode("utf-8")).hexdigest()
+
+
+def load_payload(path: str | None) -> dict[str, Any]:
+    raw = sys.stdin.read() if not path or path == "-" else Path(path).read_text()
+    if not raw.strip():
+        raise ValueError("empty JSON input")
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("input must be a JSON object")
+    return data
+
+
+def normalize_preview(preview: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(preview, dict):
+        return {
+            "human_summary": str(preview.get("human_summary") or "Planned external mutation"),
+            "fields_changed": preview.get("fields_changed") if isinstance(preview.get("fields_changed"), list) else [],
+            "expected_effect": str(preview.get("expected_effect") or "External state may change"),
+        }
+    summary = payload.get("summary") or payload.get("content") or payload.get("title") or "Planned external mutation"
+    return {"human_summary": str(summary), "fields_changed": [], "expected_effect": "External state may change"}
+
+
+def recurrence_marker(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    text = value.strip().lower()
+    markers = (
+        "todo",
+        "toda",
+        "todos",
+        "todas",
+        "cada",
+        "every",
+        "daily",
+        "weekly",
+        "monthly",
+        "yearly",
+        "diariamente",
+        "semanal",
+        "mensal",
+        "anual",
+    )
+    return any(marker in text.split() for marker in markers)
+
+
+def is_safe_recurring_todoist_due_reanchor(record: dict[str, Any]) -> bool:
+    if record.get("operation_type") != "update" or record.get("target_system") != "todoist":
+        return False
+    if record.get("canonical_object_type") != "recurring_task":
+        return False
+    payload = record.get("mutation_payload") if isinstance(record.get("mutation_payload"), dict) else {}
+    due_string = payload.get("due_string")
+    pre_state = record.get("pre_state") if isinstance(record.get("pre_state"), dict) else {}
+    pre_due = pre_state.get("due") if isinstance(pre_state.get("due"), dict) else {}
+    if pre_state.get("deadline"):
+        return False
+    return bool(pre_due.get("is_recurring") is True and recurrence_marker(due_string))
+
+def derive_risk(record: dict[str, Any]) -> tuple[str, list[str]]:
+    op = record.get("operation_type")
+    target = record.get("target_system")
+    obj = record.get("canonical_object_type")
+    payload = record.get("mutation_payload") if isinstance(record.get("mutation_payload"), dict) else {}
+    pre_state = record.get("pre_state")
+    reasons: list[str] = []
+
+    if op in PRE_STATE_REQUIRED and pre_state is None:
+        return "blocked", ["pre_state_required_missing"]
+
+    recurring = obj in {"recurring_task", "recurring_event"} or bool(payload.get("recurrence") or payload.get("recurring"))
+    has_attendees = bool(payload.get("attendees") or payload.get("guests") or (isinstance(pre_state, dict) and (pre_state.get("attendees") or pre_state.get("guests"))))
+    series_scope = payload.get("scope") in {"series", "all", "recurrence"}
+    past_event = bool(payload.get("is_past") or (isinstance(pre_state, dict) and pre_state.get("is_past")))
+    bulk_count = payload.get("bulk_count")
+    try:
+        bulk_n = int(bulk_count) if bulk_count is not None else 0
+    except (TypeError, ValueError):
+        bulk_n = 0
+
+    if bulk_n > 10:
+        return "blocked", ["bulk_operation_too_large"]
+    if target == "google_calendar" and op == "invite":
+        return "blocked", ["calendar_invite_requires_manual_confirmation"]
+    if has_attendees and op in {"delete", "move", "update", "invite"}:
+        reasons.append("calendar_attendees_present")
+    if past_event and target == "google_calendar" and op in {"delete", "move", "update"}:
+        reasons.append("past_calendar_event")
+    if recurring and op in {"delete", "complete"} and payload.get("scope") in {None, "ambiguous", "series", "all"}:
+        return "blocked", ["recurring_scope_ambiguous_or_destructive"]
+    if recurring or series_scope:
+        reasons.append("recurrence_sensitive")
+    if op in {"delete", "complete"}:
+        reasons.append("destructive_or_completion")
+    if has_attendees or past_event or recurring or series_scope or bulk_n > 1:
+        return "high", reasons or ["sensitive_external_mutation"]
+    if target == "google_calendar" and op == "reminder_change":
+        return "low", reasons or ["calendar_reminder_only"]
+    if op in {"delete", "complete", "move", "update", "color_change", "reminder_change"}:
+        return "medium", reasons or ["existing_object_mutation"]
+    if op == "create" and target in {"todoist", "google_calendar"}:
+        return "low", ["simple_create"]
+    return "medium", reasons or ["default_medium"]
+
+
+def validate_and_plan(input_record: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    errors: list[str] = []
+    record = dict(input_record)
+    record.setdefault("operation_type", "create")
+    record.setdefault("target_system", "other")
+    record.setdefault("canonical_object_type", "task")
+    record.setdefault("external_object_id", None)
+    record.setdefault("pre_state", None)
+    record.setdefault("post_state", None)
+    record.setdefault("verification_result", {"status": "not_run", "diff": None, "notes": None})
+    record.setdefault("status", "planned")
+    record.setdefault("mutation_payload", {})
+    record["preview"] = normalize_preview(record.get("preview"), record.get("mutation_payload") if isinstance(record.get("mutation_payload"), dict) else {})
+
+    for field in ["operation_type", "target_system", "canonical_object_type"]:
+        if not isinstance(record.get(field), str):
+            errors.append(f"{field}_must_be_string")
+    if record.get("operation_type") not in OPERATION_TYPES:
+        errors.append("operation_type_invalid")
+    if record.get("target_system") not in TARGET_SYSTEMS:
+        errors.append("target_system_invalid")
+    if record.get("canonical_object_type") not in CANONICAL_OBJECT_TYPES:
+        errors.append("canonical_object_type_invalid")
+    if record.get("status") not in STATUSES:
+        errors.append("status_invalid")
+    if not isinstance(record.get("mutation_payload"), dict):
+        errors.append("mutation_payload_must_be_object")
+        record["mutation_payload"] = {}
+
+    if is_safe_recurring_todoist_due_reanchor(record):
+        record["canonical_object_type"] = "task"
+        record["mutation_payload"].pop("recurring", None)
+        record.setdefault("safety_overrides", []).append("safe_recurring_todoist_due_reanchor")
+    # Intent key must reflect safety normalization above, otherwise a safe
+    # recurring reanchor can collide with the generic recurring-task plan.
+    record.pop("intent_id", None)
+    record.pop("idempotency_key", None)
+    record.pop("audit_log_ref", None)
+
+    risk, risk_reasons = derive_risk(record)
+    supplied_risk = record.get("risk_level")
+    if supplied_risk in RISK_LEVELS:
+        # Never let caller downgrade derived risk.
+        order = {"low": 0, "medium": 1, "high": 2, "blocked": 3}
+        if order[supplied_risk] > order[risk]:
+            risk = supplied_risk
+    record["risk_level"] = risk
+    record["risk_reasons"] = risk_reasons
+    record["requires_confirmation"] = bool(record.get("requires_confirmation")) or risk in CONFIRMATION_REQUIRED_RISKS
+    if risk == "blocked":
+        record["status"] = "blocked"
+        record["requires_confirmation"] = True
+    elif record["requires_confirmation"] and record.get("status") == "planned":
+        record["status"] = "awaiting_confirmation"
+
+    if not record.get("intent_id"):
+        intent_material = {
+            "user_request_ref": record.get("user_request_ref"),
+            "operation_type": record.get("operation_type"),
+            "target_system": record.get("target_system"),
+            "canonical_object_type": record.get("canonical_object_type"),
+            "mutation_payload": record.get("mutation_payload"),
+        }
+        record["intent_id"] = "intent_" + stable_hash(intent_material)[:16]
+    if not record.get("user_request_ref"):
+        record["user_request_ref"] = "unknown"
+    if not record.get("idempotency_key"):
+        key_material = {
+            "intent_id": record.get("intent_id"),
+            "target_system": record.get("target_system"),
+            "canonical_object_type": record.get("canonical_object_type"),
+            "external_object_id": record.get("external_object_id"),
+            "operation_type": record.get("operation_type"),
+            "mutation_payload": record.get("mutation_payload"),
+        }
+        if "safe_recurring_todoist_due_reanchor" in record.get("safety_overrides", []):
+            pre_state = record.get("pre_state") if isinstance(record.get("pre_state"), dict) else {}
+            pre_due = pre_state.get("due") if isinstance(pre_state.get("due"), dict) else {}
+            key_material["safe_recurring_due_anchor"] = {
+                "pre_due_date": pre_due.get("date"),
+                "pre_due_string": pre_due.get("string"),
+            }
+        record["idempotency_key"] = "idem_" + stable_hash(key_material)
+    if not record.get("audit_log_ref"):
+        record["audit_log_ref"] = "audit_" + stable_hash({"intent_id": record["intent_id"], "idempotency_key": record["idempotency_key"]})[:16]
+
+    verification = record.get("verification_result")
+    if not isinstance(verification, dict) or verification.get("status") not in {"not_run", "passed", "failed", "partial", "inconclusive"}:
+        errors.append("verification_result_invalid")
+        record["verification_result"] = {"status": "not_run", "diff": None, "notes": "invalid verification_result normalized"}
+
+    record["contract_version"] = CONTRACT_VERSION
+    record["planned_at"] = now_utc()
+    return record, errors
+
+
+def cmd_plan(args: argparse.Namespace) -> int:
+    try:
+        data = load_payload(args.file)
+        record, errors = validate_and_plan(data)
+    except Exception as exc:  # handled launcher/input failure
+        print(json.dumps({"contract_version": CONTRACT_VERSION, "command": "plan", "status": "failed", "failure_class": "invalid_input", "error": str(exc)}, ensure_ascii=False))
+        return 2
+    if errors:
+        record["status"] = "failed"
+        record["failure_class"] = "schema_invalid"
+        record["validation_errors"] = errors
+        print(json.dumps(record, ensure_ascii=False, indent=2 if args.pretty else None))
+        return 1
+    print(json.dumps(record, ensure_ascii=False, indent=2 if args.pretty else None))
+    return 0
+
+
+def cmd_schema(_: argparse.Namespace) -> int:
+    print(json.dumps({
+        "contract_version": CONTRACT_VERSION,
+        "required_fields": [
+            "intent_id", "user_request_ref", "operation_type", "target_system", "canonical_object_type",
+            "external_object_id", "risk_level", "idempotency_key", "preview", "requires_confirmation",
+            "pre_state", "mutation_payload", "post_state", "verification_result", "status", "audit_log_ref"
+        ],
+        "operation_type": sorted(OPERATION_TYPES),
+        "target_system": sorted(TARGET_SYSTEMS),
+        "canonical_object_type": sorted(CANONICAL_OBJECT_TYPES),
+        "risk_level": sorted(RISK_LEVELS),
+        "status": sorted(STATUSES),
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Jen Mutation Gateway v0")
+    sub = parser.add_subparsers(dest="command", required=True)
+    plan = sub.add_parser("plan", help="validate and classify a mutation record; does not execute")
+    plan.add_argument("file", nargs="?", help="JSON file, or stdin when omitted/-")
+    plan.add_argument("--pretty", action="store_true")
+    plan.set_defaults(func=cmd_plan)
+    schema = sub.add_parser("schema", help="print contract schema metadata")
+    schema.set_defaults(func=cmd_schema)
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

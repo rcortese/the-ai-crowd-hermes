@@ -1,0 +1,219 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+RUNTIME="${JEN_TASK_RUNTIME_BIN:-$WORKSPACE_ROOT/bin/jen-task-runtime}"
+CONTRACT_VERSION="jen-task-runtime.v1"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  jen-task-read active
+  jen-task-read due-window --from YYYY-MM-DD --to YYYY-MM-DD
+  jen-task-read recent-completed [--tasks --since RFC3339 [--until RFC3339]]
+  jen-task-read recent-activity --since RFC3339 [--until RFC3339] [--limit N]
+  jen-task-read activity-log --since RFC3339 [--until RFC3339] [--limit N]
+  jen-task-read recent-diff --since RFC3339 [--until RFC3339] [--limit N] [--ttl-hours N]
+  jen-task-read ensure-observation-baseline [--limit N] [--ttl-hours N] [--force]
+  jen-task-read degraded-state
+EOF
+}
+
+fail_invalid() {
+  local command="$1"
+  usage
+  printf '{"contract_version":"%s","command":"%s","status":"failed","failure_class":"invalid_argument"}\n' "$CONTRACT_VERSION" "$command"
+  exit 1
+}
+
+command="${1:-}"
+if [[ -z "$command" ]]; then
+  fail_invalid unknown-command
+fi
+shift || true
+
+case "$command" in
+  active)
+    if (($#)); then
+      fail_invalid read-active
+    fi
+    exec "$RUNTIME" read-active
+    ;;
+  due-window)
+    from=""
+    to=""
+    while (($#)); do
+      case "$1" in
+        --from)
+          [[ -n "${2:-}" ]] || fail_invalid read-due-window
+          from="${2:-}"
+          shift 2
+          ;;
+        --to)
+          [[ -n "${2:-}" ]] || fail_invalid read-due-window
+          to="${2:-}"
+          shift 2
+          ;;
+        *)
+          fail_invalid read-due-window
+          ;;
+      esac
+    done
+    [[ -n "$from" && -n "$to" ]] || fail_invalid read-due-window
+    exec "$RUNTIME" read-due-window --from "$from" --to "$to"
+    ;;
+  recent-completed)
+    args=()
+    while (($#)); do
+      case "$1" in
+        --tasks)
+          args+=(--tasks)
+          shift
+          ;;
+        --since)
+          [[ -n "${2:-}" ]] || fail_invalid read-recent-completed
+          args+=(--since "$2")
+          shift 2
+          ;;
+        --until)
+          [[ -n "${2:-}" ]] || fail_invalid read-recent-completed
+          args+=(--until "$2")
+          shift 2
+          ;;
+        *)
+          fail_invalid read-recent-completed
+          ;;
+      esac
+    done
+    exec "$RUNTIME" read-recent-completed "${args[@]}"
+    ;;
+  recent-activity)
+    args=()
+    has_since=false
+    while (($#)); do
+      case "$1" in
+        --since)
+          [[ -n "${2:-}" ]] || fail_invalid read-recent-activity
+          args+=(--since "$2")
+          has_since=true
+          shift 2
+          ;;
+        --until)
+          [[ -n "${2:-}" ]] || fail_invalid read-recent-activity
+          args+=(--until "$2")
+          shift 2
+          ;;
+        --limit)
+          [[ -n "${2:-}" ]] || fail_invalid read-recent-activity
+          args+=(--limit "$2")
+          shift 2
+          ;;
+        *)
+          fail_invalid read-recent-activity
+          ;;
+      esac
+    done
+    [[ "$has_since" == true ]] || fail_invalid read-recent-activity
+    exec "$RUNTIME" read-recent-activity "${args[@]}"
+    ;;
+
+  activity-log)
+    args=()
+    has_since=false
+    while (($#)); do
+      case "$1" in
+        --since)
+          [[ -n "${2:-}" ]] || fail_invalid read-activity-log
+          args+=(--since "$2")
+          has_since=true
+          shift 2
+          ;;
+        --until)
+          [[ -n "${2:-}" ]] || fail_invalid read-activity-log
+          args+=(--until "$2")
+          shift 2
+          ;;
+        --limit)
+          [[ -n "${2:-}" ]] || fail_invalid read-activity-log
+          args+=(--limit "$2")
+          shift 2
+          ;;
+        *)
+          fail_invalid read-activity-log
+          ;;
+      esac
+    done
+    [[ "$has_since" == true ]] || fail_invalid read-activity-log
+    exec "$RUNTIME" read-activity-log "${args[@]}"
+    ;;
+
+  recent-diff)
+    args=()
+    has_since=false
+    while (($#)); do
+      case "$1" in
+        --since)
+          [[ -n "${2:-}" ]] || fail_invalid read-recent-diff
+          args+=(--since "$2")
+          has_since=true
+          shift 2
+          ;;
+        --until)
+          [[ -n "${2:-}" ]] || fail_invalid read-recent-diff
+          args+=(--until "$2")
+          shift 2
+          ;;
+        --limit)
+          [[ -n "${2:-}" ]] || fail_invalid read-recent-diff
+          args+=(--limit "$2")
+          shift 2
+          ;;
+        --ttl-hours)
+          [[ -n "${2:-}" ]] || fail_invalid read-recent-diff
+          args+=(--ttl-hours "$2")
+          shift 2
+          ;;
+        *)
+          fail_invalid read-recent-diff
+          ;;
+      esac
+    done
+    [[ "$has_since" == true ]] || fail_invalid read-recent-diff
+    exec "$RUNTIME" read-recent-diff "${args[@]}"
+    ;;
+
+  ensure-observation-baseline)
+    args=()
+    while (($#)); do
+      case "$1" in
+        --limit)
+          [[ -n "${2:-}" ]] || fail_invalid ensure-observation-baseline
+          args+=(--limit "$2")
+          shift 2
+          ;;
+        --ttl-hours)
+          [[ -n "${2:-}" ]] || fail_invalid ensure-observation-baseline
+          args+=(--ttl-hours "$2")
+          shift 2
+          ;;
+        --force)
+          args+=(--force)
+          shift
+          ;;
+        *)
+          fail_invalid ensure-observation-baseline
+          ;;
+      esac
+    done
+    exec "$RUNTIME" ensure-observation-baseline "${args[@]}"
+    ;;
+  degraded-state|explain-degraded-state)
+    if (($#)); then
+      fail_invalid explain-degraded-state
+    fi
+    exec "$RUNTIME" explain-degraded-state
+    ;;
+  *)
+    fail_invalid unknown-command
+    ;;
+esac
