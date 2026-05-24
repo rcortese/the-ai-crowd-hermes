@@ -58,15 +58,22 @@ Target: migrate Jen from OpenClaw to Hermes-native container with Todoist, gog/C
 
 ### Execution plan
 
-1. Configure official Todoist MCP endpoint for Jen.
-2. Prefer direct HTTP OAuth; fall back to `mcp-remote` if Hermes direct OAuth fails.
-3. Test MCP discovery without granting write authority to Jen prompts yet.
+1. Configure the official Doist hosted MCP endpoint for Jen in Jen's private Hermes runtime config only: `https://ai.todoist.net/mcp`.
+2. Prefer direct HTTP OAuth. In the current headless container, OAuth generated a valid browser URL but could not complete the callback before timeout, so Step 4 uses the official endpoint with a private `Authorization: Bearer ...` header sourced from Jen's ignored Todoist runtime token.
+3. Test MCP discovery from inside the Jen container without granting raw MCP write authority to normal Jen behavior yet. The official MCP exposes both read and write tools; writes remain policy-blocked until Step 5 wrappers/mutation gateway pass.
 
 ### Review gates
 
-- Gate 4A — MCP config gate: config is Jen-local, not Moss global; no token committed.
-- Gate 4B — Discovery gate: `hermes mcp test todoist` discovers tools or records exact OAuth blocker.
-- Gate 4C — Safety gate: Jen instructions still route mutations through Jen task runtime/mutation gateway.
+- Gate 4A — MCP config gate: config is Jen-local under ignored `runtime/jen-home/config.yaml`, not Moss global; no token is committed or written to public scaffold.
+- Gate 4B — Discovery gate: `hermes mcp test todoist` from `the-ai-crowd-jen-1` connects to `https://ai.todoist.net/mcp` and discovers Todoist MCP tools.
+- Gate 4C — Safety gate: Jen instructions still route mutations through Jen task runtime/mutation gateway; Step 4 is transport/discovery only, not live write authority.
+
+### Validation notes
+
+- OAuth attempt: Hermes started Todoist OAuth, generated the Todoist authorization URL, then timed out in the headless container before callback completion and did not persist config.
+- Token fallback: Jen's OpenClaw Todoist token was copied into ignored `runtime/jen-home/.env` without printing the value; a quoting issue in the first copy preserved shell quotes and produced REST/MCP 401s, then was corrected by sourcing the OpenClaw env and rewriting the private value unquoted.
+- REST credential check: Todoist REST `/api/v1/projects` returned a project count from the Jen container with the private token.
+- MCP check: `hermes mcp test todoist` connected to the official endpoint and discovered 50 tools.
 
 ## Step 5 — Todoist runtime and mutation/idempotency safety
 

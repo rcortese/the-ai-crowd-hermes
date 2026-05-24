@@ -9,8 +9,11 @@ intended_toolsets:
   - mcp
 external_capabilities:
   todoist:
-    status: planned
-    route: official Todoist MCP plus Jen runtime wrappers
+    status: mcp_transport_configured
+    route: official Doist hosted MCP plus Jen runtime wrappers
+    mcp_endpoint: https://ai.todoist.net/mcp
+    credential_storage: ignored Jen runtime home only
+    direct_write_authority: false
   google_calendar:
     status: planned
     route: gogcli plus Jen calendar runtime wrappers
