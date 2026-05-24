@@ -1,0 +1,34 @@
+agent: jen
+status: scaffold
+intended_toolsets:
+  - terminal
+  - file
+  - web
+  - memory
+  - cronjob
+  - mcp
+external_capabilities:
+  todoist:
+    status: scaffolded
+    route: provider MCP plus public-safe runtime wrapper contracts
+    credential_storage: private runtime only
+    direct_write_authority: false
+    runtime_wrappers: public contract only
+    idempotency_store: public contract only
+  google_calendar:
+    status: scaffolded
+    route: calendar adapter plus public-safe runtime wrapper contracts
+    credential_storage: private runtime only
+  messaging:
+    status: scaffolded
+    route: Hermes gateway/account binding via private runtime configuration
+    credential_storage: private runtime only
+safety:
+  no_bulk_openclaw_memory_import: true
+  no_raw_secret_commit: true
+  no_private_runtime_identifiers: true
+  external_writes_require_mutation_gateway: true
+  live_delivery_bindings_are_private: true
+scheduled_jobs:
+  status: private_runtime_state
+  public_contract: cron jobs may exist, but concrete job ids, schedules tied to personal workflow, delivery targets, and run evidence are private.
