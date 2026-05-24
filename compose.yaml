@@ -78,6 +78,9 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/jen/private
+      GOG_HOME: /opt/data/gog
+      GOG_KEYRING_BACKEND: file
+      GOG_ACCOUNT: ${JEN_GOOGLE_ACCOUNT:-}
     command:
       - hermes
       - dashboard
