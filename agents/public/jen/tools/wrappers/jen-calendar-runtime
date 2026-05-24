@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONTRACT_VERSION="jen-calendar-runtime.v1"
+AUTHORITY="workspace-calendar-runtime"
+ADAPTER_NAME="gog"
+GOG_BIN="${JEN_CALENDAR_RUNTIME_GOG:-gog}"
+GOG_CLIENT="${JEN_CALENDAR_RUNTIME_GOG_CLIENT:-jen-google}"
+DEFAULT_MAX="${JEN_CALENDAR_RUNTIME_DEFAULT_MAX:-10}"
+
+now_utc() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+json() { jq -nc "$@"; }
+require_jq() { command -v jq >/dev/null 2>&1 || { printf '{"contract_version":"%s","command":"%s","status":"failed","failure_class":"missing_dependency"}\n' "$CONTRACT_VERSION" "${1:-unknown}"; exit 1; }; }
+adapter_path() { command -v "$GOG_BIN" 2>/dev/null || printf '%s' "$GOG_BIN"; }
+base_gog_args() {
+  printf '%s\0' --no-input --json --client "$GOG_CLIENT"
+  if [[ -n "${GOG_ACCOUNT:-}" ]]; then
+    printf '%s\0' --account "$GOG_ACCOUNT"
+  fi
+}
+
+valid_rfc3339_tz() {
+  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})$ ]]
+}
+
+map_error() {
+  local raw="$1"
+  if grep -Eqi 'keyring.password|no OAuth tokens|invalid_grant|\b401\b|unauth|forbidden|expired|revoked|credentials.*missing|no token|auth' <<<"$raw"; then
+    echo auth_failure
+  elif grep -Eqi 'insufficient.*scope|insufficientPermissions|insufficient authentication scopes' <<<"$raw"; then
+    echo insufficient_scope
+  elif grep -Eqi '\b429\b|rate limit' <<<"$raw"; then
+    echo rate_limited
+  elif grep -Eqi 'not[ -]?found|404' <<<"$raw"; then
+    echo not_found
+  elif grep -Eqi 'timeout|timed out|temporary failure|connection reset|network|dns|no such host|tls handshake|socket|i/o timeout' <<<"$raw"; then
+    echo network_failure
+  else
+    echo request_failure
+  fi
+}
+fail_json() {
+  local command="$1" cls="$2"
+  jq -nc --arg cv "$CONTRACT_VERSION" --arg command "$command" --arg status failed --arg cls "$cls" '{contract_version:$cv,command:$command,status:$status,failure_class:$cls}'
+  exit 1
+}
+need_adapter() {
+  command -v "$GOG_BIN" >/dev/null 2>&1 || fail_json "$1" adapter_missing
+}
+run_gog_capture() {
+  local stdout_file="$1" stderr_file="$2"; shift 2
+  "$GOG_BIN" "$@" >"$stdout_file" 2>"$stderr_file"
+}
+read_nul_args() {
+  local -n out=$1
+  mapfile -d '' -t out < <(base_gog_args)
+}
+cmd_health() {
+  require_jq health
+  local checked adapter status posture live probe stderr_file stdout_file doctor combined cls
+  checked="$(now_utc)"; adapter="$(adapter_path)"
+  if ! command -v "$GOG_BIN" >/dev/null 2>&1; then
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" '{contract_version:$cv,command:"health",status:"unavailable",posture:"unavailable",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"failed",checked_at:$checked},live_read_status:"unavailable",failure_reason:"adapter_missing"}'
+    return 0
+  fi
+  stdout_file="$(mktemp)"; stderr_file="$(mktemp)"; trap 'rm -f "$stdout_file" "$stderr_file"' RETURN
+  set +e
+  "$GOG_BIN" auth doctor --check >"$stdout_file" 2>"$stderr_file"
+  doctor=$?
+  set -e
+  combined="$(cat "$stdout_file" "$stderr_file" 2>/dev/null || true)"
+  if grep -q $'status\terror' <<<"$combined" || grep -q 'status error' <<<"$combined"; then
+    cls="$(map_error "$combined")"
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" --arg cls "$cls" '{contract_version:$cv,command:"health",status:"degraded",posture:"degraded",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"failed",checked_at:$checked},live_read_status:$cls,failure_reason:"auth_doctor_error"}'
+    return 0
+  fi
+  read_nul_args gog_args
+  set +e
+  "$GOG_BIN" calendar time "${gog_args[@]}" >"$stdout_file" 2>"$stderr_file"
+  rc=$?
+  set -e
+  if [[ $rc -eq 0 ]]; then
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" '{contract_version:$cv,command:"health",status:"ok",posture:"available",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"ok",checked_at:$checked},live_read_status:"ok"}'
+  else
+    cls="$(map_error "$(cat "$stderr_file" "$stdout_file" 2>/dev/null || true)")"
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" --arg cls "$cls" '{contract_version:$cv,command:"health",status:"degraded",posture:"degraded",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"failed",checked_at:$checked},live_read_status:$cls}'
+  fi
+}
+cmd_list_events() {
+  require_jq list-events; need_adapter list-events
+  local calendar_id="" from="" to="" query="" max="$DEFAULT_MAX"
+  while (($#)); do case "$1" in --calendar) calendar_id="${2:-}"; shift 2;; --from) from="${2:-}"; shift 2;; --to) to="${2:-}"; shift 2;; --query) query="${2:-}"; shift 2;; --max) max="${2:-}"; shift 2;; *) fail_json list-events invalid_argument;; esac; done
+  [[ -n "$calendar_id" && -n "$from" && -n "$to" ]] || fail_json list-events invalid_argument
+  valid_rfc3339_tz "$from" && valid_rfc3339_tz "$to" || fail_json list-events invalid_argument
+  read_nul_args gog_args
+  local out err rc cls checked; out="$(mktemp)"; err="$(mktemp)"; trap 'rm -f "$out" "$err"' RETURN
+  local args=(calendar events "$calendar_id" --from "$from" --to "$to" --max "$max" "${gog_args[@]}")
+  [[ -n "$query" ]] && args+=(--query "$query")
+  set +e; "$GOG_BIN" "${args[@]}" >"$out" 2>"$err"; rc=$?; set -e
+  checked="$(now_utc)"
+  if [[ $rc -eq 0 ]]; then
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg cal "$calendar_id" --arg from "$from" --arg to "$to" --arg checked "$checked" --argjson raw "$(cat "$out")" '{contract_version:$cv,command:"list-events",status:"ok",source:"live",calendar_id:$cal,from:$from,to:$to,checked_at:$checked,events:(if ($raw|type)=="array" then $raw elif ($raw.events? | type)=="array" then $raw.events else [] end)}'
+  else cls="$(map_error "$(cat "$err" "$out")")"; fail_json list-events "$cls"; fi
+}
+cmd_freebusy() {
+  require_jq freebusy; need_adapter freebusy
+  local calendar_id="" from="" to=""
+  while (($#)); do case "$1" in --calendar) calendar_id="${2:-}"; shift 2;; --from) from="${2:-}"; shift 2;; --to) to="${2:-}"; shift 2;; *) fail_json freebusy invalid_argument;; esac; done
+  [[ -n "$calendar_id" && -n "$from" && -n "$to" ]] || fail_json freebusy invalid_argument
+  valid_rfc3339_tz "$from" && valid_rfc3339_tz "$to" || fail_json freebusy invalid_argument
+  read_nul_args gog_args
+  local out err rc cls checked; out="$(mktemp)"; err="$(mktemp)"; trap 'rm -f "$out" "$err"' RETURN
+  set +e; "$GOG_BIN" calendar freebusy "$calendar_id" --from "$from" --to "$to" "${gog_args[@]}" >"$out" 2>"$err"; rc=$?; set -e
+  checked="$(now_utc)"
+  if [[ $rc -eq 0 ]]; then
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg cal "$calendar_id" --arg from "$from" --arg to "$to" --arg checked "$checked" --argjson raw "$(cat "$out")" '{contract_version:$cv,command:"freebusy",status:"ok",source:"live",calendar_id:$cal,from:$from,to:$to,checked_at:$checked,busy:(if ($raw.busy? | type)=="array" then $raw.busy elif ($raw.calendars?[$cal].busy? | type)=="array" then $raw.calendars[$cal].busy else [] end)}'
+  else cls="$(map_error "$(cat "$err" "$out")")"; fail_json freebusy "$cls"; fi
+}
+cmd_get_event() {
+  require_jq get-event; need_adapter get-event
+  local calendar_id="" event_id=""
+  while (($#)); do case "$1" in --calendar) calendar_id="${2:-}"; shift 2;; --event-id) event_id="${2:-}"; shift 2;; *) fail_json get-event invalid_argument;; esac; done
+  [[ -n "$calendar_id" && -n "$event_id" ]] || fail_json get-event invalid_argument
+  read_nul_args gog_args
+  local out err rc cls checked; out="$(mktemp)"; err="$(mktemp)"; trap 'rm -f "$out" "$err"' RETURN
+  set +e; "$GOG_BIN" calendar event "$calendar_id" "$event_id" "${gog_args[@]}" >"$out" 2>"$err"; rc=$?; set -e
+  checked="$(now_utc)"
+  if [[ $rc -eq 0 ]]; then
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg cal "$calendar_id" --arg checked "$checked" --argjson raw "$(cat "$out")" '{contract_version:$cv,command:"get-event",status:"ok",source:"live",calendar_id:$cal,checked_at:$checked,event:$raw}'
+  else cls="$(map_error "$(cat "$err" "$out")")"; fail_json get-event "$cls"; fi
+}
+case "${1:-}" in
+  health) shift; cmd_health "$@";;
+  list-events) shift; cmd_list_events "$@";;
+  freebusy) shift; cmd_freebusy "$@";;
+  get-event) shift; cmd_get_event "$@";;
+  capture-event|set-reminders|delete-event) fail_json "${1}" unavailable;;
+  *) require_jq unknown; fail_json unknown invalid_argument;;
+esac
