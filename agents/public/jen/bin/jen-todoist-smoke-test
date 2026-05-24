@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+TASK_READ="${JEN_TODOIST_SMOKE_TASK_READ:-$WORKSPACE_ROOT/bin/jen-task-read}"
+CONTRACT_VERSION="jen-todoist-smoke-test.v1"
+CANONICAL_RUNTIME_STATE="/opt/data/state/jen/heartbeat-state.json"
+CANONICAL_OBSERVATION_STATE="/opt/data/state/jen/todoist-observation-snapshot.json"
+
+now_utc() {
+  if [[ -n "${JEN_TODOIST_SMOKE_NOW_UTC:-}" ]]; then
+    printf '%s\n' "$JEN_TODOIST_SMOKE_NOW_UTC"
+  else
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+  fi
+}
+
+valid_rfc3339_utc() {
+  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] && date -u -d "$1" +%Y-%m-%dT%H:%M:%SZ >/dev/null 2>&1
+}
+
+rfc3339_epoch() {
+  date -u -d "$1" +%s 2>/dev/null || return 1
+}
+
+valid_since_until() {
+  local since="$1" until="$2" since_epoch until_epoch
+  valid_rfc3339_utc "$since" || return 1
+  valid_rfc3339_utc "$until" || return 1
+  since_epoch="$(rfc3339_epoch "$since")" || return 1
+  until_epoch="$(rfc3339_epoch "$until")" || return 1
+  [[ "$since_epoch" -le "$until_epoch" ]]
+}
+
+valid_limit() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 && "$1" -le 100 ]]
+}
+
+json_fail() {
+  local failure_class="$1" checked_at="$2"
+  jq -nc \
+    --arg contract_version "$CONTRACT_VERSION" \
+    --arg status failed \
+    --arg checked_at "$checked_at" \
+    --arg failure_class "$failure_class" \
+    '{contract_version:$contract_version,status:$status,checked_at:$checked_at,failure_class:$failure_class,complete:false}'
+  exit 1
+}
+
+component_json() {
+  local name="$1" exit_status="$2" stdout_file="$3" stderr_file="$4"
+  local stdout_json stderr_text contract_valid=false status="failed" failure_class="command_failed"
+  stderr_text="$(cat "$stderr_file" 2>/dev/null || true)"
+  if jq empty "$stdout_file" >/dev/null 2>&1; then
+    contract_valid=true
+    stdout_json="$(jq -c . "$stdout_file")"
+    status="$(jq -r '.status // "failed"' <<<"$stdout_json")"
+    failure_class="$(jq -r '.failure_class // empty' <<<"$stdout_json")"
+  else
+    stdout_json='null'
+  fi
+  jq -nc \
+    --arg name "$name" \
+    --arg status "$status" \
+    --arg failure_class "$failure_class" \
+    --argjson exit_status "$exit_status" \
+    --argjson contract_valid "$contract_valid" \
+    --argjson output "$stdout_json" \
+    --arg stderr "$stderr_text" \
+    '{name:$name,status:$status,exit_status:$exit_status,contract_valid:$contract_valid,output:$output,failure_class:(if $failure_class == "" then null else $failure_class end),stderr:(if $stderr == "" then null else $stderr end)}'
+}
+
+run_component() {
+  local name="$1"; shift
+  local stdout_file stderr_file exit_status
+  stdout_file="$SMOKE_TMPDIR/$name.stdout.json"
+  stderr_file="$SMOKE_TMPDIR/$name.stderr.txt"
+  set +e
+  JEN_TASK_RUNTIME_STATE_FILE="$SMOKE_RUNTIME_STATE" \
+  JEN_TODOIST_OBSERVATION_STATE_FILE="$SMOKE_OBSERVATION_STATE" \
+    "$TASK_READ" "$@" >"$stdout_file" 2>"$stderr_file"
+  exit_status=$?
+  set -e
+  component_json "$name" "$exit_status" "$stdout_file" "$stderr_file"
+}
+
+classify_smoke() {
+  jq -nc --argjson components "$1" '
+    def by_name($n): ($components[] | select(.name == $n));
+    def contract_ok($n): (by_name($n).contract_valid == true);
+    def ok_component($n): (contract_ok($n) and (by_name($n).exit_status == 0) and ((by_name($n).status == "ok") or (by_name($n).status == "degraded" and $n == "recent-diff")));
+    def failure_classes: [$components[] | .failure_class // empty];
+    def hard_failure:
+      any(failure_classes[]; IN("missing_token","auth_failure","provider_shape_invalid","invalid_argument","network_failure","rate_limited","request_failure","adapter_missing","missing_dependency","state_write_failed"));
+    def activity_log_partial:
+      (contract_ok("activity-log")
+       and (by_name("activity-log").status == "failed")
+       and ((by_name("activity-log").failure_class // "") | IN("request_failure"))
+       and (((by_name("activity-log").output.limitations // []) | any(. == "activity_log_plan_dependent" or . == "activity_log_unavailable" or . == "activity_log_retention_limited"))));
+    if (hard_failure and (activity_log_partial | not)) then
+      {status:"failed", exit_code:1, failure_class:(failure_classes[0] // "request_failure")}
+    elif (activity_log_partial and ok_component("ensure-observation-baseline") and ok_component("recent-diff") and ok_component("recent-activity")) then
+      {status:"partial", exit_code:0, failure_class:null, warnings:["activity_log_unavailable_or_plan_limited"]}
+    elif (ok_component("activity-log") and ok_component("ensure-observation-baseline") and ok_component("recent-diff") and ok_component("recent-activity")) then
+      {status:"ok", exit_code:0, failure_class:null, warnings:[]}
+    else
+      {status:"failed", exit_code:1, failure_class:"contract_validation_failed", warnings:[]}
+    end
+  '
+}
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  jen-todoist-smoke-test [--since RFC3339-UTC] [--until RFC3339-UTC] [--limit N]
+EOF
+}
+
+checked_at="$(now_utc)"
+since=""
+until="$checked_at"
+limit=50
+while (($#)); do
+  case "$1" in
+    --since)
+      [[ -n "${2:-}" ]] || { usage; json_fail invalid_argument "$checked_at"; }
+      since="$2"
+      shift 2
+      ;;
+    --until)
+      [[ -n "${2:-}" ]] || { usage; json_fail invalid_argument "$checked_at"; }
+      until="$2"
+      shift 2
+      ;;
+    --limit)
+      [[ -n "${2:-}" ]] || { usage; json_fail invalid_argument "$checked_at"; }
+      limit="$2"
+      shift 2
+      ;;
+    *)
+      usage
+      json_fail invalid_argument "$checked_at"
+      ;;
+  esac
+done
+
+if [[ -z "$since" ]]; then
+  since="$(date -u -d "$checked_at - 24 hours" +%Y-%m-%dT%H:%M:%SZ)"
+fi
+valid_since_until "$since" "$until" || json_fail invalid_argument "$checked_at"
+valid_limit "$limit" || json_fail invalid_argument "$checked_at"
+
+SMOKE_TMPDIR="$(mktemp -d)"
+SMOKE_RUNTIME_STATE="$SMOKE_TMPDIR/heartbeat-state.json"
+SMOKE_OBSERVATION_STATE="$SMOKE_TMPDIR/todoist-observation-snapshot.json"
+cleanup_status="pending"
+cleanup() {
+  if [[ -n "${SMOKE_TMPDIR:-}" && -d "$SMOKE_TMPDIR" ]]; then
+    rm -rf "$SMOKE_TMPDIR" && cleanup_status="ok" || cleanup_status="failed"
+  fi
+}
+trap cleanup EXIT
+
+components_json="$(jq -nc \
+  --argjson activity_log "$(run_component activity-log activity-log --since "$since" --until "$until" --limit "$limit")" \
+  --argjson ensure_baseline "$(run_component ensure-observation-baseline ensure-observation-baseline --limit "$limit")" \
+  --argjson recent_diff "$(run_component recent-diff recent-diff --since "$since" --until "$until" --limit "$limit")" \
+  --argjson recent_activity "$(run_component recent-activity recent-activity --since "$since" --until "$until" --limit "$limit")" \
+  '[$activity_log,$ensure_baseline,$recent_diff,$recent_activity]')"
+classification="$(classify_smoke "$components_json")"
+status="$(jq -r '.status' <<<"$classification")"
+exit_code="$(jq -r '.exit_code' <<<"$classification")"
+failure_class="$(jq -r '.failure_class // empty' <<<"$classification")"
+warnings="$(jq -c '.warnings // []' <<<"$classification")"
+
+runtime_touched=false
+observation_touched=false
+[[ -f "$CANONICAL_RUNTIME_STATE" && "$SMOKE_RUNTIME_STATE" == "$CANONICAL_RUNTIME_STATE" ]] && runtime_touched=true
+[[ -f "$CANONICAL_OBSERVATION_STATE" && "$SMOKE_OBSERVATION_STATE" == "$CANONICAL_OBSERVATION_STATE" ]] && observation_touched=true
+
+# Clean explicitly before output so cleanup_result reflects final state.
+cleanup
+
+jq -nc \
+  --arg contract_version "$CONTRACT_VERSION" \
+  --arg status "$status" \
+  --arg checked_at "$checked_at" \
+  --arg since "$since" \
+  --arg until "$until" \
+  --arg failure_class "$failure_class" \
+  --arg cleanup_result "$cleanup_status" \
+  --argjson limit "$limit" \
+  --argjson components "$components_json" \
+  --argjson warnings "$warnings" \
+  --argjson runtime_touched "$runtime_touched" \
+  --argjson observation_touched "$observation_touched" \
+  '{contract_version:$contract_version,status:$status,checked_at:$checked_at,since:$since,until:$until,limit:$limit,components:$components,warnings:$warnings,isolation:{runtime_state:"temp",observation_state:"temp",canonical_runtime_touched:$runtime_touched,canonical_observation_touched:$observation_touched},cleanup_result:$cleanup_result,complete:($status != "failed")} + (if $failure_class == "" then {} else {failure_class:$failure_class} end)'
+
+exit "$exit_code"

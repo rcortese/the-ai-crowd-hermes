@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONTRACT_VERSION="jen-todoist-interaction-loop.v1"
+WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+TASK_RUNTIME="${JEN_TODOIST_INTERACTION_LOOP_TASK_RUNTIME:-$WORKSPACE_ROOT/bin/jen-task-runtime}"
+DUE_SEMANTICS="${JEN_TODOIST_INTERACTION_LOOP_DUE_SEMANTICS:-$WORKSPACE_ROOT/bin/jen-todoist-due-semantics}"
+
+now_utc() {
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+json_out() {
+  printf '%s\n' "$1"
+}
+
+emit_failed() {
+  local failure_class="$1"
+  local checked_at
+  checked_at="$(now_utc)"
+  json_out "$(jq -nc \
+    --arg contract_version "$CONTRACT_VERSION" \
+    --arg status failed \
+    --arg checked_at "$checked_at" \
+    --arg failure_class "$failure_class" \
+    '{contract_version:$contract_version,status:$status,checked_at:$checked_at,failures:[{source:"loop",failure_class:$failure_class}],complete:false}')"
+  exit 1
+}
+
+valid_date_ymd() {
+  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$(date -d "$1" +%F 2>/dev/null || true)" == "$1" ]]
+}
+
+run_runtime_json() {
+  local output_file="$1"
+  shift
+  set +e
+  "$TASK_RUNTIME" "$@" >"$output_file" 2>/dev/null
+  local status=$?
+  set -e
+  return "$status"
+}
+
+run_due_semantics_json() {
+  local output_file="$1"
+  shift
+  set +e
+  "$DUE_SEMANTICS" "$@" >"$output_file" 2>/dev/null
+  local status=$?
+  set -e
+  return "$status"
+}
+
+wrap_runtime_result() {
+  local source="$1"
+  local exit_status="$2"
+  local output_file="$3"
+  if [[ "$exit_status" == "0" ]] && jq empty "$output_file" >/dev/null 2>&1; then
+    local runtime_status runtime_source
+    runtime_status="$(jq -r '.status // empty' "$output_file")"
+    runtime_source="$(jq -r '.source // empty' "$output_file")"
+    if [[ "$runtime_status" == "ok" ]]; then
+      jq -nc --arg source "$source" --slurpfile output "$output_file" '{status:"ok",source:$source,output:$output[0]}'
+    else
+      jq -nc \
+        --arg source "$source" \
+        --arg runtime_status "${runtime_status:-unknown}" \
+        --arg runtime_source "${runtime_source:-unknown}" \
+        --slurpfile output "$output_file" \
+        '{status:"degraded",source:$source,runtime_status:$runtime_status,runtime_source:$runtime_source,output:$output[0]}'
+    fi
+    return 0
+  fi
+
+  local failure_class
+  failure_class="$(jq -r '.failure_class // empty' "$output_file" 2>/dev/null || true)"
+  [[ -n "$failure_class" ]] || failure_class="runtime_failure"
+  jq -nc --arg source "$source" --arg failure_class "$failure_class" --argjson exit_status "$exit_status" '{status:"failed",source:$source,failure_class:$failure_class,exit_status:$exit_status}'
+}
+
+from_date=""
+to_date=""
+include_due_window=true
+
+while (($#)); do
+  case "$1" in
+    --from)
+      [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
+      from_date="$2"
+      shift 2
+      ;;
+    --to)
+      [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
+      to_date="$2"
+      shift 2
+      ;;
+    --no-due-window)
+      include_due_window=false
+      shift
+      ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: jen-todoist-interaction-loop [--from YYYY-MM-DD --to YYYY-MM-DD] [--no-due-window]
+
+Runs the bounded Todoist interaction observation loop and prints one JSON object.
+EOF
+      exit 0
+      ;;
+    *)
+      emit_failed invalid_argument
+      ;;
+  esac
+done
+
+if [[ -z "$from_date" ]]; then
+  from_date="$(date +%F)"
+fi
+if [[ -z "$to_date" ]]; then
+  to_date="$(date -d "$from_date +2 days" +%F 2>/dev/null || true)"
+fi
+valid_date_ymd "$from_date" || emit_failed invalid_argument
+valid_date_ymd "$to_date" || emit_failed invalid_argument
+[[ "$from_date" < "$to_date" || "$from_date" == "$to_date" ]] || emit_failed invalid_argument
+
+checked_at="$(now_utc)"
+recent_file=$(mktemp)
+signals_file=$(mktemp)
+due_file=$(mktemp)
+cleanup() {
+  rm -f "$recent_file" "$signals_file" "$due_file"
+}
+trap cleanup EXIT
+
+recent_status=0
+run_runtime_json "$recent_file" read-recent-completed || recent_status=$?
+recent_result="$(wrap_runtime_result recent_completed "$recent_status" "$recent_file")"
+
+signals_status=0
+run_runtime_json "$signals_file" classify-interaction-signals || signals_status=$?
+signals_result="$(wrap_runtime_result interaction_signals "$signals_status" "$signals_file")"
+
+due_result='{"status":"skipped","source":"due_pressure","reason":"no_due_window"}'
+due_status=0
+if [[ "$include_due_window" == true ]]; then
+  run_due_semantics_json "$due_file" live-due-window --from "$from_date" --to "$to_date" || due_status=$?
+  due_result="$(wrap_runtime_result due_pressure "$due_status" "$due_file" | jq -c --arg from "$from_date" --arg to "$to_date" '. + {from:$from,to:$to}')"
+fi
+
+status="failed"
+complete=false
+recent_ok="$(jq -r '.status == "ok"' <<<"$recent_result")"
+signals_ok="$(jq -r '.status == "ok"' <<<"$signals_result")"
+due_ok="$(jq -r '(.status == "ok") or (.status == "skipped")' <<<"$due_result")"
+recent_live_ok="$(jq -r '.status == "ok" and .output.status == "ok" and .output.source == "live"' <<<"$recent_result")"
+due_live_ok="$(jq -r '.status == "ok" and .output.status == "ok" and .output.source == "live"' <<<"$due_result")"
+
+# Useful live signal means a live Todoist read succeeded. Metadata-only or observational fallback output does not count.
+if [[ "$recent_ok" == true && "$signals_ok" == true && "$due_ok" == true && ( "$recent_live_ok" == true || "$due_live_ok" == true ) ]]; then
+  status="ok"
+  complete=true
+elif [[ "$recent_live_ok" == true || "$due_live_ok" == true ]]; then
+  status="partial"
+  complete=false
+else
+  status="failed"
+  complete=false
+fi
+
+failures="$(jq -nc \
+  --argjson recent "$recent_result" \
+  --argjson signals "$signals_result" \
+  --argjson due "$due_result" \
+  '[$recent,$signals,$due]
+   | map(select(.status == "failed" or .status == "degraded"))
+   | map({source:.source,failure_class:(.failure_class // .runtime_status // "runtime_degraded"),runtime_source:(.runtime_source // null),exit_status:(.exit_status // null)})')"
+
+json_out "$(jq -nc \
+  --arg contract_version "$CONTRACT_VERSION" \
+  --arg status "$status" \
+  --arg checked_at "$checked_at" \
+  --argjson complete "$complete" \
+  --arg from "$from_date" \
+  --arg to "$to_date" \
+  --argjson recent "$recent_result" \
+  --argjson signals "$signals_result" \
+  --argjson due "$due_result" \
+  --argjson failures "$failures" \
+  '{contract_version:$contract_version,status:$status,checked_at:$checked_at,window:{from:$from,to:$to},recent_completed:$recent,interaction_signals:$signals,due_pressure:$due,failures:$failures,complete:$complete}')"
+
+[[ "$status" != failed ]]

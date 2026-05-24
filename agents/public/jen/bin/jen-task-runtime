@@ -1,0 +1,2464 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONTRACT_VERSION="jen-task-runtime.v1"
+AUTHORITY="workspace-todoist-adapter"
+WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+STATE_FILE="${JEN_TASK_RUNTIME_STATE_FILE:-/opt/data/state/jen/heartbeat-state.json}"
+TODOIST_SCRIPT="${JEN_TASK_RUNTIME_TODOIST_SCRIPT:-$WORKSPACE_ROOT/tools/todoist/todoist-api.sh}"
+TODOIST_ENV_FILE="${TODOIST_ENV_FILE:-/opt/data/.env}"
+MUTATION_HELPER="${JEN_TASK_RUNTIME_MUTATION_HELPER:-$WORKSPACE_ROOT/bin/jen-mutation-runtime-helper}"
+OBSERVATION_STATE_FILE="${JEN_TODOIST_OBSERVATION_STATE_FILE:-/opt/data/state/jen/todoist-observation-snapshot.json}"
+
+now_utc() {
+  if [[ -n "${JEN_TASK_RUNTIME_NOW_UTC:-}" ]]; then
+    printf '%s
+' "$JEN_TASK_RUNTIME_NOW_UTC"
+  else
+    date -u +"%Y-%m-%dT%H:%M:%SZ"
+  fi
+}
+
+json_out() {
+  printf '%s\n' "$1"
+}
+
+cleanup_files() {
+  local path
+  for path in "$@"; do
+    [[ -n "$path" ]] && rm -f "$path"
+  done
+}
+
+require_bin() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+ensure_parent_dir() {
+  mkdir -p "$(dirname "$STATE_FILE")"
+}
+
+ensure_state_file() {
+  ensure_parent_dir
+  if [[ -f "$STATE_FILE" && -s "$STATE_FILE" ]] && jq empty "$STATE_FILE" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local tmp
+  tmp=$(mktemp)
+  cat > "$tmp" <<'EOF'
+{
+  "dailyPass": {
+    "morning": {
+      "date": null,
+      "outcome": null,
+      "deliveredAt": null,
+      "restartPoint": null
+    },
+    "dayClose": {
+      "date": null,
+      "outcome": null,
+      "deliveredAt": null,
+      "restartPoint": null
+    }
+  },
+  "todoist": {
+    "runtime": {
+      "notes": "Runtime-owned metadata only. Not task truth.",
+      "last_verified_at": null,
+      "last_failure_class": null,
+      "read_recent_completed": {
+        "last_completed_info": null,
+        "last_summary": null,
+        "last_observed_at": null,
+        "previous_observed_at": null,
+        "last_task_window": null
+      },
+      "read_recent_activity": {
+        "last_activity_window": null
+      },
+      "read_activity_log": {
+        "last_activity_window": null
+      },
+      "read_recent_diff": {
+        "last_diff_window": null
+      }
+    }
+  },
+  "notes": "Minimal automation state for duplicate suppression and restart continuity only. Not a planning source of truth."
+}
+EOF
+  mv "$tmp" "$STATE_FILE"
+}
+
+state_read_json() {
+  ensure_state_file
+  cat "$STATE_FILE"
+}
+
+state_read_runtime() {
+  ensure_state_file
+  jq -c '.todoist.runtime // {}' "$STATE_FILE"
+}
+
+state_write_runtime() {
+  local runtime_json="$1"
+  ensure_state_file
+  local tmp
+  tmp=$(mktemp)
+  if ! jq --argjson runtime "$runtime_json" '.todoist = (.todoist // {}) | .todoist.runtime = $runtime' "$STATE_FILE" > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$STATE_FILE"
+}
+
+ensure_observation_parent_dir() {
+  mkdir -p "$(dirname "$OBSERVATION_STATE_FILE")"
+}
+
+read_observation_snapshot() {
+  if [[ -f "$OBSERVATION_STATE_FILE" && -s "$OBSERVATION_STATE_FILE" ]] && jq empty "$OBSERVATION_STATE_FILE" >/dev/null 2>&1; then
+    cat "$OBSERVATION_STATE_FILE"
+  else
+    printf 'null
+'
+  fi
+}
+
+write_observation_snapshot() {
+  local snapshot_json="$1"
+  ensure_observation_parent_dir
+  local tmp
+  tmp=$(mktemp "$(dirname "$OBSERVATION_STATE_FILE")/.todoist-observation-snapshot.XXXXXX")
+  if ! jq -c . <<<"$snapshot_json" > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv "$tmp" "$OBSERVATION_STATE_FILE"
+}
+
+valid_ttl_hours() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 && "$1" -le 168 ]]
+}
+
+snapshot_is_valid() {
+  local snapshot_json="$1"
+  [[ "$snapshot_json" != "null" ]] && jq -e '(.contract_version == "jen-todoist-observation-snapshot.v1") and ((.tasks|type)=="array") and (.observed_at|type)=="string"' <<<"$snapshot_json" >/dev/null 2>&1
+}
+
+snapshot_age_seconds() {
+  local observed_at="$1" now_ts="$2" observed_epoch now_epoch
+  observed_epoch="$(rfc3339_epoch "$observed_at")" || return 1
+  now_epoch="$(rfc3339_epoch "$now_ts")" || return 1
+  printf '%s
+' $(( now_epoch - observed_epoch ))
+}
+
+build_observation_snapshot_json() {
+  local observed_at="$1" tasks_json="$2" limit="$3" ttl_hours="$4" task_count
+  task_count="$(jq 'length' <<<"$tasks_json")"
+  jq -nc     --arg observed_at "$observed_at"     --arg source live-active-observation     --arg schema_version 1     --argjson task_count "$task_count"     --argjson tasks "$tasks_json"     --argjson limit "$limit"     --argjson ttl_hours "$ttl_hours"     '{contract_version:"jen-todoist-observation-snapshot.v1",schema_version:($schema_version|tonumber),observed_at:$observed_at,source:$source,task_count:$task_count,limit:$limit,ttl_hours:$ttl_hours,truncated:false,tasks:$tasks}'
+}
+
+runtime_with_updates() {
+  local patch_filter="${*: -1}"
+  local jq_args=()
+  if (($# > 1)); then
+    jq_args=("${@:1:$#-1}")
+  fi
+  local runtime_json
+  runtime_json="$(state_read_runtime | jq -c "${jq_args[@]}" "$patch_filter")"
+  printf '%s' "$runtime_json"
+}
+
+emit_failed() {
+  local command="$1"
+  local failure_class="$2"
+  local extra_json="${3:-{}}"
+  local merged
+  if ! merged="$(python3 - "$CONTRACT_VERSION" "$command" "$failure_class" "$extra_json" <<'PY'
+import json, sys
+contract_version, command, failure_class, extra_raw = sys.argv[1:5]
+base = {
+    "contract_version": contract_version,
+    "command": command,
+    "status": "failed",
+    "failure_class": failure_class,
+}
+try:
+    extra = json.loads(extra_raw or "{}")
+    if isinstance(extra, dict):
+        base.update(extra)
+except Exception:
+    pass
+base.update({
+    "contract_version": contract_version,
+    "command": command,
+    "status": "failed",
+    "failure_class": failure_class,
+})
+print(json.dumps(base, separators=(",", ":")))
+PY
+  )"; then
+    merged="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg runtime_command "$command" --arg status failed --arg failure_class "$failure_class" '{contract_version:$contract_version,command:$runtime_command,status:$status,failure_class:$failure_class}')"
+  fi
+  json_out "$merged"
+  exit 1
+}
+
+require_option_value() {
+  local command="$1"
+  local value="${2:-}"
+  if [[ -z "$value" || "$value" == --* ]]; then
+    emit_failed "$command" invalid_argument
+  fi
+}
+
+valid_date_ymd() {
+  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$(date -u -d "$1" +%F 2>/dev/null || true)" == "$1" ]]
+}
+
+valid_rfc3339_utc() {
+  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] && date -u -d "$1" +%Y-%m-%dT%H:%M:%SZ >/dev/null 2>&1
+}
+
+rfc3339_epoch() {
+  date -u -d "$1" +%s 2>/dev/null || return 1
+}
+
+valid_since_until() {
+  local since="$1" until="$2" since_epoch until_epoch
+  valid_rfc3339_utc "$since" || return 1
+  valid_rfc3339_utc "$until" || return 1
+  since_epoch="$(rfc3339_epoch "$since")" || return 1
+  until_epoch="$(rfc3339_epoch "$until")" || return 1
+  [[ "$since_epoch" -le "$until_epoch" ]]
+}
+
+valid_limit() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 && "$1" -le 200 ]]
+}
+
+map_adapter_error_class() {
+  local stderr_file="$1"
+  local adapter_status="$2"
+  local raw error
+  raw="$(cat "$stderr_file" 2>/dev/null || true)"
+  error="$(jq -r 'first(.error? // empty)' <<<"$raw" 2>/dev/null || true)"
+  case "$error" in
+    missing_dependency) echo missing_dependency ;;
+    missing_token) echo missing_token ;;
+    auth_failure) echo auth_failure ;;
+    network_failure) echo network_failure ;;
+    rate_limited) echo rate_limited ;;
+    verification_failed) echo verification_failed ;;
+    request_failed|server_error|not_found) echo request_failure ;;
+    provider_shape_invalid) echo provider_shape_invalid ;;
+    missing_argument:*|invalid_limit|limit_out_of_range|invalid_deadline_date) echo invalid_argument ;;
+    *)
+      case "$adapter_status" in
+        127) echo adapter_missing ;;
+        2) echo request_failure ;;
+        3) echo network_failure ;;
+        4) echo request_failure ;;
+        5) echo verification_failed ;;
+        *) echo request_failure ;;
+      esac
+      ;;
+  esac
+}
+
+mutation_helper_run() {
+  if [[ ! -x "$MUTATION_HELPER" ]]; then
+    return 127
+  fi
+  "$MUTATION_HELPER" "$@"
+}
+
+mutation_draft_task_create() {
+  local content="$1"
+  local due_string="$2"
+  jq -nc --arg content "$content" --arg due_string "$due_string" '
+    {
+      user_request_ref: ("jen-task-runtime:capture-task:" + $content + ":" + $due_string),
+      operation_type: "create",
+      target_system: "todoist",
+      canonical_object_type: "task",
+      mutation_payload: ({content:$content} + (if $due_string != "" then {due_string:$due_string} else {} end)),
+      preview: {
+        human_summary: (if $due_string != "" then "Create Todoist task with due date" else "Create Todoist task" end),
+        fields_changed: (["content"] + (if $due_string != "" then ["due_string"] else [] end)),
+        expected_effect: "Todoist task capture"
+      }
+    }
+  '
+}
+
+mutation_draft_task_due_update() {
+  local task_id="$1"
+  local due_string="$2"
+  local pre_state_json="$3"
+  jq -nc --arg task_id "$task_id" --arg due_string "$due_string" --argjson pre_state "$pre_state_json" '
+    {
+      user_request_ref: ("jen-task-runtime:update-due:" + $task_id + ":" + $due_string),
+      operation_type: "update",
+      target_system: "todoist",
+      canonical_object_type: "task",
+      external_object_id: $task_id,
+      pre_state: $pre_state,
+      mutation_payload: {due_string:$due_string},
+      requires_confirmation: false,
+      preview: {
+        human_summary: "Update Todoist task due date",
+        fields_changed: ["due_string"],
+        expected_effect: "Todoist task due date update"
+      }
+    }
+    | if (($pre_state.due.is_recurring // false) == true)
+      then .canonical_object_type = "recurring_task" | .mutation_payload.recurring = true
+      else .
+      end
+  '
+}
+
+mutation_draft_task_deadline_update() {
+  local task_id="$1"
+  local deadline_date="$2"
+  local pre_state_json="$3"
+  jq -nc --arg task_id "$task_id" --arg deadline_date "$deadline_date" --argjson pre_state "$pre_state_json" '
+    {
+      user_request_ref: ("jen-task-runtime:update-deadline:" + $task_id + ":" + $deadline_date),
+      operation_type: "update",
+      target_system: "todoist",
+      canonical_object_type: "task",
+      external_object_id: $task_id,
+      pre_state: $pre_state,
+      mutation_payload: {deadline_date:$deadline_date},
+      preview: {
+        human_summary: "Update Todoist task deadline",
+        fields_changed: ["deadline_date"],
+        expected_effect: "Todoist task deadline update"
+      }
+    }
+  '
+}
+
+mutation_draft_task_deadline_clear() {
+  local task_id="$1"
+  local pre_state_json="$2"
+  jq -nc --arg task_id "$task_id" --argjson pre_state "$pre_state_json" '
+    {
+      user_request_ref: ("jen-task-runtime:clear-deadline:" + $task_id),
+      operation_type: "update",
+      target_system: "todoist",
+      canonical_object_type: "task",
+      external_object_id: $task_id,
+      pre_state: $pre_state,
+      mutation_payload: {deadline_date:null},
+      preview: {
+        human_summary: "Clear Todoist task deadline",
+        fields_changed: ["deadline_date"],
+        expected_effect: "Todoist task deadline clear"
+      }
+    }
+  '
+}
+
+mutation_draft_task_labels_update() {
+  local task_id="$1"
+  local labels_json="$2"
+  local pre_state_json="$3"
+  jq -nc --arg task_id "$task_id" --argjson labels "$labels_json" --argjson pre_state "$pre_state_json" '
+    {
+      user_request_ref: ("jen-task-runtime:update-labels:" + $task_id + ":" + ($labels|join(","))),
+      operation_type: "update",
+      target_system: "todoist",
+      canonical_object_type: "task",
+      external_object_id: $task_id,
+      pre_state: $pre_state,
+      mutation_payload: {labels:$labels},
+      preview: {
+        human_summary: "Update Todoist task labels",
+        fields_changed: ["labels"],
+        expected_effect: "Todoist task label update"
+      }
+    }
+  '
+}
+
+mutation_draft_task_description_update() {
+  local task_id="$1"
+  local description="$2"
+  local pre_state_json="$3"
+  jq -nc --arg task_id "$task_id" --arg description "$description" --argjson pre_state "$pre_state_json" '
+    {
+      user_request_ref: ("jen-task-runtime:update-description:" + $task_id + ":" + ($description|tostring)),
+      operation_type: "update",
+      target_system: "todoist",
+      canonical_object_type: "task",
+      external_object_id: $task_id,
+      pre_state: $pre_state,
+      mutation_payload: {description:$description},
+      preview: {
+        human_summary: "Update Todoist task description",
+        fields_changed: ["description"],
+        expected_effect: "Todoist task description update"
+      }
+    }
+  '
+}
+
+mutation_draft_task_project_move() {
+  local task_id="$1"
+  local project_id="$2"
+  local pre_state_json="$3"
+  jq -nc --arg task_id "$task_id" --arg project_id "$project_id" --argjson pre_state "$pre_state_json" '
+    {
+      user_request_ref: ("jen-task-runtime:move-task:" + $task_id + ":" + $project_id),
+      operation_type: "update",
+      target_system: "todoist",
+      canonical_object_type: "task",
+      external_object_id: $task_id,
+      pre_state: $pre_state,
+      mutation_payload: {project_id:$project_id},
+      preview: {
+        human_summary: "Move Todoist task to another project/list",
+        fields_changed: ["project_id"],
+        expected_effect: "Todoist task project/list move"
+      }
+    }
+  '
+}
+
+mutation_record_payload() {
+  local plan_json="$1"
+  local status="$2"
+  local result_json="$3"
+  jq -nc --argjson plan "$plan_json" --argjson result "$result_json" '$plan + {result:$result}'
+}
+
+mutation_record_status() {
+  local plan_json="$1"
+  local status="$2"
+  local result_json="$3"
+  local payload
+  payload="$(mutation_record_payload "$plan_json" "$status" "$result_json")"
+  mutation_helper_run record --status "$status" - <<<"$payload" >/dev/null
+}
+
+adapter_run() {
+  local stdout_file="$1"
+  local stderr_file="$2"
+  shift 2
+  local -a cmd=("$TODOIST_SCRIPT" "$@")
+  if [[ ! -x "$TODOIST_SCRIPT" ]]; then
+    return 127
+  fi
+  if [[ -z "${TODOIST_API_TOKEN:-}" && -f "$TODOIST_ENV_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$TODOIST_ENV_FILE"
+  fi
+  set +e
+  "${cmd[@]}" >"$stdout_file" 2>"$stderr_file"
+  local status=$?
+  set -e
+  return "$status"
+}
+
+update_runtime_failure() {
+  local failure_class="$1"
+  local current_ts
+  current_ts="$(now_utc)"
+  local runtime_json
+  runtime_json="$(runtime_with_updates --arg ts "$current_ts" --arg fc "$failure_class" '.last_failure_class = $fc | .last_failure_at = $ts')"
+  state_write_runtime "$runtime_json"
+}
+
+update_runtime_success() {
+  local current_ts="$1"
+  local runtime_json
+  runtime_json="$(runtime_with_updates --arg ts "$current_ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  state_write_runtime "$runtime_json"
+}
+
+health_command() {
+  local status posture token_status
+  token_status=missing
+  if [[ -n "${TODOIST_API_TOKEN:-}" ]]; then
+    token_status=set
+  elif [[ -f "$TODOIST_ENV_FILE" ]] && grep -q '^TODOIST_API_TOKEN=' "$TODOIST_ENV_FILE"; then
+    token_status=set
+  fi
+
+  if [[ -x "$TODOIST_SCRIPT" ]] && require_bin curl && require_bin jq && require_bin python3 && [[ "$token_status" == set ]]; then
+    status=ok
+    posture=available
+  elif [[ ! -x "$TODOIST_SCRIPT" ]]; then
+    status=unavailable
+    posture=unavailable
+  else
+    status=degraded
+    posture=degraded
+  fi
+
+  json_out "$(jq -nc \
+    --arg contract_version "$CONTRACT_VERSION" \
+    --arg command health \
+    --arg status "$status" \
+    --arg posture "$posture" \
+    --arg authority "$AUTHORITY" \
+    --arg adapter_path "$TODOIST_SCRIPT" \
+    --arg token_status "$token_status" \
+    --arg checked_at "$(now_utc)" \
+    '{contract_version:$contract_version,command:$command,status:$status,posture:$posture,authority:$authority,adapter_path:$adapter_path,token_status:$token_status,checked_at:$checked_at}')"
+}
+
+read_projects_command() {
+  local ts stdout_file stderr_file adapter_status failure_class runtime_json projects_json
+  ts="$(now_utc)"
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  adapter_status=0
+  adapter_run "$stdout_file" "$stderr_file" projects || adapter_status=$?
+  if [[ "$adapter_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$stderr_file" "$adapter_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed read-projects state_write_failed
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed read-projects "$failure_class"
+  fi
+
+  if ! projects_json="$(jq -c '[.results[]? | {id:(.id|tostring), name, order:(.order // null), parent_id:((.parent_id // null) | if . == null then null else tostring end), is_archived:(.is_archived // false), is_favorite:(.is_favorite // false)}]' "$stdout_file")"; then
+    runtime_json="$(runtime_with_updates --arg fc provider_shape_invalid --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed read-projects state_write_failed
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed read-projects provider_shape_invalid
+  fi
+
+  runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  state_write_runtime "$runtime_json" || emit_failed read-projects state_write_failed
+  json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command read-projects --arg status ok --arg source live --arg checked_at "$ts" --argjson projects "$projects_json" '{contract_version:$contract_version,command:$command,status:$status,source:$source,checked_at:$checked_at,projects:$projects,summary:{project_count:($projects|length)},complete:true}')"
+  cleanup_files "$stdout_file" "$stderr_file"
+}
+
+normalize_active_tasks() {
+  jq -c '
+    def normalized_task:
+      {
+        id: (.id // null),
+        content: (.content // null),
+        description: (.description // null),
+        project_id: (.project_id // null),
+        section_id: (.section_id // null),
+        parent_id: (.parent_id // null),
+        labels: (if (.labels | type) == "array" then .labels else [] end),
+        due: (if (.due | type) == "object" then .due else null end),
+        deadline: (if (.deadline | type) == "object" then .deadline else null end),
+        priority: (if (.priority | type) == "number" then .priority else null end),
+        updated_at: (.updated_at // null),
+        source: "live"
+      };
+    if type == "array" then
+      map(normalized_task)
+    elif ((type == "object") and ((.results? | type) == "array")) then
+      .results | map(normalized_task)
+    else
+      error("provider_shape_invalid")
+    end
+  '
+}
+
+normalize_snapshot_tasks() {
+  jq -c '
+    def normalized_task:
+      {
+        id: ((.id // null) | if . == null then null else tostring end),
+        content: (.content // null),
+        description: (.description // null),
+        project_id: ((.project_id // null) | if . == null then null else tostring end),
+        section_id: ((.section_id // null) | if . == null then null else tostring end),
+        parent_id: ((.parent_id // null) | if . == null then null else tostring end),
+        labels: (if (.labels | type) == "array" then (.labels | map(tostring) | sort) else [] end),
+        due: (if (.due | type) == "object" then .due else null end),
+        priority: (if (.priority | type) == "number" then .priority else null end),
+        updated_at: (.updated_at // null)
+      } + (if has("deadline") then {deadline:.deadline} else {} end);
+    if type == "array" then
+      map(normalized_task | select(.id != null)) | sort_by(.id)
+    elif ((type == "object") and ((.results? | type) == "array")) then
+      .results | map(normalized_task | select(.id != null)) | sort_by(.id)
+    else
+      error("provider_shape_invalid")
+    end
+  '
+}
+
+build_observation_diff() {
+  local baseline_tasks="$1"
+  local current_tasks="$2"
+  jq -nc --argjson baseline "$baseline_tasks" --argjson current "$current_tasks" '
+    def by_id(arr): reduce arr[] as $t ({}; .[$t.id] = $t);
+    def changed_fields($before; $after):
+      ["content","description","project_id","section_id","parent_id","labels","due","priority","updated_at","deadline"]
+      | map(select(($before[.] // null) != ($after[.] // null)));
+    (by_id($baseline)) as $b
+    | (by_id($current)) as $c
+    | (($b|keys_unsorted) - ($c|keys_unsorted)) as $removed_ids
+    | (($c|keys_unsorted) - ($b|keys_unsorted)) as $added_ids
+    | (($b|keys_unsorted) as $bk | ($c|keys_unsorted) as $ck | $bk - ($bk - $ck)) as $common_ids
+    | {
+        changed: [ $common_ids[] as $id | (changed_fields($b[$id]; $c[$id])) as $fields | select($fields|length>0) | {id:$id,change_type:"changed_active_observation",changed_fields:$fields,before:$b[$id],after:$c[$id]} ],
+        added_to_active_observation: [ $added_ids[] as $id | $c[$id] ],
+        removed_from_active_observation: [ $removed_ids[] as $id | $b[$id] ]
+      }
+  '
+}
+
+assert_complete_window() {
+  jq -e '((.complete == true) and ((.next_cursor // null) == null))' >/dev/null
+}
+
+normalize_completed_tasks() {
+  jq -c '
+    def normalized_completed_task:
+      {
+        id: (.id // null),
+        content: (.content // null),
+        description: (.description // null),
+        project_id: (.project_id // null),
+        section_id: (.section_id // null),
+        parent_id: (.parent_id // null),
+        labels: (if (.labels | type) == "array" then .labels else [] end),
+        due: (if (.due | type) == "object" then .due else null end),
+        deadline: (if (.deadline | type) == "object" then .deadline else null end),
+        priority: (if (.priority | type) == "number" then .priority else null end),
+        added_at: (.added_at // null),
+        completed_at: (.completed_at // null),
+        updated_at: (.updated_at // null),
+        source: "live"
+      };
+    if ((type == "object") and ((.items? | type) == "array")) then
+      .items | map(normalized_completed_task)
+    elif type == "array" then
+      map(normalized_completed_task)
+    else
+      error("provider_shape_invalid")
+    end
+  '
+}
+
+normalize_activity_events() {
+  jq -c '
+    def event_kind:
+      (.object_event_type // .event_type // .event_name // .action // null);
+    def normalized_event:
+      {
+        id: (.id // .event_id // null),
+        event_type: (.event_type // .event_name // null),
+        object_event_type: (.object_event_type // null),
+        object_type: (.object_type // .object_type_name // .object.type // null),
+        object_id: ((.object_id // .object.id // .item_id // null) | if . == null then null else tostring end),
+        parent_project_id: ((.parent_project_id // .project_id // .parent_project?.id // null) | if . == null then null else tostring end),
+        parent_item_id: ((.parent_item_id // .parent_id // null) | if . == null then null else tostring end),
+        initiator_id: ((.initiator_id // .user_id // null) | if . == null then null else tostring end),
+        event_date: (.event_date // .created_at // .event_time // .timestamp // null),
+        extra_data: (if (.extra_data | type) == "object" then .extra_data else {} end),
+        source: "live"
+      };
+    if ((type == "object") and ((.results? | type) == "array")) then
+      .results | map(normalized_event)
+    elif type == "array" then
+      map(normalized_event)
+    else
+      error("provider_shape_invalid")
+    end
+  '
+}
+
+read_active_degraded_response() {
+  local checked_at="$1"
+  local failure_class="$2"
+  local note runtime_json
+  note="Live Todoist read failed; returning degraded metadata-only state. No active task bodies are cached by contract."
+  runtime_json="$(runtime_with_updates --arg ts "$checked_at" --arg fc "$failure_class" '.last_failure_class = $fc | .last_failure_at = $ts')"
+  if ! state_write_runtime "$runtime_json"; then
+    emit_failed read-active state_write_failed
+  fi
+  json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command read-active --arg status degraded --arg source degraded-metadata --arg checked_at "$checked_at" --arg note "$note" --arg provenance runtime-metadata '{contract_version:$contract_version,command:$command,status:$status,source:$source,checked_at:$checked_at,note:$note,provenance:$provenance}')"
+}
+
+resolve_due_date_for_preflight() {
+  local due_string="$1" base_date
+  base_date="$(date -u -d "$(now_utc)" +%F 2>/dev/null || true)"
+  [[ -n "$base_date" ]] || return 1
+  case "${due_string,,}" in
+    today)
+      printf '%s\n' "$base_date"
+      ;;
+    tomorrow)
+      date -u -d "$base_date + 1 day" +%F
+      ;;
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
+      valid_date_ymd "$due_string" || return 1
+      printf '%s\n' "$due_string"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+semantic_duplicate_preflight() {
+  local content="$1" due_string="$2" active_stdout active_stderr active_tasks due_tasks="[]" target_date="" to_date=""
+  active_stdout=$(mktemp)
+  active_stderr=$(mktemp)
+
+  if ! adapter_run "$active_stdout" "$active_stderr" active-snapshot 200; then
+    cleanup_files "$active_stdout" "$active_stderr"
+    jq -nc --arg status unable_to_verify_duplicates --arg reason active_read_failed '{status:$status,reason:$reason}'
+    return 0
+  fi
+  if ! assert_complete_window < "$active_stdout" 2>/dev/null; then
+    cleanup_files "$active_stdout" "$active_stderr"
+    jq -nc --arg status unable_to_verify_duplicates --arg reason active_read_incomplete '{status:$status,reason:$reason}'
+    return 0
+  fi
+  if ! active_tasks="$(normalize_active_tasks < "$active_stdout" 2>/dev/null)"; then
+    cleanup_files "$active_stdout" "$active_stderr"
+    jq -nc --arg status unable_to_verify_duplicates --arg reason active_read_degraded '{status:$status,reason:$reason}'
+    return 0
+  fi
+  cleanup_files "$active_stdout" "$active_stderr"
+
+  if [[ -n "$due_string" ]]; then
+    if ! target_date="$(resolve_due_date_for_preflight "$due_string")"; then
+      jq -nc --arg status unable_to_verify_duplicates --arg reason due_resolution_failed --arg due_string "$due_string" '{status:$status,reason:$reason,due_string:$due_string}'
+      return 0
+    fi
+    to_date="$target_date"
+    local due_stdout due_stderr
+    due_stdout=$(mktemp)
+    due_stderr=$(mktemp)
+    if ! adapter_run "$due_stdout" "$due_stderr" due-window "$target_date" "$to_date" 200; then
+      cleanup_files "$due_stdout" "$due_stderr"
+      jq -nc --arg status unable_to_verify_duplicates --arg reason due_window_read_failed --arg target_date "$target_date" '{status:$status,reason:$reason,target_date:$target_date}'
+      return 0
+    fi
+    if ! assert_complete_window < "$due_stdout" 2>/dev/null; then
+      cleanup_files "$due_stdout" "$due_stderr"
+      jq -nc --arg status unable_to_verify_duplicates --arg reason due_window_incomplete --arg target_date "$target_date" '{status:$status,reason:$reason,target_date:$target_date}'
+      return 0
+    fi
+    if ! due_tasks="$(normalize_active_tasks < "$due_stdout" 2>/dev/null)"; then
+      cleanup_files "$due_stdout" "$due_stderr"
+      jq -nc --arg status unable_to_verify_duplicates --arg reason due_window_shape_invalid --arg target_date "$target_date" '{status:$status,reason:$reason,target_date:$target_date}'
+      return 0
+    fi
+    cleanup_files "$due_stdout" "$due_stderr"
+  fi
+
+  python3 - "$content" "$due_string" "$target_date" "$active_tasks" "$due_tasks" <<'PY'
+import json, re, sys, unicodedata
+
+content, due_string, target_date, active_raw, due_raw = sys.argv[1:6]
+active = json.loads(active_raw)
+due = json.loads(due_raw)
+
+def norm_tokens(text):
+    text = unicodedata.normalize('NFKD', text or '').encode('ascii', 'ignore').decode('ascii').lower()
+    text = re.sub(r'[^a-z0-9]+', ' ', text)
+    stop = {'a','o','as','os','um','uma','de','do','da','dos','das','no','na','nos','nas','e','para','pra','pro','por','com','em','ao','aos','the','of','for','to','and'}
+    tokens = [t for t in text.split() if t and t not in stop]
+    out = []
+    for token in tokens:
+        if len(token) > 4 and token.endswith('s'):
+            token = token[:-1]
+        out.append(token)
+    return out
+
+def due_date(task):
+    due = task.get('due')
+    if isinstance(due, dict):
+        return due.get('date')
+    return None
+
+def segments(text):
+    parts = [p.strip() for p in re.split(r'\s+e\s+', text or '', flags=re.I) if p.strip()]
+    return parts if len(parts) > 1 else [text]
+
+request_tokens = set(norm_tokens(content))
+request_segments = [{'text': seg, 'tokens': set(norm_tokens(seg))} for seg in segments(content)]
+actionish = {'banho','banhar','cortar','corta','unha','unhas','escovar','dente','dentes','vacina','vacinacao','limpar','comprar','pagar','levar','buscar','marcar','agendar'}
+entityish = {t for t in request_tokens if t not in actionish and len(t) > 3}
+
+def segment_entity_overlap(segment_tokens, candidate_tokens):
+    segment_entities = {t for t in segment_tokens if t in entityish}
+    if not segment_entities:
+        return not entityish
+    return bool(segment_entities & candidate_tokens)
+
+def classify_task(task, source):
+    candidate_tokens = set(norm_tokens(task.get('content')))
+    if not candidate_tokens or not request_tokens:
+        return None
+    intersection = request_tokens & candidate_tokens
+    if not intersection:
+        return None
+    canonical_exact = request_tokens == candidate_tokens
+    entity_overlap = bool(entityish & candidate_tokens)
+    action_overlap = bool(actionish & intersection) or len(intersection) >= 2
+    request_coverage = len(intersection) / max(len(request_tokens), 1)
+    candidate_coverage = len(intersection) / max(len(candidate_tokens), 1)
+    segment_hits = []
+    for segment in request_segments:
+        segment_tokens = segment['tokens']
+        segment_intersection = segment_tokens & candidate_tokens
+        if (
+            segment_tokens
+            and segment_intersection
+            and segment_entity_overlap(segment_tokens, candidate_tokens)
+            and ((segment_intersection & actionish) or len(segment_intersection) >= 2)
+        ):
+            segment_hits.append(segment['text'])
+    match_reasons = []
+    if canonical_exact:
+        match_reasons.append('canonical_tokens_equal_after_stopwords')
+    if request_coverage >= 0.8 and candidate_coverage >= 0.8:
+        relation = 'duplicate_existing'
+        if 'canonical_tokens_equal_after_stopwords' not in match_reasons:
+            match_reasons.append('high_bidirectional_token_coverage')
+    elif entity_overlap and action_overlap:
+        relation = 'semantic_overlap'
+        match_reasons.append('entity_and_action_overlap')
+    else:
+        return None
+    existing_due = due_date(task)
+    return {
+        'id': task.get('id'),
+        'content': task.get('content'),
+        'due': task.get('due'),
+        'source_set': source,
+        'relation': relation,
+        'match_reasons': match_reasons,
+        'due_relation': 'same_due' if target_date and existing_due == target_date else ('different_due' if target_date and existing_due else ('existing_unscheduled' if target_date and not existing_due else 'not_date_bound')),
+        'matched_tokens': sorted(intersection),
+        'matched_segments': segment_hits,
+    }
+
+candidates = []
+seen = set()
+for source, tasks in [('due-window', due), ('active', active)]:
+    for task in tasks:
+        candidate = classify_task(task, source)
+        if not candidate:
+            continue
+        key = candidate.get('id') or (candidate.get('content'), source)
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(candidate)
+
+if not candidates:
+    print(json.dumps({'status':'safe_to_create','target_date':target_date or None,'checked':{'active_task_count':len(active),'due_task_count':len(due)}}, separators=(',', ':')))
+elif any(c['relation'] == 'duplicate_existing' for c in candidates):
+    print(json.dumps({'status':'duplicate_existing','target_date':target_date or None,'checked':{'active_task_count':len(active),'due_task_count':len(due)},'candidates':candidates}, separators=(',', ':')))
+else:
+    print(json.dumps({'status':'semantic_duplicate_confirmation_required','target_date':target_date or None,'checked':{'active_task_count':len(active),'due_task_count':len(due)},'candidates':candidates}, separators=(',', ':')))
+PY
+}
+
+emit_capture_task_preflight_failed() {
+  local failure_class="$1"
+  local mutation_extra="$2"
+  local preflight_json="$3"
+  json_out "$(jq -nc \
+    --arg contract_version "$CONTRACT_VERSION" \
+    --arg runtime_command capture-task \
+    --arg failure_class "$failure_class" \
+    --argjson extra "$mutation_extra" \
+    --argjson preflight "$preflight_json" \
+    '{"contract_version":$contract_version,"command":$runtime_command,"status":"failed","failure_class":$failure_class} + $extra + {preflight:$preflight}')"
+  exit 1
+}
+
+read_active_command() {
+  local stdout_file stderr_file checked_at
+  checked_at="$(now_utc)"
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+
+  if adapter_run "$stdout_file" "$stderr_file" active-snapshot 200; then
+    local tasks runtime_json
+    if ! assert_complete_window < "$stdout_file" 2>/dev/null; then
+      read_active_degraded_response "$checked_at" provider_window_incomplete
+      cleanup_files "$stdout_file" "$stderr_file"
+      return 0
+    fi
+    if ! tasks="$(normalize_active_tasks < "$stdout_file" 2>/dev/null)"; then
+      read_active_degraded_response "$checked_at" provider_shape_invalid
+      cleanup_files "$stdout_file" "$stderr_file"
+      return 0
+    fi
+    runtime_json="$(runtime_with_updates --arg ts "$checked_at" '.last_verified_at = $ts | .last_failure_class = null')"
+    if ! state_write_runtime "$runtime_json"; then
+      emit_failed read-active state_write_failed
+    fi
+    json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command read-active --arg status ok --arg source live --arg checked_at "$checked_at" --argjson tasks "$tasks" '{contract_version:$contract_version,command:$command,status:$status,source:$source,checked_at:$checked_at,tasks:$tasks}')"
+    cleanup_files "$stdout_file" "$stderr_file"
+    return 0
+  fi
+
+  local adapter_status failure_class
+  adapter_status=$?
+  failure_class="$(map_adapter_error_class "$stderr_file" "$adapter_status")"
+  read_active_degraded_response "$checked_at" "$failure_class"
+  cleanup_files "$stdout_file" "$stderr_file"
+}
+
+capture_task_command() {
+  local content="" due_string=""
+  while (($#)); do
+    case "$1" in
+      --content)
+        require_option_value capture-task "${2:-}"
+        content="${2:-}"
+        shift 2
+        ;;
+      --due)
+        require_option_value capture-task "${2:-}"
+        due_string="${2:-}"
+        shift 2
+        ;;
+      *)
+        emit_failed capture-task invalid_argument
+        ;;
+    esac
+  done
+
+  if [[ -z "$content" ]]; then
+    emit_failed capture-task invalid_argument
+  fi
+
+  local ts draft_json prepare_json decision gateway_plan mutation_extra
+  ts="$(now_utc)"
+  draft_json="$(mutation_draft_task_create "$content" "$due_string")"
+  if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
+    emit_failed capture-task request_failure
+  fi
+  decision="$(jq -r '.decision' <<<"$prepare_json")"
+  gateway_plan="$(jq -c '.gateway_plan' <<<"$prepare_json")"
+  mutation_extra="$(jq -c '{mutation:{gateway_plan:.gateway_plan,idempotency:.idempotency}}' <<<"$prepare_json")"
+  mutation_extra="$(jq -c . <<<"$mutation_extra")"
+
+  case "$decision" in
+    duplicate_verified)
+      local stored_output
+      stored_output="$(jq -c '.idempotency.record.result.output // empty' <<<"$prepare_json")"
+      if [[ -n "$stored_output" && "$stored_output" != "null" ]]; then
+        json_out "$stored_output"
+        return 0
+      fi
+      emit_failed capture-task request_failure "$mutation_extra"
+      ;;
+    blocked)
+      emit_failed capture-task mutation_blocked "$mutation_extra"
+      ;;
+    awaiting_confirmation)
+      emit_failed capture-task mutation_confirmation_required "$mutation_extra"
+      ;;
+    collision)
+      emit_failed capture-task idempotency_collision "$mutation_extra"
+      ;;
+    unsafe_replay_state)
+      emit_failed capture-task unsafe_replay_state "$mutation_extra"
+      ;;
+    execute|retry_partial)
+      ;;
+    *)
+      emit_failed capture-task request_failure "$mutation_extra"
+      ;;
+  esac
+
+  local add_stdout add_stderr task_json task_id operation verified due_applied runtime_json result_json output_json
+  add_stdout=$(mktemp)
+  add_stderr=$(mktemp)
+
+  if [[ "$decision" == "retry_partial" ]]; then
+    task_id="$(jq -r '.idempotency.record.result.partial.external_object_id // empty' <<<"$prepare_json")"
+    if [[ -z "$task_id" ]]; then
+      emit_failed capture-task unsafe_replay_state "$mutation_extra"
+    fi
+    task_json="$(jq -nc --arg id "$task_id" --arg content "$content" '{id:$id,content:$content,source:"partial-retry"}')"
+  else
+    local adapter_status failure_class
+    local preflight_json preflight_status preflight_extra
+    preflight_json="$(semantic_duplicate_preflight "$content" "$due_string")"
+    preflight_status="$(jq -r '.status // "unable_to_verify_duplicates"' <<<"$preflight_json")"
+    case "$preflight_status" in
+      safe_to_create)
+        ;;
+      duplicate_existing|semantic_duplicate_confirmation_required)
+        preflight_extra="$(jq -nc --argjson extra "$mutation_extra" --argjson preflight "$preflight_json" '$extra + {preflight:$preflight}')"
+        result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failed_step duplicate-preflight --arg failure_class "$preflight_status" --argjson preflight "$preflight_json" '{runtime_schema:$runtime_schema,failed_step:$failed_step,failure_class:$failure_class,preflight:$preflight}')"
+        if ! mutation_record_status "$gateway_plan" failed "$result_json"; then
+          cleanup_files "$add_stdout" "$add_stderr"
+          emit_failed capture-task state_write_failed "$preflight_extra"
+        fi
+        cleanup_files "$add_stdout" "$add_stderr"
+        emit_capture_task_preflight_failed "$preflight_status" "$mutation_extra" "$preflight_json"
+        ;;
+      unable_to_verify_duplicates|*)
+        preflight_status=unable_to_verify_duplicates
+        preflight_extra="$(jq -nc --argjson extra "$mutation_extra" --argjson preflight "$preflight_json" '$extra + {preflight:$preflight}')"
+        result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failed_step duplicate-preflight --arg failure_class "$preflight_status" --argjson preflight "$preflight_json" '{runtime_schema:$runtime_schema,failed_step:$failed_step,failure_class:$failure_class,preflight:$preflight}')"
+        if ! mutation_record_status "$gateway_plan" failed "$result_json"; then
+          cleanup_files "$add_stdout" "$add_stderr"
+          emit_failed capture-task state_write_failed "$preflight_extra"
+        fi
+        cleanup_files "$add_stdout" "$add_stderr"
+        emit_capture_task_preflight_failed "$preflight_status" "$mutation_extra" "$preflight_json"
+        ;;
+    esac
+    adapter_status=0
+    adapter_run "$add_stdout" "$add_stderr" add-task "$content" || adapter_status=$?
+    if [[ "$adapter_status" != 0 ]]; then
+      failure_class="$(map_adapter_error_class "$add_stderr" "$adapter_status")"
+      runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+      if ! state_write_runtime "$runtime_json"; then
+        emit_failed capture-task state_write_failed
+      fi
+      result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failure_class "$failure_class" '{runtime_schema:$runtime_schema,failed_step:"add-task",failure_class:$failure_class}')"
+      if ! mutation_record_status "$gateway_plan" failed "$result_json"; then
+        emit_failed capture-task state_write_failed "$mutation_extra"
+      fi
+      emit_failed capture-task "$failure_class" "$mutation_extra"
+    fi
+
+    task_json="$(cat "$add_stdout")"
+    task_id="$(jq -r '.id // empty' <<<"$task_json")"
+    if [[ -z "$task_id" ]]; then
+      result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" '{runtime_schema:$runtime_schema,failed_step:"add-task",failure_class:"verification_failed"}')"
+      if ! mutation_record_status "$gateway_plan" failed "$result_json"; then
+        emit_failed capture-task state_write_failed "$mutation_extra"
+      fi
+      emit_failed capture-task verification_failed "$mutation_extra"
+    fi
+  fi
+
+  operation=add-task
+  verified=true
+  due_applied=false
+
+  if [[ -n "$due_string" ]]; then
+    local due_stdout due_stderr
+    due_stdout=$(mktemp)
+    due_stderr=$(mktemp)
+    adapter_status=0
+    adapter_run "$due_stdout" "$due_stderr" update-due "$task_id" "$due_string" || adapter_status=$?
+    if [[ "$adapter_status" != 0 ]]; then
+      failure_class="$(map_adapter_error_class "$due_stderr" "$adapter_status")"
+      runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+      if ! state_write_runtime "$runtime_json"; then
+        emit_failed capture-task state_write_failed
+      fi
+      result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg task_id "$task_id" --arg failure_class "$failure_class" '{runtime_schema:$runtime_schema,partial:{external_object_id:$task_id,failed_step:"update-due",failure_class:$failure_class}}')"
+      if ! mutation_record_status "$gateway_plan" failed "$result_json"; then
+        cleanup_files "$due_stdout" "$due_stderr" "$add_stdout" "$add_stderr"
+        emit_failed capture-task state_write_failed "$mutation_extra"
+      fi
+      cleanup_files "$due_stdout" "$due_stderr" "$add_stdout" "$add_stderr"
+      emit_failed capture-task "$failure_class" "$mutation_extra"
+    fi
+    task_json="$(cat "$due_stdout")"
+    operation=add-task-and-update-due
+    due_applied=true
+    cleanup_files "$due_stdout" "$due_stderr"
+  fi
+
+  runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  if ! state_write_runtime "$runtime_json"; then
+    emit_failed capture-task state_write_failed
+  fi
+
+  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command capture-task --arg status ok --arg operation "$operation" --argjson verified "$verified" --argjson due_applied "$due_applied" --argjson task "$task_json" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,due_applied:$due_applied,task:$task} + $mutation')"
+  result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$output_json" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
+  if ! mutation_record_status "$gateway_plan" verified "$result_json"; then
+    emit_failed capture-task state_write_failed "$mutation_extra"
+  fi
+  json_out "$output_json"
+  cleanup_files "$add_stdout" "$add_stderr"
+}
+
+update_due_command() {
+  local task_id="" due_string=""
+  while (($#)); do
+    case "$1" in
+      --task-id)
+        require_option_value update-due "${2:-}"
+        task_id="$2"
+        shift 2
+        ;;
+      --due)
+        require_option_value update-due "${2:-}"
+        due_string="$2"
+        shift 2
+        ;;
+      *)
+        emit_failed update-due invalid_argument
+        ;;
+    esac
+  done
+
+  if [[ -z "$task_id" || -z "$due_string" ]]; then
+    emit_failed update-due invalid_argument
+  fi
+
+  local ts pre_stdout pre_stderr pre_status pre_state draft_json prepare_json decision gateway_plan mutation_extra
+  ts="$(now_utc)"
+  pre_stdout=$(mktemp)
+  pre_stderr=$(mktemp)
+  pre_status=0
+  adapter_run "$pre_stdout" "$pre_stderr" task "$task_id" || pre_status=$?
+  if [[ "$pre_status" != 0 ]]; then
+    local failure_class runtime_json
+    failure_class="$(map_adapter_error_class "$pre_stderr" "$pre_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed update-due state_write_failed
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed update-due "$failure_class"
+  fi
+  pre_state="$(jq -c '{id,content,project_id,section_id,parent_id,labels,due,priority,updated_at,deadline}' "$pre_stdout")"
+
+  draft_json="$(mutation_draft_task_due_update "$task_id" "$due_string" "$pre_state")"
+  if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed update-due request_failure
+  fi
+  decision="$(jq -r '.decision' <<<"$prepare_json")"
+  gateway_plan="$(jq -c '.gateway_plan' <<<"$prepare_json")"
+  mutation_extra="$(jq -c '{mutation:{gateway_plan:.gateway_plan,idempotency:.idempotency}}' <<<"$prepare_json")"
+
+  case "$decision" in
+    duplicate_verified)
+      local stored_output
+      stored_output="$(jq -c '.idempotency.record.result.output // empty' <<<"$prepare_json")"
+      if [[ -n "$stored_output" && "$stored_output" != "null" ]]; then
+        cleanup_files "$pre_stdout" "$pre_stderr"
+        json_out "$stored_output"
+        return 0
+      fi
+      emit_failed update-due request_failure "$mutation_extra"
+      ;;
+    blocked)
+      emit_failed update-due mutation_blocked "$mutation_extra"
+      ;;
+    awaiting_confirmation)
+      emit_failed update-due mutation_confirmation_required "$mutation_extra"
+      ;;
+    collision)
+      emit_failed update-due idempotency_collision "$mutation_extra"
+      ;;
+    retry_partial)
+      partial_failure_class="$(jq -r '.idempotency.record.result.partial.failure_class // empty' <<<"$prepare_json")"
+      partial_failed_step="$(jq -r '.idempotency.record.result.partial.failed_step // empty' <<<"$prepare_json")"
+      case "${partial_failed_step}:${partial_failure_class}" in
+        update-due:network_failure|update-due:rate_limited)
+          ;;
+        *)
+          emit_failed update-due unsafe_replay_state "$mutation_extra"
+          ;;
+      esac
+      ;;
+    unsafe_replay_state)
+      emit_failed update-due unsafe_replay_state "$mutation_extra"
+      ;;
+    execute)
+      ;;
+    *)
+      emit_failed update-due request_failure "$mutation_extra"
+      ;;
+  esac
+
+  local due_stdout due_stderr adapter_status failure_class runtime_json result_json output_json
+  due_stdout=$(mktemp)
+  due_stderr=$(mktemp)
+  adapter_status=0
+  adapter_run "$due_stdout" "$due_stderr" update-due "$task_id" "$due_string" || adapter_status=$?
+  if [[ "$adapter_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$due_stderr" "$adapter_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed update-due state_write_failed "$mutation_extra"
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg task_id "$task_id" --arg failure_class "$failure_class" '{runtime_schema:$runtime_schema,partial:{external_object_id:$task_id,failed_step:"update-due",failure_class:$failure_class}}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed update-due state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$due_stdout" "$due_stderr"
+    emit_failed update-due "$failure_class" "$mutation_extra"
+  fi
+
+  runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  state_write_runtime "$runtime_json" || emit_failed update-due state_write_failed "$mutation_extra"
+  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command update-due --arg status ok --arg operation update-due --argjson verified true --arg due_string "$due_string" --argjson task "$(cat "$due_stdout")" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,due_string:$due_string,task:$task} + $mutation')"
+  result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$output_json" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
+  mutation_record_status "$gateway_plan" verified "$result_json" || emit_failed update-due state_write_failed "$mutation_extra"
+  cleanup_files "$pre_stdout" "$pre_stderr" "$due_stdout" "$due_stderr"
+  json_out "$output_json"
+}
+
+
+update_deadline_command() {
+  local task_id="" deadline_date=""
+  while (($#)); do
+    case "$1" in
+      --task-id)
+        require_option_value update-deadline "${2:-}"
+        task_id="$2"
+        shift 2
+        ;;
+      --deadline|--deadline-date)
+        require_option_value update-deadline "${2:-}"
+        deadline_date="$2"
+        shift 2
+        ;;
+      *)
+        emit_failed update-deadline invalid_argument
+        ;;
+    esac
+  done
+
+  if [[ -z "$task_id" || -z "$deadline_date" ]] || ! valid_date_ymd "$deadline_date"; then
+    emit_failed update-deadline invalid_argument
+  fi
+
+  local ts pre_stdout pre_stderr pre_status pre_state draft_json prepare_json decision gateway_plan mutation_extra
+  ts="$(now_utc)"
+  pre_stdout=$(mktemp)
+  pre_stderr=$(mktemp)
+  pre_status=0
+  adapter_run "$pre_stdout" "$pre_stderr" task "$task_id" || pre_status=$?
+  if [[ "$pre_status" != 0 ]]; then
+    local failure_class runtime_json
+    failure_class="$(map_adapter_error_class "$pre_stderr" "$pre_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed update-deadline state_write_failed
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed update-deadline "$failure_class"
+  fi
+  pre_state="$(jq -c '{id,content,project_id,section_id,parent_id,labels,due,deadline,priority,updated_at}' "$pre_stdout")"
+
+  draft_json="$(mutation_draft_task_deadline_update "$task_id" "$deadline_date" "$pre_state")"
+  if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed update-deadline request_failure
+  fi
+  decision="$(jq -r '.decision' <<<"$prepare_json")"
+  gateway_plan="$(jq -c '.gateway_plan' <<<"$prepare_json")"
+  mutation_extra="$(jq -c '{mutation:{gateway_plan:.gateway_plan,idempotency:.idempotency}}' <<<"$prepare_json")"
+
+  case "$decision" in
+    duplicate_verified)
+      local stored_output
+      stored_output="$(jq -c '.idempotency.record.result.output // empty' <<<"$prepare_json")"
+      if [[ -n "$stored_output" && "$stored_output" != "null" ]]; then
+        cleanup_files "$pre_stdout" "$pre_stderr"
+        json_out "$stored_output"
+        return 0
+      fi
+      emit_failed update-deadline request_failure "$mutation_extra"
+      ;;
+    blocked)
+      emit_failed update-deadline mutation_blocked "$mutation_extra"
+      ;;
+    awaiting_confirmation)
+      emit_failed update-deadline mutation_confirmation_required "$mutation_extra"
+      ;;
+    collision)
+      emit_failed update-deadline idempotency_collision "$mutation_extra"
+      ;;
+    unsafe_replay_state|retry_partial)
+      emit_failed update-deadline unsafe_replay_state "$mutation_extra"
+      ;;
+    execute)
+      ;;
+    *)
+      emit_failed update-deadline request_failure "$mutation_extra"
+      ;;
+  esac
+
+  local deadline_stdout deadline_stderr adapter_status failure_class runtime_json result_json output_json
+  deadline_stdout=$(mktemp)
+  deadline_stderr=$(mktemp)
+  adapter_status=0
+  adapter_run "$deadline_stdout" "$deadline_stderr" update-deadline-date "$task_id" "$deadline_date" || adapter_status=$?
+  if [[ "$adapter_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$deadline_stderr" "$adapter_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed update-deadline state_write_failed "$mutation_extra"
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failure_class "$failure_class" '{runtime_schema:$runtime_schema,failed_step:"update-deadline",failure_class:$failure_class}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed update-deadline state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$deadline_stdout" "$deadline_stderr"
+    emit_failed update-deadline "$failure_class" "$mutation_extra"
+  fi
+
+  runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  state_write_runtime "$runtime_json" || emit_failed update-deadline state_write_failed "$mutation_extra"
+  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command update-deadline --arg status ok --arg operation update-deadline --argjson verified true --arg deadline_date "$deadline_date" --argjson task "$(cat "$deadline_stdout")" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,deadline_date:$deadline_date,task:$task} + $mutation')"
+  result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$output_json" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
+  mutation_record_status "$gateway_plan" verified "$result_json" || emit_failed update-deadline state_write_failed "$mutation_extra"
+  cleanup_files "$pre_stdout" "$pre_stderr" "$deadline_stdout" "$deadline_stderr"
+  json_out "$output_json"
+}
+
+clear_deadline_command() {
+  local task_id=""
+  while (($#)); do
+    case "$1" in
+      --task-id)
+        require_option_value clear-deadline "${2:-}"
+        task_id="$2"
+        shift 2
+        ;;
+      *)
+        emit_failed clear-deadline invalid_argument
+        ;;
+    esac
+  done
+
+  if [[ -z "$task_id" ]]; then
+    emit_failed clear-deadline invalid_argument
+  fi
+
+  local ts pre_stdout pre_stderr pre_status pre_state draft_json prepare_json decision gateway_plan mutation_extra
+  ts="$(now_utc)"
+  pre_stdout=$(mktemp)
+  pre_stderr=$(mktemp)
+  pre_status=0
+  adapter_run "$pre_stdout" "$pre_stderr" task "$task_id" || pre_status=$?
+  if [[ "$pre_status" != 0 ]]; then
+    local failure_class runtime_json
+    failure_class="$(map_adapter_error_class "$pre_stderr" "$pre_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed clear-deadline state_write_failed
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed clear-deadline "$failure_class"
+  fi
+  pre_state="$(jq -c '{id,content,project_id,section_id,parent_id,labels,due,deadline,priority,updated_at}' "$pre_stdout")"
+
+  draft_json="$(mutation_draft_task_deadline_clear "$task_id" "$pre_state")"
+  if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed clear-deadline request_failure
+  fi
+  decision="$(jq -r '.decision' <<<"$prepare_json")"
+  gateway_plan="$(jq -c '.gateway_plan' <<<"$prepare_json")"
+  mutation_extra="$(jq -c '{mutation:{gateway_plan:.gateway_plan,idempotency:.idempotency}}' <<<"$prepare_json")"
+
+  case "$decision" in
+    duplicate_verified)
+      local stored_output
+      stored_output="$(jq -c '.idempotency.record.result.output // empty' <<<"$prepare_json")"
+      if [[ -n "$stored_output" && "$stored_output" != "null" ]]; then
+        cleanup_files "$pre_stdout" "$pre_stderr"
+        json_out "$stored_output"
+        return 0
+      fi
+      emit_failed clear-deadline request_failure "$mutation_extra"
+      ;;
+    blocked)
+      emit_failed clear-deadline mutation_blocked "$mutation_extra"
+      ;;
+    awaiting_confirmation)
+      emit_failed clear-deadline mutation_confirmation_required "$mutation_extra"
+      ;;
+    collision)
+      emit_failed clear-deadline idempotency_collision "$mutation_extra"
+      ;;
+    unsafe_replay_state|retry_partial)
+      emit_failed clear-deadline unsafe_replay_state "$mutation_extra"
+      ;;
+    execute)
+      ;;
+    *)
+      emit_failed clear-deadline request_failure "$mutation_extra"
+      ;;
+  esac
+
+  local deadline_stdout deadline_stderr adapter_status failure_class runtime_json result_json output_json
+  deadline_stdout=$(mktemp)
+  deadline_stderr=$(mktemp)
+  adapter_status=0
+  adapter_run "$deadline_stdout" "$deadline_stderr" clear-deadline "$task_id" || adapter_status=$?
+  if [[ "$adapter_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$deadline_stderr" "$adapter_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed clear-deadline state_write_failed "$mutation_extra"
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failure_class "$failure_class" '{runtime_schema:$runtime_schema,failed_step:"clear-deadline",failure_class:$failure_class}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed clear-deadline state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$deadline_stdout" "$deadline_stderr"
+    emit_failed clear-deadline "$failure_class" "$mutation_extra"
+  fi
+
+  runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  state_write_runtime "$runtime_json" || emit_failed clear-deadline state_write_failed "$mutation_extra"
+  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command clear-deadline --arg status ok --arg operation clear-deadline --argjson verified true --argjson task "$(cat "$deadline_stdout")" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,task:$task} + $mutation')"
+  result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$output_json" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
+  mutation_record_status "$gateway_plan" verified "$result_json" || emit_failed clear-deadline state_write_failed "$mutation_extra"
+  cleanup_files "$pre_stdout" "$pre_stderr" "$deadline_stdout" "$deadline_stderr"
+  json_out "$output_json"
+}
+
+update_labels_command() {
+  local task_id="" labels_csv="" labels_seen=false
+  while (($#)); do
+    case "$1" in
+      --task-id)
+        require_option_value update-labels "${2:-}"
+        task_id="$2"
+        shift 2
+        ;;
+      --labels-csv|--labels)
+        if (($# < 2)); then
+          emit_failed update-labels invalid_argument
+        fi
+        labels_csv="${2-}"
+        labels_seen=true
+        shift 2
+        ;;
+      *)
+        emit_failed update-labels invalid_argument
+        ;;
+    esac
+  done
+
+  if [[ -z "$task_id" || "$labels_seen" != true ]]; then
+    emit_failed update-labels invalid_argument
+  fi
+
+  local labels_json ts pre_stdout pre_stderr pre_status pre_state draft_json prepare_json decision gateway_plan mutation_extra
+  labels_json="$(jq -nc --arg labels_csv "$labels_csv" '$labels_csv | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length>0)) | unique | sort')" || emit_failed update-labels invalid_argument
+  labels_csv="$(jq -r 'join(",")' <<<"$labels_json")"
+  ts="$(now_utc)"
+  pre_stdout=$(mktemp)
+  pre_stderr=$(mktemp)
+  pre_status=0
+  adapter_run "$pre_stdout" "$pre_stderr" task "$task_id" || pre_status=$?
+  if [[ "$pre_status" != 0 ]]; then
+    local failure_class runtime_json
+    failure_class="$(map_adapter_error_class "$pre_stderr" "$pre_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed update-labels state_write_failed
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed update-labels "$failure_class"
+  fi
+  pre_state="$(jq -c '{id,content,description,project_id,section_id,parent_id,labels,due,deadline,priority,updated_at}' "$pre_stdout")"
+
+  draft_json="$(mutation_draft_task_labels_update "$task_id" "$labels_json" "$pre_state")"
+  if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed update-labels request_failure
+  fi
+  decision="$(jq -r '.decision' <<<"$prepare_json")"
+  gateway_plan="$(jq -c '.gateway_plan' <<<"$prepare_json")"
+  mutation_extra="$(jq -c '{mutation:{gateway_plan:.gateway_plan,idempotency:.idempotency}}' <<<"$prepare_json")"
+
+  case "$decision" in
+    duplicate_verified)
+      local stored_output
+      stored_output="$(jq -c '.idempotency.record.result.output // empty' <<<"$prepare_json")"
+      if [[ -n "$stored_output" && "$stored_output" != "null" ]]; then
+        cleanup_files "$pre_stdout" "$pre_stderr"
+        json_out "$stored_output"
+        return 0
+      fi
+      emit_failed update-labels request_failure "$mutation_extra"
+      ;;
+    blocked) emit_failed update-labels mutation_blocked "$mutation_extra" ;;
+    awaiting_confirmation) emit_failed update-labels mutation_confirmation_required "$mutation_extra" ;;
+    collision) emit_failed update-labels idempotency_collision "$mutation_extra" ;;
+    unsafe_replay_state|retry_partial) emit_failed update-labels unsafe_replay_state "$mutation_extra" ;;
+    execute) ;;
+    *) emit_failed update-labels request_failure "$mutation_extra" ;;
+  esac
+
+  local labels_stdout labels_stderr adapter_status failure_class runtime_json result_json output_json
+  labels_stdout=$(mktemp)
+  labels_stderr=$(mktemp)
+  adapter_status=0
+  adapter_run "$labels_stdout" "$labels_stderr" update-labels "$task_id" "$labels_csv" || adapter_status=$?
+  if [[ "$adapter_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$labels_stderr" "$adapter_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed update-labels state_write_failed "$mutation_extra"
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failure_class "$failure_class" '{runtime_schema:$runtime_schema,failed_step:"update-labels",failure_class:$failure_class}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed update-labels state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$labels_stdout" "$labels_stderr"
+    emit_failed update-labels "$failure_class" "$mutation_extra"
+  fi
+
+  runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  state_write_runtime "$runtime_json" || emit_failed update-labels state_write_failed "$mutation_extra"
+  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command update-labels --arg status ok --arg operation update-labels --argjson verified true --argjson task "$(cat "$labels_stdout")" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,task:$task} + $mutation')"
+  result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$output_json" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
+  mutation_record_status "$gateway_plan" verified "$result_json" || emit_failed update-labels state_write_failed "$mutation_extra"
+  cleanup_files "$pre_stdout" "$pre_stderr" "$labels_stdout" "$labels_stderr"
+  json_out "$output_json"
+}
+
+update_description_command() {
+  local task_id="" description="" description_seen=false
+  while (($#)); do
+    case "$1" in
+      --task-id)
+        require_option_value update-description "${2:-}"
+        task_id="$2"
+        shift 2
+        ;;
+      --description)
+        description="${2-}"
+        description_seen=true
+        shift 2
+        ;;
+      *)
+        emit_failed update-description invalid_argument
+        ;;
+    esac
+  done
+
+  if [[ -z "$task_id" || "$description_seen" != true ]]; then
+    emit_failed update-description invalid_argument
+  fi
+
+  local ts pre_stdout pre_stderr pre_status pre_state draft_json prepare_json decision gateway_plan mutation_extra
+  ts="$(now_utc)"
+  pre_stdout=$(mktemp)
+  pre_stderr=$(mktemp)
+  pre_status=0
+  adapter_run "$pre_stdout" "$pre_stderr" task "$task_id" || pre_status=$?
+  if [[ "$pre_status" != 0 ]]; then
+    local failure_class runtime_json
+    failure_class="$(map_adapter_error_class "$pre_stderr" "$pre_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed update-description state_write_failed
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed update-description "$failure_class"
+  fi
+  pre_state="$(jq -c '{id,content,description,project_id,section_id,parent_id,labels,due,deadline,priority,updated_at}' "$pre_stdout")"
+
+  draft_json="$(mutation_draft_task_description_update "$task_id" "$description" "$pre_state")"
+  if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed update-description request_failure
+  fi
+  decision="$(jq -r '.decision' <<<"$prepare_json")"
+  gateway_plan="$(jq -c '.gateway_plan' <<<"$prepare_json")"
+  mutation_extra="$(jq -c '{mutation:{gateway_plan:.gateway_plan,idempotency:.idempotency}}' <<<"$prepare_json")"
+
+  case "$decision" in
+    duplicate_verified)
+      local stored_output
+      stored_output="$(jq -c '.idempotency.record.result.output // empty' <<<"$prepare_json")"
+      if [[ -n "$stored_output" && "$stored_output" != "null" ]]; then
+        cleanup_files "$pre_stdout" "$pre_stderr"
+        json_out "$stored_output"
+        return 0
+      fi
+      emit_failed update-description request_failure "$mutation_extra"
+      ;;
+    blocked) emit_failed update-description mutation_blocked "$mutation_extra" ;;
+    awaiting_confirmation) emit_failed update-description mutation_confirmation_required "$mutation_extra" ;;
+    collision) emit_failed update-description idempotency_collision "$mutation_extra" ;;
+    unsafe_replay_state|retry_partial) emit_failed update-description unsafe_replay_state "$mutation_extra" ;;
+    execute) ;;
+    *) emit_failed update-description request_failure "$mutation_extra" ;;
+  esac
+
+  local description_stdout description_stderr adapter_status failure_class runtime_json result_json output_json
+  description_stdout=$(mktemp)
+  description_stderr=$(mktemp)
+  adapter_status=0
+  adapter_run "$description_stdout" "$description_stderr" update-description "$task_id" "$description" || adapter_status=$?
+  if [[ "$adapter_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$description_stderr" "$adapter_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed update-description state_write_failed "$mutation_extra"
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failure_class "$failure_class" '{runtime_schema:$runtime_schema,failed_step:"update-description",failure_class:$failure_class}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed update-description state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$description_stdout" "$description_stderr"
+    emit_failed update-description "$failure_class" "$mutation_extra"
+  fi
+
+  runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  state_write_runtime "$runtime_json" || emit_failed update-description state_write_failed "$mutation_extra"
+  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command update-description --arg status ok --arg operation update-description --argjson verified true --argjson task "$(cat "$description_stdout")" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,task:$task} + $mutation')"
+  result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$output_json" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
+  mutation_record_status "$gateway_plan" verified "$result_json" || emit_failed update-description state_write_failed "$mutation_extra"
+  cleanup_files "$pre_stdout" "$pre_stderr" "$description_stdout" "$description_stderr"
+  json_out "$output_json"
+}
+
+move_task_command() {
+  local task_id="" project_id=""
+  while (($#)); do
+    case "$1" in
+      --task-id)
+        require_option_value move-task "${2:-}"
+        task_id="$2"
+        shift 2
+        ;;
+      --project-id|--list-id|--target-project-id|--target-list-id)
+        require_option_value move-task "${2:-}"
+        project_id="$2"
+        shift 2
+        ;;
+      *)
+        emit_failed move-task invalid_argument
+        ;;
+    esac
+  done
+
+  if [[ -z "$task_id" || -z "$project_id" ]]; then
+    emit_failed move-task invalid_argument
+  fi
+
+  local ts pre_stdout pre_stderr pre_status pre_state draft_json prepare_json decision gateway_plan mutation_extra
+  ts="$(now_utc)"
+  pre_stdout=$(mktemp)
+  pre_stderr=$(mktemp)
+  pre_status=0
+  adapter_run "$pre_stdout" "$pre_stderr" task "$task_id" || pre_status=$?
+  if [[ "$pre_status" != 0 ]]; then
+    local failure_class runtime_json
+    failure_class="$(map_adapter_error_class "$pre_stderr" "$pre_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed move-task state_write_failed
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed move-task "$failure_class"
+  fi
+  pre_state="$(jq -c '{id,content,project_id,section_id,parent_id,labels,due,deadline,priority,updated_at}' "$pre_stdout")"
+
+  draft_json="$(mutation_draft_task_project_move "$task_id" "$project_id" "$pre_state")"
+  if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed move-task request_failure
+  fi
+  decision="$(jq -r '.decision' <<<"$prepare_json")"
+  gateway_plan="$(jq -c '.gateway_plan' <<<"$prepare_json")"
+  mutation_extra="$(jq -c '{mutation:{gateway_plan:.gateway_plan,idempotency:.idempotency}}' <<<"$prepare_json")"
+
+  case "$decision" in
+    duplicate_verified)
+      local stored_output
+      stored_output="$(jq -c '.idempotency.record.result.output // empty' <<<"$prepare_json")"
+      if [[ -n "$stored_output" && "$stored_output" != "null" ]]; then
+        cleanup_files "$pre_stdout" "$pre_stderr"
+        json_out "$stored_output"
+        return 0
+      fi
+      emit_failed move-task request_failure "$mutation_extra"
+      ;;
+    blocked)
+      emit_failed move-task mutation_blocked "$mutation_extra"
+      ;;
+    awaiting_confirmation)
+      emit_failed move-task mutation_confirmation_required "$mutation_extra"
+      ;;
+    collision)
+      emit_failed move-task idempotency_collision "$mutation_extra"
+      ;;
+    unsafe_replay_state|retry_partial)
+      emit_failed move-task unsafe_replay_state "$mutation_extra"
+      ;;
+    execute)
+      ;;
+    *)
+      emit_failed move-task request_failure "$mutation_extra"
+      ;;
+  esac
+
+  local move_stdout move_stderr adapter_status failure_class runtime_json result_json output_json
+  move_stdout=$(mktemp)
+  move_stderr=$(mktemp)
+  adapter_status=0
+  adapter_run "$move_stdout" "$move_stderr" move-task "$task_id" "$project_id" || adapter_status=$?
+  if [[ "$adapter_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$move_stderr" "$adapter_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed move-task state_write_failed "$mutation_extra"
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failure_class "$failure_class" '{runtime_schema:$runtime_schema,failed_step:"move-task",failure_class:$failure_class}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed move-task state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$move_stdout" "$move_stderr"
+    emit_failed move-task "$failure_class" "$mutation_extra"
+  fi
+
+  local actual_project_id
+  actual_project_id="$(jq -r '.project_id // empty' "$move_stdout" 2>/dev/null || true)"
+  if [[ "$actual_project_id" != "$project_id" ]]; then
+    failure_class=verification_failed
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed move-task state_write_failed "$mutation_extra"
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failure_class "$failure_class" --arg actual_project_id "$actual_project_id" --arg expected_project_id "$project_id" '{runtime_schema:$runtime_schema,failed_step:"move-task-verify",failure_class:$failure_class,actual_project_id:$actual_project_id,expected_project_id:$expected_project_id}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed move-task state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$move_stdout" "$move_stderr"
+    emit_failed move-task "$failure_class" "$mutation_extra"
+  fi
+
+  runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  state_write_runtime "$runtime_json" || emit_failed move-task state_write_failed "$mutation_extra"
+  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command move-task --arg status ok --arg operation move-task --argjson verified true --arg project_id "$project_id" --argjson task "$(cat "$move_stdout")" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,project_id:$project_id,task:$task} + $mutation')"
+  result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$output_json" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
+  mutation_record_status "$gateway_plan" verified "$result_json" || emit_failed move-task state_write_failed "$mutation_extra"
+  cleanup_files "$pre_stdout" "$pre_stderr" "$move_stdout" "$move_stderr"
+  json_out "$output_json"
+}
+
+
+
+
+ensure_observation_baseline_command() {
+  local ts limit ttl_hours force=false baseline_json baseline_valid=false refreshed=false reason=fresh stdout_file stderr_file
+  ts="$(now_utc)"
+  limit=200
+  ttl_hours=48
+  while (($#)); do
+    case "$1" in
+      --limit)
+        require_option_value ensure-observation-baseline "${2:-}"
+        limit="${2:-}"
+        shift 2
+        ;;
+      --ttl-hours)
+        require_option_value ensure-observation-baseline "${2:-}"
+        ttl_hours="${2:-}"
+        shift 2
+        ;;
+      --force)
+        force=true
+        shift
+        ;;
+      *)
+        emit_failed ensure-observation-baseline invalid_argument
+        ;;
+    esac
+  done
+  valid_limit "$limit" || emit_failed ensure-observation-baseline invalid_argument
+  valid_ttl_hours "$ttl_hours" || emit_failed ensure-observation-baseline invalid_argument
+
+  baseline_json="$(read_observation_snapshot)"
+  local baseline_observed_at="" baseline_age_seconds=null baseline_task_count=0 ttl_seconds
+  ttl_seconds=$(( ttl_hours * 3600 ))
+  if snapshot_is_valid "$baseline_json"; then
+    baseline_valid=true
+    baseline_observed_at="$(jq -r '.observed_at' <<<"$baseline_json")"
+    baseline_task_count="$(jq -r '.task_count // (.tasks|length)' <<<"$baseline_json")"
+    if valid_rfc3339_utc "$baseline_observed_at"; then
+      local age
+      if age="$(snapshot_age_seconds "$baseline_observed_at" "$ts")" && (( age >= 0 && age <= ttl_seconds )); then
+        baseline_age_seconds="$age"
+        if [[ "$force" != true ]]; then
+          json_out "$(jq -nc             --arg contract_version "$CONTRACT_VERSION"             --arg command ensure-observation-baseline             --arg status ok             --arg source ephemeral-observation-state             --arg observed_at "$ts"             --arg baseline_observed_at "$baseline_observed_at"             --arg provenance ephemeral-active-observation-snapshot             --arg purpose baseline_ensure             --argjson refreshed false             --argjson force false             --argjson limit "$limit"             --argjson ttl_hours "$ttl_hours"             --argjson baseline_age_seconds "$baseline_age_seconds"             --argjson task_count "$baseline_task_count"             '{contract_version:$contract_version,command:$command,status:$status,source:$source,observed_at:$observed_at,baseline_observed_at:$baseline_observed_at,baseline_age_seconds:$baseline_age_seconds,refreshed:$refreshed,refresh_reason:"fresh",force:$force,summary:{task_count:$task_count},limit:$limit,ttl_hours:$ttl_hours,complete:true,provenance:$provenance,purpose:$purpose,note:"Fresh ephemeral active-task observation baseline already exists; not overwritten."}')"
+          return 0
+        fi
+        reason=forced
+      else
+        reason=stale
+      fi
+    else
+      reason=corrupt
+    fi
+  else
+    reason=missing
+  fi
+
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  local adapter_status
+  adapter_status=0
+  adapter_run "$stdout_file" "$stderr_file" active-snapshot "$limit" || adapter_status=$?
+  if [[ "$adapter_status" != "0" ]]; then
+    local failure_class runtime runtime_json
+    failure_class="$(map_adapter_error_class "$stderr_file" "$adapter_status")"
+    runtime="$(state_read_runtime)"
+    runtime_json="$(jq -c --arg ts "$ts" --arg fc "$failure_class" '.last_failure_class = $fc | .last_failure_at = $ts' <<<"$runtime")"
+    state_write_runtime "$runtime_json" || true
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed ensure-observation-baseline "$failure_class"
+  fi
+
+  local provider_json current_tasks current_count snapshot_json runtime runtime_json
+  provider_json="$(cat "$stdout_file")"
+  if ! assert_complete_window <<<"$provider_json" 2>/dev/null; then
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed ensure-observation-baseline provider_shape_invalid
+  fi
+  if ! current_tasks="$(normalize_snapshot_tasks <<<"$provider_json" 2>/dev/null)"; then
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed ensure-observation-baseline provider_shape_invalid
+  fi
+  current_count="$(jq 'length' <<<"$current_tasks")"
+  snapshot_json="$(build_observation_snapshot_json "$ts" "$current_tasks" "$limit" "$ttl_hours")"
+  if ! write_observation_snapshot "$snapshot_json"; then
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed ensure-observation-baseline state_write_failed
+  fi
+
+  runtime="$(state_read_runtime)"
+  runtime_json="$(jq -c --arg ts "$ts" --arg reason "$reason" --argjson count "$current_count" --argjson limit "$limit" --argjson ttl_hours "$ttl_hours" '
+    .ensure_observation_baseline.last_ensure = {observed_at:$ts, refreshed:true, refresh_reason:$reason, task_count:$count, limit:$limit, ttl_hours:$ttl_hours, provenance:"ephemeral-active-observation-snapshot"}
+    | .last_verified_at = $ts
+    | .last_failure_class = null
+  ' <<<"$runtime")"
+  if ! state_write_runtime "$runtime_json"; then
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed ensure-observation-baseline state_write_failed
+  fi
+
+  json_out "$(jq -nc     --arg contract_version "$CONTRACT_VERSION"     --arg command ensure-observation-baseline     --arg status ok     --arg source live     --arg observed_at "$ts"     --arg baseline_observed_at "$ts"     --arg refresh_reason "$reason"     --arg provenance ephemeral-active-observation-snapshot     --arg purpose baseline_ensure     --argjson refreshed true     --argjson force "$force"     --argjson limit "$limit"     --argjson ttl_hours "$ttl_hours"     --argjson task_count "$current_count"     '{contract_version:$contract_version,command:$command,status:$status,source:$source,observed_at:$observed_at,baseline_observed_at:$baseline_observed_at,baseline_age_seconds:0,refreshed:$refreshed,refresh_reason:$refresh_reason,force:$force,summary:{task_count:$task_count},limit:$limit,ttl_hours:$ttl_hours,complete:true,provenance:$provenance,purpose:$purpose,note:"Ensured ephemeral active-task observation baseline. Snapshot is ignored, non-canonical, TTL-bound, and not task truth."}')"
+  cleanup_files "$stdout_file" "$stderr_file"
+}
+
+
+read_recent_diff_command() {
+  local ts since until limit ttl_hours stdout_file stderr_file
+  ts="$(now_utc)"
+  since=""
+  until="$ts"
+  limit=200
+  ttl_hours=48
+  while (($#)); do
+    case "$1" in
+      --since)
+        require_option_value read-recent-diff "${2:-}"
+        since="${2:-}"
+        shift 2
+        ;;
+      --until)
+        require_option_value read-recent-diff "${2:-}"
+        until="${2:-}"
+        shift 2
+        ;;
+      --limit)
+        require_option_value read-recent-diff "${2:-}"
+        limit="${2:-}"
+        shift 2
+        ;;
+      --ttl-hours)
+        require_option_value read-recent-diff "${2:-}"
+        ttl_hours="${2:-}"
+        shift 2
+        ;;
+      *)
+        emit_failed read-recent-diff invalid_argument
+        ;;
+    esac
+  done
+  [[ -n "$since" ]] || emit_failed read-recent-diff invalid_argument
+  valid_since_until "$since" "$until" || emit_failed read-recent-diff invalid_argument
+  valid_limit "$limit" || emit_failed read-recent-diff invalid_argument
+  valid_ttl_hours "$ttl_hours" || emit_failed read-recent-diff invalid_argument
+
+  local until_epoch ts_epoch skew_seconds
+  until_epoch="$(rfc3339_epoch "$until")" || emit_failed read-recent-diff invalid_argument
+  ts_epoch="$(rfc3339_epoch "$ts")" || emit_failed read-recent-diff invalid_argument
+  skew_seconds=300
+  if (( until_epoch < ts_epoch - skew_seconds || until_epoch > ts_epoch + skew_seconds )); then
+    emit_failed read-recent-diff invalid_argument
+  fi
+
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  local adapter_status
+  adapter_status=0
+  adapter_run "$stdout_file" "$stderr_file" active-snapshot "$limit" || adapter_status=$?
+  if [[ "$adapter_status" != "0" ]]; then
+    local failure_class runtime runtime_json
+    failure_class="$(map_adapter_error_class "$stderr_file" "$adapter_status")"
+    runtime="$(state_read_runtime)"
+    runtime_json="$(jq -c --arg ts "$ts" --arg fc "$failure_class" '.last_failure_class = $fc | .last_failure_at = $ts' <<<"$runtime")"
+    state_write_runtime "$runtime_json" || true
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed read-recent-diff "$failure_class"
+  fi
+
+  local provider_json current_tasks current_count baseline_json baseline_present baseline_observed_at baseline_tasks baseline_count
+  provider_json="$(cat "$stdout_file")"
+  if [[ "$(jq -r 'type' <<<"$provider_json" 2>/dev/null || true)" == "object" ]]; then
+    if ! assert_complete_window <<<"$provider_json" 2>/dev/null; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-recent-diff provider_shape_invalid
+    fi
+  fi
+  if ! current_tasks="$(normalize_snapshot_tasks <<<"$provider_json" 2>/dev/null)"; then
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed read-recent-diff provider_shape_invalid
+  fi
+  current_count="$(jq 'length' <<<"$current_tasks")"
+  baseline_json="$(read_observation_snapshot)"
+  baseline_present=false
+  baseline_observed_at=""
+  baseline_tasks='[]'
+  baseline_count=0
+  if [[ "$baseline_json" != "null" ]] && jq -e '(.contract_version == "jen-todoist-observation-snapshot.v1") and ((.tasks|type)=="array") and (.observed_at|type=="string")' <<<"$baseline_json" >/dev/null 2>&1; then
+    baseline_present=true
+    baseline_observed_at="$(jq -r '.observed_at' <<<"$baseline_json")"
+    baseline_tasks="$(jq -c '.tasks' <<<"$baseline_json" | normalize_snapshot_tasks 2>/dev/null || printf '[]')"
+    baseline_count="$(jq 'length' <<<"$baseline_tasks")"
+  fi
+
+  local status coverage_status coverage_from coverage_to baseline_fresh=false diff_json changed_count added_count removed_count limitations runtime runtime_json snapshot_json
+  status=degraded
+  coverage_status=none
+  coverage_from=""
+  coverage_to="$ts"
+  diff_json='{"changed":[],"added_to_active_observation":[],"removed_from_active_observation":[]}'
+  limitations='["current_active_observation_only","not_historical_event_timeline","removed_from_active_observation_does_not_imply_deleted_completed_or_moved"]'
+
+  if [[ "$baseline_present" == true ]] && valid_rfc3339_utc "$baseline_observed_at"; then
+    local baseline_epoch since_epoch ttl_seconds
+    baseline_epoch="$(rfc3339_epoch "$baseline_observed_at")" || baseline_epoch=0
+    since_epoch="$(rfc3339_epoch "$since")" || since_epoch=0
+    ttl_seconds=$(( ttl_hours * 3600 ))
+    if (( baseline_epoch >= ts_epoch - ttl_seconds && baseline_epoch <= ts_epoch )); then
+      baseline_fresh=true
+      coverage_from="$baseline_observed_at"
+      diff_json="$(build_observation_diff "$baseline_tasks" "$current_tasks")"
+      if (( baseline_epoch > since_epoch )); then
+        status=degraded
+        coverage_status=partial_baseline_after_since
+        limitations="$(jq -c '. + ["baseline_after_requested_since_misses_early_interval"]' <<<"$limitations")"
+      else
+        status=ok
+        coverage_status=net_observation_baseline_before_since
+        limitations="$(jq -c '. + ["net_diff_only_intermediate_changes_may_cancel_out"]' <<<"$limitations")"
+      fi
+    else
+      limitations="$(jq -c '. + ["baseline_missing_or_stale_no_diff_claim"]' <<<"$limitations")"
+    fi
+  else
+    limitations="$(jq -c '. + ["baseline_missing_or_stale_no_diff_claim"]' <<<"$limitations")"
+  fi
+
+  changed_count="$(jq '.changed|length' <<<"$diff_json")"
+  added_count="$(jq '.added_to_active_observation|length' <<<"$diff_json")"
+  removed_count="$(jq '.removed_from_active_observation|length' <<<"$diff_json")"
+
+  snapshot_json="$(build_observation_snapshot_json "$ts" "$current_tasks" "$limit" "$ttl_hours")"
+  if ! write_observation_snapshot "$snapshot_json"; then
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed read-recent-diff state_write_failed
+  fi
+
+  runtime="$(state_read_runtime)"
+  runtime_json="$(jq -c --arg ts "$ts" --arg since "$since" --arg until "$until" --arg status "$status" --arg coverage_status "$coverage_status" --arg baseline_observed_at "$baseline_observed_at" --argjson current_count "$current_count" --argjson baseline_count "$baseline_count" --argjson changed_count "$changed_count" --argjson added_count "$added_count" --argjson removed_count "$removed_count" '
+    .read_recent_diff.last_diff_window = {
+      since:$since,
+      until:$until,
+      observed_at:$ts,
+      status:$status,
+      coverage_status:$coverage_status,
+      baseline_observed_at:(if $baseline_observed_at == "" then null else $baseline_observed_at end),
+      current_count:$current_count,
+      baseline_count:$baseline_count,
+      changed_count:$changed_count,
+      added_count:$added_count,
+      removed_count:$removed_count,
+      evidence_level:"ephemeral-active-observation-diff"
+    }
+    | .last_verified_at = $ts
+    | .last_failure_class = null
+  ' <<<"$runtime")"
+  if ! state_write_runtime "$runtime_json"; then
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed read-recent-diff state_write_failed
+  fi
+
+  json_out "$(jq -nc     --arg contract_version "$CONTRACT_VERSION"     --arg command read-recent-diff     --arg status "$status"     --arg source live     --arg observed_at "$ts"     --arg since "$since"     --arg until "$until"     --arg baseline_observed_at "$baseline_observed_at"     --arg current_observed_at "$ts"     --arg coverage_from "$coverage_from"     --arg coverage_to "$coverage_to"     --arg coverage_status "$coverage_status"     --argjson baseline_present "$baseline_present"     --argjson baseline_fresh "$baseline_fresh"     --argjson diff "$diff_json"     --argjson limitations "$limitations"     --argjson current_count "$current_count"     --argjson baseline_count "$baseline_count"     '{contract_version:$contract_version,command:$command,status:$status,source:$source,observed_at:$observed_at,requested_window:{since:$since,until:$until},baseline_present:$baseline_present,baseline_fresh:$baseline_fresh,baseline_observed_at:(if $baseline_observed_at == "" then null else $baseline_observed_at end),current_observed_at:$current_observed_at,coverage_interval:{from:(if $coverage_from == "" then null else $coverage_from end),to:$coverage_to},coverage_status:$coverage_status,diff:$diff,summary:{baseline_task_count:$baseline_count,current_task_count:$current_count,changed_count:($diff.changed|length),added_to_active_observation_count:($diff.added_to_active_observation|length),removed_from_active_observation_count:($diff.removed_from_active_observation|length)},evidence_level:"ephemeral-active-observation-diff",limitations:$limitations,complete:true,note:"Ephemeral active-task observation diff. Compares previous observed active baseline to current live active state only; it does not reconstruct arbitrary historical windows.",provenance:"ephemeral-active-observation-snapshot"}')"
+  cleanup_files "$stdout_file" "$stderr_file"
+  return 0
+}
+
+read_activity_log_command() {
+  local ts since until limit stdout_file stderr_file
+  ts="$(now_utc)"
+  since=""
+  until="$ts"
+  limit=100
+  while (($#)); do
+    case "$1" in
+      --since)
+        require_option_value read-activity-log "${2:-}"
+        since="${2:-}"
+        shift 2
+        ;;
+      --until)
+        require_option_value read-activity-log "${2:-}"
+        until="${2:-}"
+        shift 2
+        ;;
+      --limit)
+        require_option_value read-activity-log "${2:-}"
+        limit="${2:-}"
+        shift 2
+        ;;
+      *)
+        emit_failed read-activity-log invalid_argument
+        ;;
+    esac
+  done
+  [[ -n "$since" ]] || emit_failed read-activity-log invalid_argument
+  valid_since_until "$since" "$until" || emit_failed read-activity-log invalid_argument
+  [[ "$limit" =~ ^[0-9]+$ ]] && [[ "$limit" -ge 1 && "$limit" -le 100 ]] || emit_failed read-activity-log invalid_argument
+
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  local adapter_status
+  adapter_status=0
+  adapter_run "$stdout_file" "$stderr_file" activity-window "$since" "$until" "$limit" || adapter_status=$?
+  if [[ "$adapter_status" == "0" ]]; then
+    local provider_json events count runtime runtime_json
+    provider_json="$(cat "$stdout_file")"
+    if ! assert_complete_window <<<"$provider_json" 2>/dev/null; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-activity-log provider_shape_invalid
+    fi
+    if ! events="$(normalize_activity_events <<<"$provider_json" 2>/dev/null)"; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-activity-log provider_shape_invalid
+    fi
+    count="$(jq 'length' <<<"$events")"
+    runtime="$(state_read_runtime)"
+    runtime_json="$(jq -c --arg ts "$ts" --arg since "$since" --arg until "$until" --argjson count "$count" '
+      .read_activity_log.last_activity_window = {since:$since, until:$until, observed_at:$ts, count:$count, evidence_level:"provider-activity-log"}
+      | .last_verified_at = $ts
+      | .last_failure_class = null
+    ' <<<"$runtime")"
+    if ! state_write_runtime "$runtime_json"; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-activity-log state_write_failed
+    fi
+    json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command read-activity-log --arg status ok --arg source live --arg observed_at "$ts" --arg since "$since" --arg until "$until" --arg evidence_level provider-activity-log --arg provenance live-activity-log-window --arg note 'Live Todoist Activity Log window. The until/date_to bound is exclusive. This is provider event evidence, not a complete field-level before/after diff.' --argjson events "$events" '{contract_version:$contract_version,command:$command,status:$status,source:$source,observed_at:$observed_at,since:$since,until:$until,events:$events,summary:{activity_event_count:($events|length)},evidence_level:$evidence_level,limitations:["activity_log_plan_dependent","provider_update_fields_limited","before_after_values_not_guaranteed","snapshot_diff_required_for_full_field_comparison"],complete:true,note:$note,provenance:$provenance}')"
+    cleanup_files "$stdout_file" "$stderr_file"
+    return 0
+  fi
+
+  local failure_class runtime runtime_json
+  failure_class="$(map_adapter_error_class "$stderr_file" "$adapter_status")"
+  runtime="$(state_read_runtime)"
+  runtime_json="$(jq -c --arg ts "$ts" --arg fc "$failure_class" '.last_failure_class = $fc | .last_failure_at = $ts' <<<"$runtime")"
+  if ! state_write_runtime "$runtime_json"; then
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed read-activity-log state_write_failed
+  fi
+  cleanup_files "$stdout_file" "$stderr_file"
+  emit_failed read-activity-log "$failure_class"
+}
+
+read_recent_activity_command() {
+  local ts since until limit stdout_file stderr_file
+  ts="$(now_utc)"
+  since=""
+  until="$ts"
+  limit=200
+  while (($#)); do
+    case "$1" in
+      --since)
+        require_option_value read-recent-activity "${2:-}"
+        since="${2:-}"
+        shift 2
+        ;;
+      --until)
+        require_option_value read-recent-activity "${2:-}"
+        until="${2:-}"
+        shift 2
+        ;;
+      --limit)
+        require_option_value read-recent-activity "${2:-}"
+        limit="${2:-}"
+        shift 2
+        ;;
+      *)
+        emit_failed read-recent-activity invalid_argument
+        ;;
+    esac
+  done
+  [[ -n "$since" ]] || emit_failed read-recent-activity invalid_argument
+  valid_since_until "$since" "$until" || emit_failed read-recent-activity invalid_argument
+  valid_limit "$limit" || emit_failed read-recent-activity invalid_argument
+
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  if adapter_run "$stdout_file" "$stderr_file" active-updated-window "$since" "$until" "$limit"; then
+    local provider_json tasks count runtime runtime_json
+    provider_json="$(cat "$stdout_file")"
+    if ! assert_complete_window <<<"$provider_json" 2>/dev/null; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-recent-activity provider_shape_invalid
+    fi
+    if ! tasks="$(normalize_active_tasks <<<"$provider_json" | jq -c --arg since "$since" --arg until "$until" 'map(select((.updated_at // null) != null and .updated_at >= $since and .updated_at <= $until))' 2>/dev/null)"; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-recent-activity provider_shape_invalid
+    fi
+    count="$(jq 'length' <<<"$tasks")"
+    runtime="$(state_read_runtime)"
+    runtime_json="$(jq -c --arg ts "$ts" --arg since "$since" --arg until "$until" --argjson count "$count" '
+      .read_recent_activity.last_activity_window = {since:$since, until:$until, observed_at:$ts, count:$count, evidence_level:"current-active-updated-at"}
+      | .last_verified_at = $ts
+      | .last_failure_class = null
+    ' <<<"$runtime")"
+    if ! state_write_runtime "$runtime_json"; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-recent-activity state_write_failed
+    fi
+    json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command read-recent-activity --arg status ok --arg source live --arg observed_at "$ts" --arg since "$since" --arg until "$until" --arg evidence_level current-active-updated-at --arg note 'Live active-task activity window from Todoist updated_at. This is current-state evidence of recently updated active tasks, not a field-level diff. Task bodies are returned for this request only; runtime metadata stores only window bounds and count.' --arg provenance live-active-updated-window --argjson tasks "$tasks" '{contract_version:$contract_version,command:$command,status:$status,source:$source,observed_at:$observed_at,since:$since,until:$until,tasks:$tasks,summary:{activity_task_count:($tasks|length)},evidence_level:$evidence_level,limitations:["field_level_diff_unavailable_without_task_body_cache","completed_tasks_are_reported_separately"],complete:true,note:$note,provenance:$provenance}')"
+    cleanup_files "$stdout_file" "$stderr_file"
+    return 0
+  fi
+
+  local adapter_status failure_class runtime runtime_json
+  adapter_status=$?
+  failure_class="$(map_adapter_error_class "$stderr_file" "$adapter_status")"
+  runtime="$(state_read_runtime)"
+  runtime_json="$(jq -c --arg ts "$ts" --arg fc "$failure_class" '.last_failure_class = $fc | .last_failure_at = $ts' <<<"$runtime")"
+  if ! state_write_runtime "$runtime_json"; then
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed read-recent-activity state_write_failed
+  fi
+  cleanup_files "$stdout_file" "$stderr_file"
+  emit_failed read-recent-activity "$failure_class"
+}
+
+read_recent_completed_command() {
+  local ts stdout_file stderr_file since until mode
+  ts="$(now_utc)"
+  since=""
+  until="$ts"
+  mode="summary"
+  while (($#)); do
+    case "$1" in
+      --since)
+        require_option_value read-recent-completed "${2:-}"
+        since="${2:-}"
+        shift 2
+        ;;
+      --until)
+        require_option_value read-recent-completed "${2:-}"
+        until="${2:-}"
+        shift 2
+        ;;
+      --tasks)
+        mode="tasks"
+        shift
+        ;;
+      *)
+        emit_failed read-recent-completed invalid_argument
+        ;;
+    esac
+  done
+  if [[ "$mode" == "tasks" && -z "$since" ]]; then
+    since="$(date -u -d '7 days ago' +"%Y-%m-%dT%H:%M:%SZ")"
+  fi
+  if [[ "$mode" == "tasks" ]]; then
+    if ! valid_rfc3339_utc "$since" || ! valid_rfc3339_utc "$until" || [[ "$since" > "$until" ]]; then
+      emit_failed read-recent-completed invalid_argument
+    fi
+  fi
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+
+  if [[ "$mode" == "tasks" ]]; then
+    if adapter_run "$stdout_file" "$stderr_file" completed-by-completion-date "$since" "$until" 100; then
+      local provider_json tasks count runtime runtime_json
+      provider_json="$(cat "$stdout_file")"
+      if ! assert_complete_window <<<"$provider_json" 2>/dev/null; then
+        cleanup_files "$stdout_file" "$stderr_file"
+        emit_failed read-recent-completed provider_shape_invalid
+      fi
+      if ! tasks="$(normalize_completed_tasks <<<"$provider_json" 2>/dev/null)"; then
+        cleanup_files "$stdout_file" "$stderr_file"
+        emit_failed read-recent-completed provider_shape_invalid
+      fi
+      count="$(jq 'length' <<<"$tasks")"
+      runtime="$(state_read_runtime)"
+      runtime_json="$(jq -c --arg ts "$ts" --arg since "$since" --arg until "$until" --argjson count "$count" '
+        .read_recent_completed.last_task_window = {since:$since, until:$until, observed_at:$ts, count:$count}
+        | .last_verified_at = $ts
+        | .last_failure_class = null
+      ' <<<"$runtime")"
+      if ! state_write_runtime "$runtime_json"; then
+        emit_failed read-recent-completed state_write_failed
+      fi
+      json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command read-recent-completed --arg status ok --arg source live --arg observed_at "$ts" --arg since "$since" --arg until "$until" --arg note 'Live completed-task window from Todoist by completion date. Task bodies are returned for this request only; runtime metadata stores only window bounds and count.' --arg provenance live-completed-window --argjson tasks "$tasks" '{contract_version:$contract_version,command:$command,status:$status,source:$source,observed_at:$observed_at,since:$since,until:$until,tasks:$tasks,summary:{completed_task_count:($tasks|length)},complete:true,note:$note,provenance:$provenance}')"
+      cleanup_files "$stdout_file" "$stderr_file"
+      return 0
+    fi
+
+    local adapter_status failure_class runtime runtime_json
+    adapter_status=$?
+    failure_class="$(map_adapter_error_class "$stderr_file" "$adapter_status")"
+    runtime="$(state_read_runtime)"
+    runtime_json="$(jq -c --arg ts "$ts" --arg fc "$failure_class" '.last_failure_class = $fc | .last_failure_at = $ts' <<<"$runtime")"
+    if ! state_write_runtime "$runtime_json"; then
+      emit_failed read-recent-completed state_write_failed
+    fi
+    cleanup_files "$stdout_file" "$stderr_file"
+    emit_failed read-recent-completed "$failure_class"
+  fi
+
+  if adapter_run "$stdout_file" "$stderr_file" completed-info; then
+    local current runtime summary previous_obs runtime_json
+    current="$(cat "$stdout_file")"
+    runtime="$(state_read_runtime)"
+    previous_obs="$(jq -r '.read_recent_completed.last_observed_at // empty' <<<"$runtime")"
+    summary="$(jq -nc \
+      --argjson current "$current" \
+      --argjson previous "$(jq -c '.read_recent_completed.last_completed_info // null' <<<"$runtime")" '
+        def to_map(arr): reduce (arr // [])[] as $item ({};
+          .[
+            if ($item.project_id // null) != null then "project:" + $item.project_id
+            elif ($item.section_id // null) != null then "section:" + $item.section_id
+            elif ($item.item_id // null) != null then "item:" + $item.item_id
+            else "unknown"
+            end
+          ] = ($item.completed_items // 0)
+        );
+        ($current.completed_info // []) as $curr_arr
+        | ($previous.completed_info // []) as $prev_arr
+        | (to_map($curr_arr)) as $curr_map
+        | (to_map($prev_arr)) as $prev_map
+        | {
+            baseline_present: ($previous != null),
+            delta_completed_items_total: (reduce ($curr_map | keys[]) as $k (0; . + ((($curr_map[$k] // 0) - ($prev_map[$k] // 0)) | if . > 0 then . else 0 end))),
+            observed_bucket_count: ($curr_arr | length)
+          }
+      ')"
+    runtime_json="$(jq -c --arg ts "$ts" --argjson current "$current" --argjson summary "$summary" --arg prev "$previous_obs" '
+      .read_recent_completed.last_completed_info = $current
+      | .read_recent_completed.last_summary = $summary
+      | .read_recent_completed.previous_observed_at = (if $prev == "" then null else $prev end)
+      | .read_recent_completed.last_observed_at = $ts
+      | .last_verified_at = $ts
+      | .last_failure_class = null
+    ' <<<"$runtime")"
+    if ! state_write_runtime "$runtime_json"; then
+      emit_failed read-recent-completed state_write_failed
+    fi
+    json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command read-recent-completed --arg status ok --arg source live --arg observed_at "$ts" --arg previous_observed_at "$previous_obs" --arg note 'Bounded observational summary derived from a live aggregate read. Completed task bodies are not cached by contract.' --arg provenance runtime-metadata-summary --argjson summary "$summary" '
+      {contract_version:$contract_version,command:$command,status:$status,source:$source,observed_at:$observed_at,summary:$summary,note:$note,provenance:$provenance}
+      + (if $previous_observed_at == "" then {} else {previous_observed_at:$previous_observed_at} end)')"
+    cleanup_files "$stdout_file" "$stderr_file"
+    return 0
+  fi
+
+  local adapter_status failure_class runtime summary last_observed_at previous_observed_at runtime_json
+  adapter_status=$?
+  failure_class="$(map_adapter_error_class "$stderr_file" "$adapter_status")"
+  runtime="$(state_read_runtime)"
+  summary="$(jq -c '.read_recent_completed.last_summary // null' <<<"$runtime")"
+  last_observed_at="$(jq -r '.read_recent_completed.last_observed_at // empty' <<<"$runtime")"
+  previous_observed_at="$(jq -r '.read_recent_completed.previous_observed_at // empty' <<<"$runtime")"
+  runtime_json="$(jq -c --arg ts "$ts" --arg fc "$failure_class" '.last_failure_class = $fc | .last_failure_at = $ts' <<<"$runtime")"
+  if ! state_write_runtime "$runtime_json"; then
+    emit_failed read-recent-completed state_write_failed
+  fi
+  if [[ "$summary" == "null" || -z "$last_observed_at" ]]; then
+    emit_failed read-recent-completed "$failure_class"
+  fi
+  json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command read-recent-completed --arg status degraded --arg source observational --arg observed_at "$last_observed_at" --arg previous_observed_at "$previous_observed_at" --arg note 'Live completion read failed; returning last bounded observational summary from runtime metadata.' --arg provenance runtime-metadata-summary --argjson summary "$summary" '
+      {contract_version:$contract_version,command:$command,status:$status,source:$source,observed_at:$observed_at,summary:$summary,note:$note,provenance:$provenance}
+      + (if $previous_observed_at == "" then {} else {previous_observed_at:$previous_observed_at} end)')"
+  cleanup_files "$stdout_file" "$stderr_file"
+}
+
+read_due_window_command() {
+  local from_date="" to_date="" ts stdout_file stderr_file
+  while (($#)); do
+    case "$1" in
+      --from)
+        require_option_value read-due-window "${2:-}"
+        from_date="${2:-}"
+        shift 2
+        ;;
+      --to)
+        require_option_value read-due-window "${2:-}"
+        to_date="${2:-}"
+        shift 2
+        ;;
+      *)
+        emit_failed read-due-window invalid_argument
+        ;;
+    esac
+  done
+  if [[ -z "$from_date" || -z "$to_date" ]]; then
+    emit_failed read-due-window invalid_argument
+  fi
+  if ! valid_date_ymd "$from_date" || ! valid_date_ymd "$to_date" || [[ "$from_date" > "$to_date" ]]; then
+    emit_failed read-due-window invalid_argument
+  fi
+
+  ts="$(now_utc)"
+  stdout_file=$(mktemp)
+  stderr_file=$(mktemp)
+  if adapter_run "$stdout_file" "$stderr_file" due-window "$from_date" "$to_date" 200; then
+    local tasks runtime_json
+    if ! assert_complete_window < "$stdout_file" 2>/dev/null; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-due-window provider_shape_invalid
+    fi
+    if ! tasks="$(normalize_active_tasks < "$stdout_file" 2>/dev/null)"; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-due-window provider_shape_invalid
+    fi
+    runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+    if ! state_write_runtime "$runtime_json"; then
+      cleanup_files "$stdout_file" "$stderr_file"
+      emit_failed read-due-window state_write_failed
+    fi
+    json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command read-due-window --arg status ok --arg source live --arg checked_at "$ts" --arg from "$from_date" --arg to "$to_date" --argjson tasks "$tasks" '{contract_version:$contract_version,command:$command,status:$status,source:$source,checked_at:$checked_at,from:$from,to:$to,tasks:$tasks,summary:{task_count:($tasks|length)},complete:true}')"
+    cleanup_files "$stdout_file" "$stderr_file"
+    return 0
+  fi
+
+  local adapter_status failure_class
+  adapter_status=$?
+  failure_class="$(map_adapter_error_class "$stderr_file" "$adapter_status")"
+  update_runtime_failure "$failure_class" || true
+  cleanup_files "$stdout_file" "$stderr_file"
+  emit_failed read-due-window "$failure_class"
+}
+
+explain_degraded_state_command() {
+  ensure_state_file
+  if [[ ! -r "$STATE_FILE" ]]; then
+    emit_failed explain-degraded-state state_read_failed
+  fi
+  if ! jq empty "$STATE_FILE" >/dev/null 2>&1; then
+    emit_failed explain-degraded-state state_corrupt
+  fi
+  local runtime last_verified_at last_failure_class guidance
+  runtime="$(state_read_runtime 2>/dev/null || true)"
+  if [[ -z "$runtime" ]]; then
+    emit_failed explain-degraded-state state_invalid
+  fi
+  last_verified_at="$(jq -r '.last_verified_at // empty' <<<"$runtime")"
+  last_failure_class="$(jq -r '.last_failure_class // empty' <<<"$runtime")"
+  guidance="If live Todoist access is degraded, continue with bounded continuity only and do not treat local metadata as task truth."
+  json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command explain-degraded-state --arg status ok --arg guidance "$guidance" --arg provenance runtime-metadata --arg last_verified_at "$last_verified_at" --arg last_failure_class "$last_failure_class" '
+    {contract_version:$contract_version,command:$command,status:$status,guidance:$guidance,provenance:$provenance}
+    + (if $last_verified_at == "" then {last_verified_at:null} else {last_verified_at:$last_verified_at} end)
+    + (if $last_failure_class == "" then {} else {last_failure_class:$last_failure_class} end)')"
+}
+
+classify_interaction_signals_command() {
+  if (($#)); then
+    emit_failed classify-interaction-signals invalid_argument
+  fi
+
+  local checked_at runtime signals summary note
+  checked_at="$(now_utc)"
+  note="Metadata-only classification of already-observed Todoist runtime signals. This command does not call Todoist, mutate runtime state, cache task bodies, or create a canonical event stream."
+
+  if [[ ! -e "$STATE_FILE" ]]; then
+    runtime='{}'
+  else
+    if [[ ! -r "$STATE_FILE" ]]; then
+      emit_failed classify-interaction-signals state_read_failed
+    fi
+    if [[ ! -s "$STATE_FILE" ]]; then
+      emit_failed classify-interaction-signals state_corrupt
+    fi
+    if ! jq empty "$STATE_FILE" >/dev/null 2>&1; then
+      emit_failed classify-interaction-signals state_corrupt
+    fi
+    if ! runtime="$(jq -c '
+      if (.todoist.runtime? == null) then {}
+      elif ((.todoist.runtime | type) == "object") then .todoist.runtime
+      else error("state_invalid")
+      end
+    ' "$STATE_FILE" 2>/dev/null)"; then
+      emit_failed classify-interaction-signals state_invalid
+    fi
+    if [[ -z "$runtime" ]]; then
+      emit_failed classify-interaction-signals state_corrupt
+    fi
+  fi
+
+  signals="$(jq -c '
+    def completion_signal:
+      (.read_recent_completed.last_summary // null) as $summary
+      | (.read_recent_completed.last_observed_at // null) as $observed_at
+      | if (($summary | type) == "object" and (($summary.delta_completed_items_total // 0) > 0)) then
+          [{
+            signal_id: ("runtime-completion-delta:" + ($observed_at // "unknown")),
+            level: "aggregated",
+            reason: "recent_completed_delta_observed",
+            confidence: "medium",
+            source_event_kind: "completed-info-delta",
+            observed_at: $observed_at,
+            source: "runtime-metadata",
+            requires_user_interruption: false,
+            semantic: {
+              delta_completed_items_total: ($summary.delta_completed_items_total // 0),
+              observed_bucket_count: ($summary.observed_bucket_count // 0),
+              baseline_present: ($summary.baseline_present // false)
+            }
+          }]
+        else [] end;
+    def degradation_signal:
+      (.last_failure_class // null) as $failure_class
+      | (.last_failure_at // null) as $observed_at
+      | if ($failure_class != null and $failure_class != "") then
+          [{
+            signal_id: ("runtime-degradation:" + $failure_class + ":" + ($observed_at // "unknown")),
+            level: "observed",
+            reason: "todoist_runtime_degraded",
+            confidence: "high",
+            source_event_kind: "runtime-failure",
+            observed_at: $observed_at,
+            source: "runtime-metadata",
+            requires_user_interruption: false,
+            semantic: {
+              failure_class: $failure_class
+            }
+          }]
+        else [] end;
+    completion_signal + degradation_signal
+  ' <<<"$runtime")"
+  summary="$(jq -c '{signal_count:length, attention_worthy_count:(map(select(.level == "attention-worthy")) | length), action_eligible_count:(map(select(.level == "action-eligible")) | length)}' <<<"$signals")"
+
+  json_out "$(jq -nc \
+    --arg contract_version "$CONTRACT_VERSION" \
+    --arg command classify-interaction-signals \
+    --arg status ok \
+    --arg source runtime-metadata \
+    --arg checked_at "$checked_at" \
+    --arg note "$note" \
+    --argjson signals "$signals" \
+    --argjson summary "$summary" \
+    '{contract_version:$contract_version,command:$command,status:$status,source:$source,checked_at:$checked_at,signals:$signals,summary:$summary,complete:true,note:$note}')"
+}
+
+main() {
+  local command="${1:-}"
+  shift || true
+  case "$command" in
+    health) health_command ;;
+    read-projects|projects) read_projects_command ;;
+    read-active) read_active_command ;;
+    capture-task) capture_task_command "$@" ;;
+    update-due) update_due_command "$@" ;;
+    update-deadline) update_deadline_command "$@" ;;
+    clear-deadline) clear_deadline_command "$@" ;;
+    update-labels) update_labels_command "$@" ;;
+    update-description) update_description_command "$@" ;;
+    move-task) move_task_command "$@" ;;
+    read-recent-completed) read_recent_completed_command "$@" ;;
+    read-recent-activity) read_recent_activity_command "$@" ;;
+    read-activity-log) read_activity_log_command "$@" ;;
+    ensure-observation-baseline) ensure_observation_baseline_command "$@" ;;
+    read-recent-diff) read_recent_diff_command "$@" ;;
+    read-due-window) read_due_window_command "$@" ;;
+    explain-degraded-state) explain_degraded_state_command ;;
+    classify-interaction-signals) classify_interaction_signals_command "$@" ;;
+    *) emit_failed unknown-command invalid_argument ;;
+  esac
+}
+
+main "$@"
