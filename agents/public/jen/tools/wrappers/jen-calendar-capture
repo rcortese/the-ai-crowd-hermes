@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+RUNTIME="${JEN_CALENDAR_RUNTIME_BIN:-$ROOT/tools/wrappers/jen-calendar-runtime}"
+summary=""; from=""; to=""; calendar_id=""; description=""; location=""
+while (($#)); do
+  case "$1" in
+    --summary) summary="${2:-}"; shift 2;;
+    --from) from="${2:-}"; shift 2;;
+    --to) to="${2:-}"; shift 2;;
+    --calendar) calendar_id="${2:-}"; shift 2;;
+    --description) description="${2:-}"; shift 2;;
+    --location) location="${2:-}"; shift 2;;
+    --reminder) shift 2;;
+    *) printf '{"contract_version":"jen-calendar-runtime.v1","command":"capture-event","status":"failed","failure_class":"invalid_argument"}\n'; exit 1;;
+  esac
+done
+# Step 3 deliberately keeps Calendar writes unavailable. Step 5/Calendar mutation work must wire this through the mutation gateway.
+exec "$RUNTIME" capture-event --summary "$summary" --from "$from" --to "$to" ${calendar_id:+--calendar "$calendar_id"}
