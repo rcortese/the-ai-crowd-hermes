@@ -26,3 +26,14 @@ safety:
   no_bulk_openclaw_memory_import: true
   no_raw_secret_commit: true
   external_writes_require_mutation_gateway: true
+scheduled_jobs:
+  jen_health_watch:
+    status: configured_local_delivery
+    job_id: d79831e43d3c
+    mode: no-agent
+    script: jen-health-watch.sh
+  jen_new_day_readiness:
+    status: configured_local_delivery
+    job_id: 1b8fd906f1f6
+    mode: no-agent
+    script: jen-new-day-readiness.sh
