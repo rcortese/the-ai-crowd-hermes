@@ -116,19 +116,38 @@ Target: migrate Jen from OpenClaw to Hermes-native container with Todoist, gog/C
 - Manual runs succeeded. Health output reported Todoist `ok` and Calendar `degraded` as expected while Calendar auth is not provisioned. New-day readiness reported Todoist `ok`, due-window count, and `write_actions:[]`.
 - Hermes CLI warns the gateway is not running, so recurrence will begin only after Step 7 starts the Jen gateway.
 
-## Step 7 — Telegram cutover from OpenClaw Jen to Hermes Jen
+## Step 7 — Telegram cutover
 
 ### Execution plan
 
-1. Stop/disable OpenClaw Jen Telegram handling without disturbing Moss/OpenClaw globally where possible.
-2. Configure Hermes Jen Telegram using Jen token/allowlist/private channel state.
-3. Start/recreate Jen Hermes gateway and test a direct Telegram conversation.
+1. Keep OpenClaw Jen Telegram path live until Hermes Jen passes all local tests.
+2. Activate the verified Jen Telegram token in the private Hermes Jen runtime `.env`, with `TELEGRAM_ALLOWED_USERS=8503464394` and `TELEGRAM_HOME_CHANNEL=8503464394`. The token resolves to `@the_ai_crowd_jen_bot` (`sha256[:12]=b74895c5f7f3`) via Telegram `getMe`; the full token is not committed or logged.
+3. Disable only `channels.telegram.accounts.jen.enabled=false` in OpenClaw and restart `openclaw-gateway.service`; leave Roy and Denholm enabled.
+4. Start the Hermes Jen gateway in the `the-ai-crowd-jen-1` container and validate Telegram polling.
+5. Send a controlled outbound smoke message to the allowed Telegram DM. Inbound direct-message confirmation completed from chat `8503464394`; Hermes Jen logged and answered the DM.
 
 ### Review gates
 
-- Gate 7A — Single-writer gate: only one Jen Telegram consumer is active after cutover.
-- Gate 7B — Identity gate: Telegram reply identifies as Jen and handles productivity domain.
-- Gate 7C — Rollback gate: OpenClaw Jen fallback or token restore path is documented before cutover.
+- Gate 7A — Cutover gate: OpenClaw Jen disabled; other OpenClaw bots untouched.
+- Gate 7B — Hermes gateway gate: Jen Telegram connects in polling mode with no `409 Conflict`; outbound smoke and inbound DM response both succeed.
+- Gate 7C — Rollback gate: documented rollback path to stop Hermes Jen gateway and restore the OpenClaw backup.
+
+### Validation notes
+
+- OpenClaw backup before cutover: `/home/rcortese/.openclaw/openclaw.json.before-jen-hermes-telegram-cutover-20260524T160459`.
+- Hermes Jen env backup before token activation: `/opt/data/.env.before-telegram-cutover`.
+- OpenClaw account state after restart: `jen=false`, `roy=true`, `denholm=true`, `default=false`.
+- Hermes Jen gateway status: running manually in `the-ai-crowd-jen-1`; Telegram connected in polling mode.
+- Hermes Jen cron warning cleared after gateway start; configured local no-agent jobs remain active.
+- Outbound Telegram smoke message sent to chat `8503464394` with message id `568`. Inbound DM from `8503464394` was logged at 16:06 and Hermes Jen sent a response at 16:07.
+- No Telegram `409 Conflict` was seen in the checked Hermes/OpenClaw logs after cutover.
+
+### Rollback
+
+1. Stop the Hermes Jen gateway process in `the-ai-crowd-jen-1`.
+2. Restore `/home/rcortese/.openclaw/openclaw.json.before-jen-hermes-telegram-cutover-20260524T160459` or set only `channels.telegram.accounts.jen.enabled=true`.
+3. Restart `openclaw-gateway.service`.
+4. Verify `@the_ai_crowd_jen_bot` is again handled by OpenClaw and that Roy/Denholm remain enabled.
 
 ## Final review
 

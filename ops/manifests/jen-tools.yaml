@@ -37,3 +37,17 @@ scheduled_jobs:
     job_id: 1b8fd906f1f6
     mode: no-agent
     script: jen-new-day-readiness.sh
+
+telegram_cutover:
+  status: hermes_gateway_running_inbound_dm_confirmed
+  target_bot_username: the_ai_crowd_jen_bot
+  token_sha256_12: b74895c5f7f3
+  hermes_container: the-ai-crowd-jen-1
+  openclaw_account: channels.telegram.accounts.jen
+  openclaw_backup: /home/rcortese/.openclaw/openclaw.json.before-jen-hermes-telegram-cutover-20260524T160459
+  hermes_env_backup: /opt/data/.env.before-telegram-cutover
+  allowed_user: "8503464394"
+  home_channel: "8503464394"
+  outbound_smoke_message_id: 568
+  inbound_dm_confirmed: true
+  rollback: stop Hermes Jen gateway, restore OpenClaw Jen account, restart OpenClaw gateway
