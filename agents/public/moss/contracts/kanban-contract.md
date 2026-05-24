@@ -40,6 +40,25 @@ Moss can execute technical work for another domain only when the card records:
 
 Moss must route back to Denholm for product/stewardship decisions, Jen for productivity decisions, Richmond for ArchiveOps scope decisions, Roy for intake decisions, and The Elders for packet-only prepared archive answers.
 
+
+
+## Cross-agent environment incidents
+
+Jen may open Moss-owned incidents when her Hermes environment, container, runtime home, credentials, gateway, Kanban state, Todoist/Calendar plumbing, or host integration is degraded or blocked. Those cards are technical operations work, not Jen-owned productivity work.
+
+Jen-opened environment incident cards must record:
+
+- `reporter: jen`;
+- `affected_agent: jen`;
+- `owner: moss`;
+- `decision_owner: moss`;
+- `executor: moss`;
+- `private_data_level: private` unless the card is explicitly public-safe;
+- severity, symptom/evidence references, requested outcome, and return path;
+- the boundary note that Jen must not diagnose or repair her own runtime/environment.
+
+Assign these cards to Moss's `incidents` profile on the shared `incidents` board. Moss owns diagnosis, remediation, rollback/authorization requests, and status reporting. Jen remains responsible only for the productivity-domain response after Moss returns a technical status.
+
 ## Resumption rule
 
 Resume from kanban state, git state, and referenced evidence. Do not rely on hidden chat continuity as the only source of truth.
