@@ -44,15 +44,15 @@ Target: migrate Jen from OpenClaw to Hermes-native container with Todoist, gog/C
 
 ### Execution plan
 
-1. Port/adapt Jen calendar runtime wrappers around `gog`.
-2. Implement read-only health/list commands first.
-3. Add create/delete paths only behind explicit mutation gateway policy.
+1. Add Jen Calendar wrappers under `agents/public/jen/tools/wrappers/` around `gog`: `jen-calendar-runtime` for `health`, `list-events`, `freebusy`, and `get-event`; `jen-calendar-capture` remains write-blocked until mutation gateway work.
+2. Require explicit RFC3339 `--from` and `--to` values plus explicit `--calendar` for read commands. Normalize handled outcomes into `jen-calendar-runtime.v1` JSON rather than raw provider passthrough.
+3. Add a fake-gog contract smoke test and validate the live unauthenticated container path records `auth_failure` instead of claiming readiness.
 
 ### Review gates
 
-- Gate 3A — Read-only gate: list/today commands cannot mutate Google Calendar.
-- Gate 3B — Timezone gate: calendar commands require explicit timezone/ISO handling.
-- Gate 3C — Live-read gate: authenticated Jen container can list today/range events, or records auth blocker clearly.
+- Gate 3A — Read-only gate: Step 3 wrappers expose only read/health paths; `capture-event`, `set-reminders`, and `delete-event` return `failure_class:"unavailable"` until mutation/idempotency safety is wired.
+- Gate 3B — Timezone gate: range reads require explicit caller-provided RFC3339 timestamps with timezone; no wrapper accepts implicit local-date mutation shortcuts.
+- Gate 3C — Live-read gate: authenticated Jen container can list today/range events, or unauthenticated container records a clear `auth_failure` blocker through the same wrapper path.
 
 ## Step 4 — Todoist MCP official integration
 
