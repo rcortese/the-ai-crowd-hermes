@@ -100,15 +100,21 @@ Target: migrate Jen from OpenClaw to Hermes-native container with Todoist, gog/C
 
 ### Execution plan
 
-1. Recreate only essential Jen jobs in Hermes cron.
-2. Preserve no-proactive-morning and no-spam heartbeat policy.
-3. Run each job manually before enabling recurring delivery.
+1. Recreate only essential Jen jobs in Hermes cron: a no-agent health watch and a no-agent new-day readiness read. Do not bulk-import OpenClaw cron jobs.
+2. Keep both jobs read-only/no-agent and `deliver: local` until Telegram cutover. Runtime scripts live under ignored `/opt/data/scripts/`; versioned copies live under `agents/public/jen/tools/cron-scripts/`.
+3. Run each job manually before relying on recurrence. Gateway is still stopped before Step 7, so jobs are configured and manually validated but will not fire automatically until Jen gateway is live.
 
 ### Review gates
 
-- Gate 6A — Job inventory gate: migrated jobs match essential OpenClaw classes; no bulk cron import.
-- Gate 6B — Manual-run gate: each cron can run once and produce expected output or `NO_REPLY`.
-- Gate 6C — Delivery gate: recurrence/delivery points to Jen, not Moss, and has disable path.
+- Gate 6A — Job inventory gate: migrated jobs match essential OpenClaw classes (`jen-calendar-auth-watch`/health and `Jen precompute new-day handoff`/new-day readiness); no bulk cron import.
+- Gate 6B — Manual-run gate: each cron ran once through `hermes cron run ...` + `hermes cron tick` and produced expected JSON output.
+- Gate 6C — Delivery gate: recurrence/delivery is local-only before Telegram, points to Jen runtime cron state, and can be paused/removed by job id.
+
+### Validation notes
+
+- Created Jen runtime cron jobs: `d79831e43d3c` (`Jen health watch`, every 60m, local, no-agent) and `1b8fd906f1f6` (`Jen new-day readiness`, `30 5 * * *`, local, no-agent).
+- Manual runs succeeded. Health output reported Todoist `ok` and Calendar `degraded` as expected while Calendar auth is not provisioned. New-day readiness reported Todoist `ok`, due-window count, and `write_actions:[]`.
+- Hermes CLI warns the gateway is not running, so recurrence will begin only after Step 7 starts the Jen gateway.
 
 ## Step 7 — Telegram cutover from OpenClaw Jen to Hermes Jen
 
