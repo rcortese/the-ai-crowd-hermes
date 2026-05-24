@@ -79,15 +79,22 @@ Target: migrate Jen from OpenClaw to Hermes-native container with Todoist, gog/C
 
 ### Execution plan
 
-1. Port/adapt `jen-task-runtime`, Todoist API transport, mutation gateway, and idempotency store.
-2. Wire Todoist credential class privately.
-3. Validate read-only task listing, then a reversible authorized test mutation if safe.
+1. Port/adapt the OpenClaw Jen Todoist runtime into the Hermes public scaffold: `jen-task-runtime`, `jen-task-read`, `jen-todoist-capture`, Todoist REST transport, mutation gateway, runtime helper, write-safety gate, and SQLite idempotency store.
+2. Move runtime defaults off the public read-only scaffold and into ignored Jen runtime state: `/opt/data/.env` for the token, `/opt/data/state/jen/...` for heartbeat/observation/idempotency data.
+3. Validate read-only task listing first, then run one explicit reversible live smoke mutation through `jen-todoist-capture`; replay the same request and verify it returns the same external task id rather than creating a duplicate; then complete the smoke task.
 
 ### Review gates
 
-- Gate 5A — Secret gate: Todoist token is private runtime state only.
-- Gate 5B — Idempotency gate: repeated mutation request does not duplicate external task/event.
-- Gate 5C — Live-write gate: any write test is explicit, reversible, and verified in Todoist.
+- Gate 5A — Secret gate: Todoist token is private runtime state only; committed files contain only wrapper code and contracts.
+- Gate 5B — Idempotency gate: repeated mutation request does not duplicate the external task; the replay returned the same Todoist task id.
+- Gate 5C — Live-write gate: the only live write test was an explicit migration smoke task, it was verified through the runtime path, and it was completed afterward.
+
+### Validation notes
+
+- Contract tests passed for idempotency store, mutation runtime helper, task-read wrapper, task runtime/boundary behavior, deadline handling, baseline handling, move-task, retry-partial, write-safety gate, and Todoist API pagination.
+- Live health: `jen-task-runtime health` returned `status:"ok"` with token present.
+- Live read: `jen-task-read active` returned active tasks from Todoist.
+- Live reversible write: two identical `jen-todoist-capture --content "Jen Hermes migration smoke ..."` calls returned the same external Todoist task id, proving replay idempotency for the smoke path; the task was then completed through the Todoist transport.
 
 ## Step 6 — Cron/watch/heartbeat
 
