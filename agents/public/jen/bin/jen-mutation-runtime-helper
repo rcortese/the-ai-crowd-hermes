@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""Jen mutation runtime helper.
+
+Composes Mutation Gateway planning with the SQLite idempotency store. This
+helper never calls provider adapters. It returns a decision that runtimes can
+use before attempting a live write.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+CONTRACT_VERSION = "jen-mutation-runtime-helper.v0"
+ROOT = Path(__file__).resolve().parents[1]
+GATEWAY = ROOT / "bin" / "jen-mutation-gateway"
+STORE = ROOT / "bin" / "jen-idempotency-store"
+VOLATILE_KEYS = {
+    "planned_at",
+    "created_at",
+    "updated_at",
+    "checked_at",
+    "status",
+    "verification_result",
+    "post_state",
+    "provider_result",
+    "result",
+    "result_json",
+    "retry_count",
+    "audit_log_ref",
+    "contract_version",
+    "command",
+}
+SEMANTIC_TOP_LEVEL = {
+    "target_system",
+    "operation_type",
+    "canonical_object_type",
+    "external_object_id",
+    "mutation_payload",
+    "pre_state",
+}
+FINAL_REUSABLE_STATUS = "verified"
+
+
+def dump(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def stable_hash(obj: Any) -> str:
+    return hashlib.sha256(dump(obj).encode("utf-8")).hexdigest()
+
+
+def strip_volatile(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: strip_volatile(v) for k, v in sorted(value.items()) if k not in VOLATILE_KEYS and v is not None}
+    if isinstance(value, list):
+        return [strip_volatile(v) for v in value]
+    return value
+
+
+def semantic_material(plan: dict[str, Any]) -> dict[str, Any]:
+    return {k: strip_volatile(plan.get(k)) for k in sorted(SEMANTIC_TOP_LEVEL) if plan.get(k) is not None}
+
+
+def normalized_hash(plan: dict[str, Any]) -> str:
+    return "nh_" + stable_hash(semantic_material(plan))
+
+
+def run_json(cmd: list[str], *, input_obj: dict[str, Any] | None = None, allow_nonzero: bool = False) -> tuple[int, dict[str, Any]]:
+    proc = subprocess.run(
+        cmd,
+        input=dump(input_obj) if input_obj is not None else None,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.stderr:
+        print(proc.stderr, file=sys.stderr, end="")
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"command emitted non-json stdout: {' '.join(cmd)}: {exc}: {proc.stdout[:200]}") from exc
+    if proc.returncode != 0 and not allow_nonzero:
+        raise RuntimeError(f"command failed: {' '.join(cmd)}")
+    return proc.returncode, data
+
+
+def load_json(path: str | None) -> dict[str, Any]:
+    raw = sys.stdin.read() if not path or path == "-" else Path(path).read_text(encoding="utf-8")
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("input must be a JSON object")
+    return data
+
+
+def store_dir_arg() -> list[str]:
+    if os.environ.get("JEN_IDEMPOTENCY_DIR"):
+        return ["--dir", os.environ["JEN_IDEMPOTENCY_DIR"]]
+    return []
+
+
+def store_check(key: str, nhash: str) -> dict[str, Any]:
+    _, data = run_json([str(STORE), *store_dir_arg(), "check", "--kind", "intent", "--key", key, "--normalized-hash", nhash])
+    return data
+
+
+def store_put(plan: dict[str, Any], nhash: str, status: str, result: dict[str, Any] | None = None) -> dict[str, Any]:
+    cmd = [
+        str(STORE),
+        *store_dir_arg(),
+        "put",
+        "--kind",
+        "intent",
+        "--key",
+        str(plan["idempotency_key"]),
+        "--normalized-hash",
+        nhash,
+        "--status",
+        status,
+        "--target-system",
+        str(plan.get("target_system") or ""),
+        "--audit-log-ref",
+        str(plan.get("audit_log_ref") or ""),
+    ]
+    if plan.get("external_object_id"):
+        cmd += ["--external-object-id", str(plan["external_object_id"])]
+    if result is not None:
+        cmd += ["--result-json", dump(result)]
+    _, data = run_json(cmd)
+    return data
+
+
+def compatible_result(record: dict[str, Any] | None) -> bool:
+    if not record:
+        return False
+    result = record.get("result")
+    if not isinstance(result, dict) or not result:
+        return False
+    schema = result.get("runtime_schema") or result.get("contract_version")
+    return isinstance(schema, str) and schema.startswith("jen-")
+
+
+def decide(plan: dict[str, Any], check: dict[str, Any], *, persist: bool) -> tuple[str, dict[str, Any] | None]:
+    if plan.get("status") == "blocked" or plan.get("risk_level") == "blocked":
+        if persist:
+            store_put(plan, plan["normalized_hash"], "blocked", {"gateway_plan": plan})
+        return "blocked", None
+    if plan.get("status") == "awaiting_confirmation" or plan.get("risk_level") == "high" or plan.get("requires_confirmation"):
+        if persist:
+            store_put(plan, plan["normalized_hash"], "awaiting_confirmation", {"gateway_plan": plan})
+        return "awaiting_confirmation", None
+    if check.get("status") == "collision":
+        return "collision", check.get("record")
+    if check.get("status") == "duplicate":
+        record = check.get("record") if isinstance(check.get("record"), dict) else None
+        rec_status = record.get("status") if record else None
+        if rec_status == "collision":
+            return "collision", record
+        if rec_status == FINAL_REUSABLE_STATUS and compatible_result(record):
+            return "duplicate_verified", record
+        if rec_status == "failed":
+            result = record.get("result") if record else None
+            partial = result.get("partial") if isinstance(result, dict) else None
+            if isinstance(partial, dict) and partial.get("external_object_id"):
+                return "retry_partial", record
+            if isinstance(result, dict) and result.get("failed_step") == "duplicate-preflight":
+                return "execute", record
+        return "unsafe_replay_state", record
+    return "execute", None
+
+
+def cmd_prepare(args: argparse.Namespace) -> int:
+    draft = load_json(args.file)
+    _, plan = run_json([str(GATEWAY), "plan", "-"], input_obj=draft)
+    nhash = normalized_hash(plan)
+    plan["normalized_hash"] = nhash
+    check = store_check(plan["idempotency_key"], nhash)
+    decision, record = decide(plan, check, persist=not args.no_persist)
+    if decision == "execute" and not args.no_persist:
+        store_put(plan, nhash, "planned", {"gateway_plan": plan})
+    print(dump({
+        "contract_version": CONTRACT_VERSION,
+        "status": "ok",
+        "decision": decision,
+        "gateway_plan": plan,
+        "idempotency": {
+            "kind": "intent",
+            "key": plan["idempotency_key"],
+            "normalized_hash": nhash,
+            "check_status": check.get("status"),
+            "record": record,
+        },
+    }))
+    return 0
+
+
+def cmd_hash(args: argparse.Namespace) -> int:
+    data = load_json(args.file)
+    plan = data.get("gateway_plan") if isinstance(data.get("gateway_plan"), dict) else data
+    nhash = normalized_hash(plan)
+    print(dump({"contract_version": CONTRACT_VERSION, "status": "ok", "normalized_hash": nhash, "semantic_material": semantic_material(plan)}))
+    return 0
+
+
+def cmd_record(args: argparse.Namespace) -> int:
+    data = load_json(args.file)
+    plan = data.get("gateway_plan") if isinstance(data.get("gateway_plan"), dict) else data
+    if not plan.get("idempotency_key"):
+        raise ValueError("idempotency_key required")
+    if not plan.get("normalized_hash"):
+        plan["normalized_hash"] = normalized_hash(plan)
+    result = data.get("result") if isinstance(data.get("result"), dict) else data.get("result_json")
+    out = store_put(plan, plan["normalized_hash"], args.status, result if isinstance(result, dict) else None)
+    print(dump({"contract_version": CONTRACT_VERSION, "status": "ok", "store": out}))
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Jen mutation runtime helper")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    prepare = sub.add_parser("prepare")
+    prepare.add_argument("file", nargs="?")
+    prepare.add_argument("--no-persist", action="store_true")
+    prepare.set_defaults(func=cmd_prepare)
+
+    hash_cmd = sub.add_parser("hash")
+    hash_cmd.add_argument("file", nargs="?")
+    hash_cmd.set_defaults(func=cmd_hash)
+
+    record = sub.add_parser("record")
+    record.add_argument("--status", required=True, choices=["planned", "executed", "verified", "failed", "blocked", "awaiting_confirmation", "collision"])
+    record.add_argument("file", nargs="?")
+    record.set_defaults(func=cmd_record)
+
+    args = parser.parse_args(argv)
+    try:
+        return args.func(args)
+    except Exception as exc:
+        print(dump({"contract_version": CONTRACT_VERSION, "status": "failed", "failure_class": "helper_error", "error": str(exc)}))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
