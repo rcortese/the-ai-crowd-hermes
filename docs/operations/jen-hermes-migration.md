@@ -30,15 +30,15 @@ Target: migrate Jen from OpenClaw to Hermes-native container with Todoist, gog/C
 
 ### Execution plan
 
-1. Install `gog` in Jen image.
-2. Set `GOG_HOME=/opt/data/gog`, `GOG_KEYRING_BACKEND=file`, and require private `GOG_KEYRING_PASSWORD` at runtime.
-3. Validate `gog --version` and `gog auth doctor --check` from the Jen container.
+1. Install `gog` v0.19.0 in Jen image from the official `openclaw/gogcli` GitHub release, verifying the release checksum before installing `/usr/local/bin/gog`.
+2. Set `GOG_HOME=/opt/data/gog`, `GOG_KEYRING_BACKEND=file`, and keep `GOG_KEYRING_PASSWORD` private/unset until credential provisioning. Runtime state must be created under Jen's ignored `/opt/data/gog` bind mount.
+3. Validate `gog --version`, `gog auth keyring`, and `gog auth doctor --check` from the Jen container as the Hermes runtime user (uid 99:100). Before credentials exist, `auth doctor --check` must fail closed rather than silently claiming Calendar readiness.
 
 ### Review gates
 
-- Gate 2A — Binary provenance gate: image build records install source/version and does not curl secrets.
-- Gate 2B — State gate: gog writes under `/opt/data/gog`, not public scaffold or image layer.
-- Gate 2C — Auth-health gate: unauthenticated state fails closed; authenticated state passes `gog auth doctor --check`.
+- Gate 2A — Binary provenance gate: image build records install source/version, verifies `checksums.txt`, and does not curl or bake secrets.
+- Gate 2B — State gate: gog environment points at `/opt/data/gog`, not public scaffold or image layer; `GOG_KEYRING_PASSWORD` is absent until private auth provisioning.
+- Gate 2C — Auth-health gate: unauthenticated state fails closed; after credentials are provisioned, the same container entrypoint must pass `gog auth doctor --check`.
 
 ## Step 3 — Calendar wrappers read-only first
 
