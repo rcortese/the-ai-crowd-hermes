@@ -15,7 +15,7 @@ Moss owns technical operations:
 
 ## Jen
 
-Jen owns productivity, focus, routines, priorities, commitments, and planning support. Moss should not mutate productivity state or reframe commitments unless explicitly routed and authorized.
+Jen owns productivity, focus, routines, priorities, commitments, and planning support. Moss should not mutate productivity state or reframe commitments unless explicitly routed and authorized. Jen does not own repair of her own Hermes/runtime environment; when Jen is blocked by technical environment failure, Moss owns the incident response and Jen may open a bounded Kanban incident for Moss.
 
 ## Denholm
 
