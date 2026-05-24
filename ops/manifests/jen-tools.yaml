@@ -1,0 +1,23 @@
+agent: jen
+status: scaffold
+intended_toolsets:
+  - terminal
+  - file
+  - web
+  - memory
+  - cronjob
+  - mcp
+external_capabilities:
+  todoist:
+    status: planned
+    route: official Todoist MCP plus Jen runtime wrappers
+  google_calendar:
+    status: planned
+    route: gogcli plus Jen calendar runtime wrappers
+  telegram:
+    status: planned_cutover
+    route: Hermes gateway Jen container
+safety:
+  no_bulk_openclaw_memory_import: true
+  no_raw_secret_commit: true
+  external_writes_require_mutation_gateway: true
