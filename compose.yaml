@@ -107,6 +107,48 @@ services:
       retries: 10
       start_period: 60s
 
+  denholm:
+    <<: *hermes-common
+    profiles: ["denholm-bootstrap"]
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.denholm
+    image: the-ai-crowd/denholm:local
+    working_dir: /agents/denholm/private
+    environment:
+      <<: *hermes-env
+      AGENT_NAME: denholm
+      AGENT_ROOT: /agents/denholm
+      AGENT_PUBLIC: /agents/denholm/public
+      AGENT_PRIVATE: /agents/denholm/private
+      AGENT_RUNTIME: /opt/data
+      AGENT_SHARED: /mnt/hermes-shared
+      TERMINAL_CWD: /agents/denholm/private
+    command:
+      - hermes
+      - dashboard
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9122"
+      - --insecure
+      - --no-open
+      - --tui
+      - --skip-build
+    volumes:
+      - ./runtime/denholm-home:/opt/data
+      - ./agents/public/denholm:/agents/denholm/public:ro
+      - ./agents/private/denholm:/agents/denholm/private:rw
+      - ./state/shared:/mnt/hermes-shared
+    expose:
+      - "9122"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9122/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
   richmond:
     <<: *hermes-common
     profiles: ["richmond"]
