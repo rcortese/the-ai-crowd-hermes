@@ -6,7 +6,7 @@ x-hermes-env: &hermes-env
     HERMES_UID: ${HERMES_UID:-1000}
     HERMES_GID: ${HERMES_GID:-1000}
     HOME: /opt/data
-    HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/the-ai-crowd
+    HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
 x-hermes-common: &hermes-common
   restart: unless-stopped
   environment:
