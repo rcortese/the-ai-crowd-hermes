@@ -88,17 +88,12 @@ services:
       GOG_KEYRING_BACKEND: file
       GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
       GOG_ACCOUNT: ${JEN_GOOGLE_ACCOUNT:-}
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: "9121"
     command:
-      - hermes
-      - dashboard
-      - --host
-      - 0.0.0.0
-      - --port
-      - "9121"
-      - --insecure
-      - --no-open
-      - --tui
-      - --skip-build
+      - gateway
+      - run
     volumes:
       - ./runtime/jen-home:/opt/data
       - ./agents/public/jen:/agents/jen/public:ro
