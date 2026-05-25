@@ -2,19 +2,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-export SCRIPT_DIR
+SCAFFOLD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export SCAFFOLD_ROOT
 
-python3 - <<'PY'
+python3 - <<'PYCODE'
 import os
 from pathlib import Path
 
-script_dir = Path(os.environ['SCRIPT_DIR']).resolve()
-
-candidates = [
-    script_dir.parent,              # mounted scaffold root: /agents/moss/public
-]
-if len(script_dir.parents) > 3:
-    candidates.append(script_dir.parents[3])  # monorepo root: .../agents/public/moss/tests -> repo root
+scaffold_root = Path(os.environ['SCAFFOLD_ROOT']).resolve()
 
 relative_required = [
     'AGENTS.md',
@@ -29,30 +24,11 @@ relative_required = [
     'contracts/git-versioning.md',
     'contracts/review-gates.md',
 ]
+required = [scaffold_root / p for p in relative_required]
 
-monorepo_prefix = Path('agents/public/moss')
-
-scaffold_root = None
-required = None
-for candidate in candidates:
-    mounted_paths = [candidate / p for p in relative_required]
-    monorepo_paths = [candidate / monorepo_prefix / p for p in relative_required]
-    if all(p.is_file() for p in mounted_paths):
-        scaffold_root = candidate
-        required = mounted_paths
-        break
-    if all(p.is_file() for p in monorepo_paths):
-        scaffold_root = candidate / monorepo_prefix
-        required = monorepo_paths
-        break
-
-if scaffold_root is None or required is None:
-    expected = '\n'.join(str(script_dir.parent / p) for p in relative_required)
-    raise SystemExit('missing Moss contract files; checked mounted scaffold and monorepo layouts:\n' + expected)
-
-missing = [str(p) for p in required if not p.is_file()]
+missing = [str(p.relative_to(scaffold_root)) for p in required if not p.is_file()]
 if missing:
-    raise SystemExit('missing Moss contract files:\n' + '\n'.join(missing))
+    raise SystemExit('missing Moss contract files under scaffold root:\n' + '\n'.join(missing))
 
 bundle = '\n'.join(p.read_text(errors='ignore') for p in required)
 required_terms = [
@@ -94,4 +70,4 @@ for link in [
         raise SystemExit(f'AGENTS.md missing contract link: {link}')
 
 print('moss_contract_smoke_ok')
-PY
+PYCODE
