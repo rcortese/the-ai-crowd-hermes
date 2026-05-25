@@ -86,6 +86,7 @@ services:
       TERMINAL_CWD: /agents/jen/private
       GOG_HOME: /opt/data/gog
       GOG_KEYRING_BACKEND: file
+      GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
       GOG_ACCOUNT: ${JEN_GOOGLE_ACCOUNT:-}
     command:
       - hermes
