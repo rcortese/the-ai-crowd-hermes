@@ -33,17 +33,12 @@ services:
       TERMINAL_CWD: /agents/moss/private
       WEBHOOK_ENABLED: "true"
       WEBHOOK_PORT: "8644"
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: "9119"
     command:
-      - hermes
-      - dashboard
-      - --host
-      - 0.0.0.0
-      - --port
-      - "9119"
-      - --insecure
-      - --no-open
-      - --tui
-      - --skip-build
+      - gateway
+      - run
     volumes:
       - ./runtime/moss-home:/opt/data
       - ./agents/public/moss:/agents/moss/public:ro
@@ -60,7 +55,7 @@ services:
     ports:
       - "0.0.0.0:8644:8644"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9119/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9119/ >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
