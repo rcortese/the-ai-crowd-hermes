@@ -11,16 +11,29 @@ RUN apt-get update \
         fd-find \
         gh \
         git \
+        imagemagick \
         iputils-ping \
         jq \
         netcat-openbsd \
         openssh-client \
+        postgresql-client \
         python3 \
         python3-venv \
+        redis-tools \
         ripgrep \
         rsync \
         sqlite3 \
+        tmux \
+        unzip \
+        wget \
+        xz-utils \
+        yq \
+        zip \
+    && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/*
+
+# Debian ships fd-find as /usr/bin/fdfind; expose the conventional fd name
+# because agent workflows and operator muscle memory use `fd`.
 
 # Runtime processes run as UID/GID 99:100 and cannot mutate the root-owned
 # Hermes venv. Bake lazy dependencies used by Moss's enabled providers so a
