@@ -1,29 +1,60 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$(dirname "$0")/../../../.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+export SCRIPT_DIR
 
 python3 - <<'PY'
+import os
 from pathlib import Path
 
-required = [
-    'agents/public/moss/AGENTS.md',
-    'agents/public/moss/SOUL.md',
-    'agents/public/moss/README.md',
-    'agents/public/moss/contracts/operating-contract.md',
-    'agents/public/moss/contracts/capability-boundary.md',
-    'agents/public/moss/contracts/memory-contract.md',
-    'agents/public/moss/contracts/kanban-contract.md',
-    'agents/public/moss/contracts/ownership-boundary.md',
-    'agents/public/moss/contracts/startup-checklist.md',
-    'agents/public/moss/contracts/git-versioning.md',
-    'agents/public/moss/contracts/review-gates.md',
+script_dir = Path(os.environ['SCRIPT_DIR']).resolve()
+
+candidates = [
+    script_dir.parent,              # mounted scaffold root: /agents/moss/public
 ]
-missing = [p for p in required if not Path(p).is_file()]
+if len(script_dir.parents) > 3:
+    candidates.append(script_dir.parents[3])  # monorepo root: .../agents/public/moss/tests -> repo root
+
+relative_required = [
+    'AGENTS.md',
+    'SOUL.md',
+    'README.md',
+    'contracts/operating-contract.md',
+    'contracts/capability-boundary.md',
+    'contracts/memory-contract.md',
+    'contracts/kanban-contract.md',
+    'contracts/ownership-boundary.md',
+    'contracts/startup-checklist.md',
+    'contracts/git-versioning.md',
+    'contracts/review-gates.md',
+]
+
+monorepo_prefix = Path('agents/public/moss')
+
+scaffold_root = None
+required = None
+for candidate in candidates:
+    mounted_paths = [candidate / p for p in relative_required]
+    monorepo_paths = [candidate / monorepo_prefix / p for p in relative_required]
+    if all(p.is_file() for p in mounted_paths):
+        scaffold_root = candidate
+        required = mounted_paths
+        break
+    if all(p.is_file() for p in monorepo_paths):
+        scaffold_root = candidate / monorepo_prefix
+        required = monorepo_paths
+        break
+
+if scaffold_root is None or required is None:
+    expected = '\n'.join(str(script_dir.parent / p) for p in relative_required)
+    raise SystemExit('missing Moss contract files; checked mounted scaffold and monorepo layouts:\n' + expected)
+
+missing = [str(p) for p in required if not p.is_file()]
 if missing:
     raise SystemExit('missing Moss contract files:\n' + '\n'.join(missing))
 
-bundle = '\n'.join(Path(p).read_text(errors='ignore') for p in required)
+bundle = '\n'.join(p.read_text(errors='ignore') for p in required)
 required_terms = [
     'Moss',
     'Jen',
@@ -53,7 +84,7 @@ for claim in forbidden_claims:
     if claim.lower() in bundle.lower():
         raise SystemExit(f'forbidden default-capability claim: {claim}')
 
-agents = Path('agents/public/moss/AGENTS.md').read_text()
+agents = (scaffold_root / 'AGENTS.md').read_text()
 for link in [
     'contracts/startup-checklist.md',
     'contracts/operating-contract.md',
