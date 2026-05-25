@@ -31,6 +31,8 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/moss/private
+      WEBHOOK_ENABLED: "true"
+      WEBHOOK_PORT: "8644"
     command:
       - hermes
       - dashboard
@@ -54,6 +56,9 @@ services:
           - hermes
     expose:
       - "9119"
+      - "8644"
+    ports:
+      - "0.0.0.0:8644:8644"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9119/ >/dev/null || exit 1"]
       interval: 30s
