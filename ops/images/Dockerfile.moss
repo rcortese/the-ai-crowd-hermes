@@ -22,6 +22,14 @@ RUN apt-get update \
         sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
+# Runtime processes run as UID/GID 99:100 and cannot mutate the root-owned
+# Hermes venv. Bake lazy dependencies used by Moss's enabled providers so a
+# rebuilt image does not lose Honcho memory or TTS availability.
+RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install \
+        honcho-ai==2.0.1 \
+        edge-tts==7.2.7 \
+        elevenlabs==1.59.0
+
 LABEL the-ai-crowd.agent="moss" \
       the-ai-crowd.role="technical-operations" \
       the-ai-crowd.runtime="hermes-agent-ops"
@@ -31,6 +39,11 @@ LABEL the-ai-crowd.agent="moss" \
 # This keeps `hermes` and `python` available from tool subprocesses as well as
 # from the dashboard process itself.
 ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
+
+# Bake Hermes runtime identity as UID/GID 99:100 so Compose can run
+# the whole container without a root privilege-drop phase.
+RUN usermod -u 99 -g 100 hermes \
+    && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
 
 # Runtime UID/GID are remapped by the Hermes entrypoint in private deployments.
 # The base entrypoint already re-owns the venv after remap; extend that to ui-tui because
@@ -47,3 +60,13 @@ path.write_text(text.replace(old, new))
 PY
 
 WORKDIR /workspace
+
+USER 99:100
+
+# The AI Crowd image owns the Hermes process topology for Moss:
+# gateway in the foreground, dashboard as the entrypoint-managed side process.
+ENV HERMES_DASHBOARD=1 \
+    HERMES_DASHBOARD_HOST=0.0.0.0 \
+    HERMES_DASHBOARD_PORT=9119 \
+    HERMES_DASHBOARD_TUI=1
+CMD ["gateway", "run"]
