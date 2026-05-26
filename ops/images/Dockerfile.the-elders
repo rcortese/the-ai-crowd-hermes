@@ -16,4 +16,14 @@ LABEL the-ai-crowd.agent="the-elders" \
       the-ai-crowd.role="packet-only-archive-knowledge" \
       the-ai-crowd.runtime="hermes-agent-packet-readonly"
 
+# Bake Hermes runtime identity as UID/GID 99:100 so Compose can run
+# the whole container without a root privilege-drop phase.
+RUN usermod -u 99 -g 100 hermes \
+    && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
+
 WORKDIR /workspace
+
+USER 99:100
+
+# The AI Crowd image owns The Elders' long-lived Hermes dashboard command.
+CMD ["dashboard", "--host", "0.0.0.0", "--port", "9130", "--insecure", "--no-open", "--skip-build"]

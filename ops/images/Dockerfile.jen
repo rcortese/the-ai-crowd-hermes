@@ -33,6 +33,11 @@ LABEL the-ai-crowd.agent="jen" \
       the-ai-crowd.runtime="hermes-agent-productivity"
 
 ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
+
+# Bake Hermes runtime identity as UID/GID 99:100 so Compose can run
+# the whole container without a root privilege-drop phase.
+RUN usermod -u 99 -g 100 hermes \
+    && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
 ENV GOG_HOME="/opt/data/gog" \
     GOG_KEYRING_BACKEND="file"
 
@@ -49,3 +54,13 @@ else:
 PY
 
 WORKDIR /agents/jen/private
+
+USER 99:100
+
+# The AI Crowd image owns the Hermes process topology for Jen:
+# gateway in the foreground, dashboard as the entrypoint-managed side process.
+ENV HERMES_DASHBOARD=1 \
+    HERMES_DASHBOARD_HOST=0.0.0.0 \
+    HERMES_DASHBOARD_PORT=9121 \
+    HERMES_DASHBOARD_TUI=1
+CMD ["gateway", "run"]

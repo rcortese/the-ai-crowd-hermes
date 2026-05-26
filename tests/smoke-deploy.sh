@@ -28,7 +28,7 @@ docker compose -p "$project" up -d --build moss
 started=true
 
 for attempt in $(seq 1 30); do
-  if docker compose -p "$project" exec -T moss sh -lc 'curl -fsS http://127.0.0.1:9119/ >/dev/null'; then
+  if docker compose -p "$project" exec -T moss sh -lc 'curl -fsS http://127.0.0.1:9119/ >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null'; then
     docker compose -p "$project" ps moss
     echo "smoke_deploy_ok"
     exit 0
@@ -43,5 +43,5 @@ for attempt in $(seq 1 30); do
 done
 
 docker compose -p "$project" ps moss || true
-echo "smoke_deploy_failed: dashboard not ready after bounded wait"
+echo "smoke_deploy_failed: dashboard/gateway not ready after bounded wait"
 exit 1

@@ -15,5 +15,8 @@ while (($#)); do
     *) printf '{"contract_version":"jen-calendar-runtime.v1","command":"capture-event","status":"failed","failure_class":"invalid_argument"}\n'; exit 1;;
   esac
 done
-# Step 3 deliberately keeps Calendar writes unavailable. Step 5/Calendar mutation work must wire this through the mutation gateway.
-exec "$RUNTIME" capture-event --summary "$summary" --from "$from" --to "$to" ${calendar_id:+--calendar "$calendar_id"}
+args=(capture-event --summary "$summary" --from "$from" --to "$to")
+[[ -n "$calendar_id" ]] && args+=(--calendar "$calendar_id")
+[[ -n "$description" ]] && args+=(--description "$description")
+[[ -n "$location" ]] && args+=(--location "$location")
+exec "$RUNTIME" "${args[@]}"

@@ -27,6 +27,11 @@ LABEL the-ai-crowd.agent="denholm" \
 
 ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 
+# Bake Hermes runtime identity as UID/GID 99:100 so Compose can run
+# the whole container without a root privilege-drop phase.
+RUN usermod -u 99 -g 100 hermes \
+    && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
+
 RUN python3 - <<'PY'
 from pathlib import Path
 path = Path('/opt/hermes/docker/entrypoint.sh')
@@ -40,3 +45,9 @@ else:
 PY
 
 WORKDIR /agents/denholm/private
+
+USER 99:100
+
+# The AI Crowd image owns Denholm's long-lived Hermes dashboard command.
+ENV HERMES_DASHBOARD_TUI=1
+CMD ["dashboard", "--host", "0.0.0.0", "--port", "9122", "--insecure", "--no-open", "--tui", "--skip-build"]
