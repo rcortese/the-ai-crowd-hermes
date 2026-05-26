@@ -141,50 +141,6 @@ services:
       start_period: 60s
 
 
-  jen:
-    <<: *hermes-common
-    profiles: ["jen-bootstrap"]
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.jen
-    image: the-ai-crowd/jen:local
-    working_dir: /agents/jen/private
-    environment:
-      <<: *hermes-env
-      AGENT_NAME: jen
-      AGENT_ROOT: /agents/jen
-      AGENT_PUBLIC: /agents/jen/public
-      AGENT_PRIVATE: /agents/jen/private
-      AGENT_RUNTIME: /opt/data
-      AGENT_SHARED: /mnt/hermes-shared
-      TERMINAL_CWD: /agents/jen/private
-      GOG_HOME: /opt/data/gog
-      GOG_KEYRING_BACKEND: file
-      GOG_ACCOUNT: ${JEN_GOOGLE_ACCOUNT:-}
-    command:
-      - hermes
-      - dashboard
-      - --host
-      - 0.0.0.0
-      - --port
-      - "9121"
-      - --insecure
-      - --no-open
-      - --tui
-      - --skip-build
-    volumes:
-      - ./runtime/jen-home:/opt/data
-      - ./agents/public/jen:/agents/jen/public:ro
-      - ./agents/private/jen:/agents/jen/private:rw
-      - ./state/shared:/mnt/hermes-shared
-    expose:
-      - "9121"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9121/ >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
 
   richmond:
     <<: *hermes-common
