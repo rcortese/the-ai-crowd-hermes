@@ -7,6 +7,8 @@ x-hermes-env: &hermes-env
     HERMES_GID: ${HERMES_GID:-1000}
     HOME: /opt/data
     HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
+x-hermes-llm-env-files: &hermes-llm-env-files
+  - ./state/secrets/hermes-llm/fleet.env
 x-hermes-common: &hermes-common
   restart: unless-stopped
   environment:
@@ -17,6 +19,7 @@ x-hermes-common: &hermes-common
 services:
   moss:
     <<: *hermes-common
+    env_file: *hermes-llm-env-files
     build:
       context: .
       dockerfile: ops/images/Dockerfile.moss
@@ -64,6 +67,7 @@ services:
 
   jen:
     <<: *hermes-common
+    env_file: *hermes-llm-env-files
     profiles: ["jen-bootstrap"]
     build:
       context: .
@@ -105,6 +109,7 @@ services:
 
   denholm:
     <<: *hermes-common
+    env_file: *hermes-llm-env-files
     profiles: ["denholm-bootstrap"]
     build:
       context: .
