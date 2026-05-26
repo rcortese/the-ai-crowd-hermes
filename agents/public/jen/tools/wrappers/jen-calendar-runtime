@@ -129,11 +129,66 @@ cmd_get_event() {
     jq -nc --arg cv "$CONTRACT_VERSION" --arg cal "$calendar_id" --arg checked "$checked" --argjson raw "$(cat "$out")" '{contract_version:$cv,command:"get-event",status:"ok",source:"live",calendar_id:$cal,checked_at:$checked,event:$raw}'
   else cls="$(map_error "$(cat "$err" "$out")")"; fail_json get-event "$cls"; fi
 }
+cmd_capture_event() {
+  require_jq capture-event; need_adapter capture-event
+  local calendar_id="" summary="" from="" to="" description="" location=""
+  while (($#)); do
+    case "$1" in
+      --calendar) calendar_id="${2:-}"; shift 2;;
+      --summary) summary="${2:-}"; shift 2;;
+      --from) from="${2:-}"; shift 2;;
+      --to) to="${2:-}"; shift 2;;
+      --description) description="${2:-}"; shift 2;;
+      --location) location="${2:-}"; shift 2;;
+      *) fail_json capture-event invalid_argument;;
+    esac
+  done
+  [[ -n "$calendar_id" && -n "$summary" && -n "$from" && -n "$to" ]] || fail_json capture-event invalid_argument
+  valid_rfc3339_tz "$from" && valid_rfc3339_tz "$to" || fail_json capture-event invalid_argument
+  read_nul_args gog_args
+  local out err rc cls checked
+  out="$(mktemp)"; err="$(mktemp)"; trap 'rm -f "$out" "$err"' RETURN
+  local args=(calendar create "$calendar_id" --summary "$summary" --from "$from" --to "$to" --send-updates none "${gog_args[@]}")
+  [[ -n "$description" ]] && args+=(--description "$description")
+  [[ -n "$location" ]] && args+=(--location "$location")
+  set +e; "$GOG_BIN" "${args[@]}" >"$out" 2>"$err"; rc=$?; set -e
+  checked="$(now_utc)"
+  if [[ $rc -eq 0 ]]; then
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg cal "$calendar_id" --arg checked "$checked" --argjson raw "$(cat "$out")" '{contract_version:$cv,command:"capture-event",status:"ok",source:"live",calendar_id:$cal,checked_at:$checked,event:$raw}'
+  else
+    cls="$(map_error "$(cat "$err" "$out")")"; fail_json capture-event "$cls"
+  fi
+}
+cmd_delete_event() {
+  require_jq delete-event; need_adapter delete-event
+  local calendar_id="" event_id=""
+  while (($#)); do
+    case "$1" in
+      --calendar) calendar_id="${2:-}"; shift 2;;
+      --event-id) event_id="${2:-}"; shift 2;;
+      *) fail_json delete-event invalid_argument;;
+    esac
+  done
+  [[ -n "$calendar_id" && -n "$event_id" ]] || fail_json delete-event invalid_argument
+  read_nul_args gog_args
+  local out err rc cls checked raw
+  out="$(mktemp)"; err="$(mktemp)"; trap 'rm -f "$out" "$err"' RETURN
+  set +e; "$GOG_BIN" calendar delete "$calendar_id" "$event_id" --force --send-updates none "${gog_args[@]}" >"$out" 2>"$err"; rc=$?; set -e
+  checked="$(now_utc)"
+  if [[ $rc -eq 0 ]]; then
+    raw="$(cat "$out" 2>/dev/null || true)"; [[ -n "$raw" ]] || raw='{}'
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg cal "$calendar_id" --arg event_id "$event_id" --arg checked "$checked" --argjson raw "$raw" '{contract_version:$cv,command:"delete-event",status:"ok",source:"live",calendar_id:$cal,event_id:$event_id,checked_at:$checked,result:$raw}'
+  else
+    cls="$(map_error "$(cat "$err" "$out")")"; fail_json delete-event "$cls"
+  fi
+}
 case "${1:-}" in
   health) shift; cmd_health "$@";;
   list-events) shift; cmd_list_events "$@";;
   freebusy) shift; cmd_freebusy "$@";;
   get-event) shift; cmd_get_event "$@";;
-  capture-event|set-reminders|delete-event) fail_json "${1}" unavailable;;
+  capture-event) shift; cmd_capture_event "$@";;
+  delete-event) shift; cmd_delete_event "$@";;
+  set-reminders) fail_json "${1}" unavailable;;
   *) require_jq unknown; fail_json unknown invalid_argument;;
 esac

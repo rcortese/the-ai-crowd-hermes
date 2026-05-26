@@ -2,15 +2,15 @@ name: the-ai-crowd
 
 x-hermes-env: &hermes-env
     TZ: ${TZ:-UTC}
-    HERMES_DASHBOARD_TUI: ${HERMES_DASHBOARD_TUI:-1}
-    HERMES_UID: ${HERMES_UID:-1000}
-    HERMES_GID: ${HERMES_GID:-1000}
+    HERMES_UID: 99
+    HERMES_GID: 100
     HOME: /opt/data
     HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
 x-hermes-llm-env-files: &hermes-llm-env-files
   - ./state/secrets/hermes-llm/fleet.env
 x-hermes-common: &hermes-common
   restart: unless-stopped
+  user: "99:100"
   environment:
     <<: *hermes-env
   networks:
@@ -19,11 +19,14 @@ x-hermes-common: &hermes-common
 services:
   moss:
     <<: *hermes-common
+    # All-in-one runtime: supervisord starts gateway, dashboard, and WebUI.
+    # Runs supervisor as root only to drop child programs to hermes UID/GID 99:100.
+    user: "0:0"
     env_file: *hermes-llm-env-files
     build:
       context: .
-      dockerfile: ops/images/Dockerfile.moss
-    image: the-ai-crowd/moss:local
+      dockerfile: ops/images/Dockerfile.moss-all-in-one
+    image: the-ai-crowd/moss-all-in-one:local
     working_dir: /agents/moss/private
     environment:
       <<: *hermes-env
@@ -39,9 +42,12 @@ services:
       HERMES_DASHBOARD: "1"
       HERMES_DASHBOARD_HOST: 0.0.0.0
       HERMES_DASHBOARD_PORT: "9119"
-    command:
-      - gateway
-      - run
+      HERMES_DASHBOARD_TUI: "1"
+      HERMES_WEBUI_AGENT_DIR: /opt/hermes
+      HERMES_WEBUI_HOST: 0.0.0.0
+      HERMES_WEBUI_PORT: "8787"
+      HERMES_WEBUI_STATE_DIR: /opt/data/webui
+      HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/moss/private
     volumes:
       - ./runtime/moss-home:/opt/data
       - ./agents/public/moss:/agents/moss/public:ro
@@ -53,16 +59,17 @@ services:
         aliases:
           - hermes
     expose:
+      - "8787"
       - "9119"
       - "8644"
     ports:
       - "0.0.0.0:8644:8644"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9119/ >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:9119/ >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
-      start_period: 60s
+      start_period: 90s
 
 
   jen:
@@ -87,12 +94,6 @@ services:
       GOG_KEYRING_BACKEND: file
       GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
       GOG_ACCOUNT: ${JEN_GOOGLE_ACCOUNT:-}
-      HERMES_DASHBOARD: "1"
-      HERMES_DASHBOARD_HOST: 0.0.0.0
-      HERMES_DASHBOARD_PORT: "9121"
-    command:
-      - gateway
-      - run
     volumes:
       - ./runtime/jen-home:/opt/data
       - ./agents/public/jen:/agents/jen/public:ro
@@ -125,17 +126,6 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/denholm/private
-    command:
-      - hermes
-      - dashboard
-      - --host
-      - 0.0.0.0
-      - --port
-      - "9122"
-      - --insecure
-      - --no-open
-      - --tui
-      - --skip-build
     volumes:
       - ./runtime/denholm-home:/opt/data
       - ./agents/public/denholm:/agents/denholm/public:ro
@@ -165,7 +155,6 @@ services:
       AGENT_PRIVATE: /agents/richmond/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
-    command: ["hermes", "dashboard", "--host", "0.0.0.0", "--port", "9120", "--insecure", "--no-open", "--tui", "--skip-build"]
     volumes:
       - ./runtime/richmond-home:/opt/data
       - ./agents/public/richmond:/agents/richmond/public:ro
@@ -189,7 +178,6 @@ services:
       AGENT_PRIVATE: /agents/the-elders/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
-    command: ["hermes", "dashboard", "--host", "0.0.0.0", "--port", "9130", "--insecure", "--no-open", "--skip-build"]
     read_only: true
     tmpfs:
       - /tmp
