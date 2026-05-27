@@ -16,6 +16,8 @@ RUN git clone https://github.com/nesquena/hermes-webui.git /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
     && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
+    && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
+    && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
     && rm -rf /opt/hermes-webui/.git \
