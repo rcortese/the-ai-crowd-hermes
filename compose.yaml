@@ -11,7 +11,7 @@ x-hermes-env: &hermes-env
 x-hermes-llm-env-files: &hermes-llm-env-files
   - ./state/secrets/hermes-llm/fleet.env
 x-hermes-common: &hermes-common
-  restart: unless-stopped
+  restart: always
   user: "99:100"
   environment:
     <<: *hermes-env
@@ -77,7 +77,6 @@ services:
   jen:
     <<: *hermes-common
     env_file: *hermes-llm-env-files
-    profiles: ["jen-bootstrap"]
     build:
       context: .
       dockerfile: ops/images/Dockerfile.jen
@@ -113,7 +112,6 @@ services:
   denholm:
     <<: *hermes-common
     env_file: *hermes-llm-env-files
-    profiles: ["denholm-bootstrap"]
     build:
       context: .
       dockerfile: ops/images/Dockerfile.denholm
