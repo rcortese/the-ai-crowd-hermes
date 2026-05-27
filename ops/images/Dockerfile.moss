@@ -43,6 +43,45 @@ RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install \
         edge-tts==7.2.7 \
         elevenlabs==1.59.0
 
+
+# Patch Hermes/OpenAI Codex integration for Responses API edge cases observed
+# with Codex: OpenAI SDK may receive response.output=None, and the Hermes
+# transport must not send tools=None.
+RUN python3 - <<'PY'
+from pathlib import Path
+import py_compile
+
+parser = Path('/opt/hermes/.venv/lib/python3.13/site-packages/openai/lib/_parsing/_responses.py')
+text = parser.read_text()
+old = 'for output in response.output:'
+new = 'for output in (response.output or []):  # PATCH: tolerate null response.output from Responses streams'
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'expected SDK loop not found in {parser}')
+    parser.write_text(text.replace(old, new, 1))
+py_compile.compile(str(parser), doraise=True)
+
+transport = Path('/opt/hermes/agent/transports/codex.py')
+text = transport.read_text()
+old = '''            "tools": response_tools,
+            "store": False,
+        }
+        if response_tools:
+            kwargs["tool_choice"] = "auto"
+            kwargs["parallel_tool_calls"] = True'''
+new = '''            "store": False,
+        }
+        if response_tools:
+            kwargs["tools"] = response_tools
+            kwargs["tool_choice"] = "auto"
+            kwargs["parallel_tool_calls"] = True'''
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'expected transport block not found in {transport}')
+    transport.write_text(text.replace(old, new, 1))
+py_compile.compile(str(transport), doraise=True)
+PY
+
 LABEL the-ai-crowd.agent="moss" \
       the-ai-crowd.role="technical-operations" \
       the-ai-crowd.runtime="hermes-agent-ops"
