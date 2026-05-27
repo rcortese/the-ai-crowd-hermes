@@ -16,12 +16,217 @@ RUN git clone https://github.com/nesquena/hermes-webui.git /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
     && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
-    && uv venv /opt/hermes-webui/venv \
-    && uv pip install --python /opt/hermes-webui/venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt \
-    && uv pip install --python /opt/hermes-webui/venv/bin/python3 --no-cache-dir -e /opt/hermes \
+    && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt \
+    && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
     && rm -rf /opt/hermes-webui/.git \
     && chown -R 99:100 /opt/hermes-webui
 
+
+
+# Patch Hermes/WebUI runtime for Moss incident recovery:
+# - OpenAI SDK Responses parser tolerates response.output=None in the Hermes venv.
+# - Hermes Codex transport does not send tools=None.
+# - Model surfaces are intentionally constrained to the operator-approved list:
+#   OpenAI Codex: gpt-5.5, gpt-5.4-mini, gpt-5.3-codex-spark;
+#   Nous Portal: openrouter/owl-alpha only; no Anthropic/Claude entries.
+RUN /opt/hermes/.venv/bin/python3 - <<'PY'
+from pathlib import Path
+import py_compile
+
+parser = Path('/opt/hermes/.venv/lib/python3.13/site-packages/openai/lib/_parsing/_responses.py')
+text = parser.read_text()
+old = 'for output in response.output:'
+new = 'for output in (response.output or []):  # PATCH: tolerate null response.output from Responses streams'
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'expected SDK loop not found in {parser}')
+    parser.write_text(text.replace(old, new, 1))
+py_compile.compile(str(parser), doraise=True)
+
+transport = Path('/opt/hermes/agent/transports/codex.py')
+text = transport.read_text()
+old = '''            "tools": response_tools,
+            "store": False,
+        }
+        if response_tools:
+            kwargs["tool_choice"] = "auto"
+            kwargs["parallel_tool_calls"] = True'''
+new = '''            "store": False,
+        }
+        if response_tools:
+            kwargs["tools"] = response_tools
+            kwargs["tool_choice"] = "auto"
+            kwargs["parallel_tool_calls"] = True'''
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'expected transport block not found in {transport}')
+    transport.write_text(text.replace(old, new, 1))
+py_compile.compile(str(transport), doraise=True)
+
+config = Path('/opt/hermes-webui/api/config.py')
+text = config.read_text()
+old = '''                    for mid in _read_visible_codex_cache_model_ids():
+                        if mid not in codex_ids:
+                            codex_ids.append(mid)
+
+                    raw_models = [
+                        {"id": mid, "label": _get_label_for_model(mid, [])}
+                        for mid in codex_ids
+                    ]
+'''
+new = '''                    for mid in _read_visible_codex_cache_model_ids():
+                        if mid not in codex_ids:
+                            codex_ids.append(mid)
+
+                    # MOSS PATCH: keep the production picker intentionally small.
+                    # The operator requested one model per OpenAI category and no
+                    # accidental extra choices after incident recovery.
+                    moss_codex_allowlist = ["gpt-5.5", "gpt-5.4-mini", "gpt-5.3-codex-spark"]
+                    codex_ids = [mid for mid in moss_codex_allowlist if mid in codex_ids]
+
+                    raw_models = [
+                        {"id": mid, "label": _get_label_for_model(mid, [])}
+                        for mid in codex_ids
+                    ]
+'''
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'openai-codex patch anchor not found in {config}')
+    text = text.replace(old, new, 1)
+old = '''                    if live_ids:
+                        # Sticky-selection signal: prefer the explicitly-active
+                        # model from cfg["model"]["model"] (what the user is
+                        # currently using) over cfg["model"]["default"] (the
+                        # configured default suggestion). Falls back to the
+                        # latter so first-load before any selection still works.
+'''
+new = '''                    if live_ids:
+                        # MOSS PATCH: expose only a confirmed zero-cost Nous fallback
+                        # and suppress Anthropic/paid catalog drift in the picker.
+                        live_ids = [mid for mid in ["openrouter/owl-alpha"] if mid in live_ids]
+                        # Sticky-selection signal: prefer the explicitly-active
+                        # model from cfg["model"]["model"] (what the user is
+                        # currently using) over cfg["model"]["default"] (the
+                        # configured default suggestion). Falls back to the
+                        # latter so first-load before any selection still works.
+'''
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'nous patch anchor not found in {config}')
+    text = text.replace(old, new, 1)
+config.write_text(text)
+py_compile.compile(str(config), doraise=True)
+
+providers = Path('/opt/hermes-webui/api/providers.py')
+text = providers.read_text()
+old = '''    for pid in sorted(known_ids):
+        display_name = _PROVIDER_DISPLAY.get(pid, pid.replace("-", " ").title())
+'''
+new = '''    allowed_provider_ids = {"openai-codex", "nous"}
+    for pid in sorted(known_ids):
+        # MOSS PATCH: keep provider catalog as small as the picker.
+        # Approved surface is Codex primary plus Nous free fallback only.
+        if str(pid).lower() not in allowed_provider_ids:
+            continue
+        display_name = _PROVIDER_DISPLAY.get(pid, pid.replace("-", " ").title())
+'''
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'provider loop anchor not found in {providers}')
+    text = text.replace(old, new, 1)
+old = '''            live_models = _models_from_live_provider_ids(pid, live_ids)
+            if live_models:
+                models = live_models
+                models_total = len(models)
+'''
+new = '''            # MOSS PATCH: provider card must mirror the intentionally-small picker.
+            moss_codex_allowlist = ["gpt-5.5", "gpt-5.4-mini", "gpt-5.3-codex-spark"]
+            live_ids = [mid for mid in moss_codex_allowlist if mid in live_ids]
+            live_models = _models_from_live_provider_ids(pid, live_ids)
+            if live_models:
+                models = live_models
+                models_total = len(models)
+'''
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'openai-codex providers anchor not found in {providers}')
+    text = text.replace(old, new, 1)
+old = '''                live_ids = _provider_model_ids("nous") or []
+                if live_ids:
+                    # Lazy-import to avoid circular dep with api.config.
+'''
+new = '''                live_ids = _provider_model_ids("nous") or []
+                if live_ids:
+                    # MOSS PATCH: only show confirmed zero-cost Nous fallback.
+                    live_ids = [mid for mid in ["openrouter/owl-alpha"] if mid in live_ids]
+                    # Lazy-import to avoid circular dep with api.config.
+'''
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'nous providers anchor not found in {providers}')
+    text = text.replace(old, new, 1)
+old = '''        providers.append({
+            "id": pid,
+'''
+new = '''        # MOSS PATCH: remove Anthropic/Claude models from every provider surface
+        # (e.g. Bedrock global.anthropic.*) before returning provider cards.
+        models = [
+            m for m in models
+            if "anthropic" not in str(m.get("id", "") if isinstance(m, dict) else m).lower()
+            and "anthropic" not in str(m.get("label", "") if isinstance(m, dict) else "").lower()
+            and "claude" not in str(m.get("id", "") if isinstance(m, dict) else m).lower()
+            and "claude" not in str(m.get("label", "") if isinstance(m, dict) else "").lower()
+        ]
+        if pid != "nous":
+            models_total = len(models)
+
+        providers.append({
+            "id": pid,
+'''
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'provider append anchor not found in {providers}')
+    text = text.replace(old, new, 1)
+old = '''            providers.append({
+                "id": cp_id,
+'''
+new = '''            cp_models = [
+                m for m in cp_models
+                if "anthropic" not in str(m.get("id", "") if isinstance(m, dict) else m).lower()
+                and "anthropic" not in str(m.get("label", "") if isinstance(m, dict) else "").lower()
+                and "claude" not in str(m.get("id", "") if isinstance(m, dict) else m).lower()
+                and "claude" not in str(m.get("label", "") if isinstance(m, dict) else "").lower()
+            ]
+            providers.append({
+                "id": cp_id,
+'''
+if new not in text:
+    if old not in text:
+        raise SystemExit(f'custom provider append anchor not found in {providers}')
+    text = text.replace(old, new, 1)
+providers.write_text(text)
+py_compile.compile(str(providers), doraise=True)
+PY
+
+# Build guard: the all-in-one image must use one Python runtime only.
+RUN test ! -e /opt/hermes-webui/venv \
+    && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
+       HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-build-check \
+       HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/moss/private \
+       /opt/hermes/.venv/bin/python3 - <<'PY'
+from pathlib import Path
+import importlib
+import sys
+
+if not sys.executable.startswith('/opt/hermes/.venv/'):
+    raise SystemExit(f'wrong Python executable for WebUI import: {sys.executable}')
+if Path('/opt/hermes-webui/venv').exists():
+    raise SystemExit('/opt/hermes-webui/venv must not exist in all-in-one image')
+
+sys.path.insert(0, '/opt/hermes-webui')
+for module_name in ('server', 'api.config', 'api.providers'):
+    importlib.import_module(module_name)
+PY
 COPY ops/supervisor/moss-all-in-one-supervisord.conf /etc/supervisor/conf.d/moss-all-in-one.conf
 
 ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}" \
