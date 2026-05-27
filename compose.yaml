@@ -6,6 +6,8 @@ x-hermes-env: &hermes-env
     HERMES_GID: 100
     HOME: /opt/data
     HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
+    HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
+    HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
 x-hermes-llm-env-files: &hermes-llm-env-files
   - ./state/secrets/hermes-llm/fleet.env
 x-hermes-common: &hermes-common

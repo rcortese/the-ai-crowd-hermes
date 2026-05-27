@@ -12,6 +12,18 @@ RUN apt-get update \
         supervisor \
     && rm -rf /var/lib/apt/lists/*
 
+COPY ops/patches/kanban-dispatch-owner.patch /tmp/kanban-dispatch-owner.patch
+RUN cd /opt/hermes \
+    && git apply --check /tmp/kanban-dispatch-owner.patch \
+    && git apply /tmp/kanban-dispatch-owner.patch \
+    && /opt/hermes/.venv/bin/python3 -m py_compile \
+        hermes_cli/config.py \
+        hermes_cli/kanban_db.py \
+        hermes_cli/kanban.py \
+        gateway/run.py \
+        plugins/kanban/dashboard/plugin_api.py \
+        tests/hermes_cli/test_kanban_boards.py
+
 RUN git clone https://github.com/nesquena/hermes-webui.git /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
