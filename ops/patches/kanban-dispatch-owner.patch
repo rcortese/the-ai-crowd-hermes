@@ -1,0 +1,264 @@
+--- a/hermes_cli/config.py
++++ b/hermes_cli/config.py
+@@ -1448,6 +1448,8 @@
+         # only if you run the dispatcher as a separate systemd unit or
+         # don't want the gateway to spawn workers.
+         "dispatch_in_gateway": True,
++        "dispatch_owner": None,
++        "dispatch_unowned_boards": True,
+         # Seconds between dispatcher ticks (idle or not). Lower = snappier
+         # pickup of newly-ready tasks; higher = less SQL pressure.
+         "dispatch_interval_seconds": 60,
+--- a/hermes_cli/kanban_db.py
++++ b/hermes_cli/kanban_db.py
+@@ -142,6 +142,14 @@
+     return s
+ 
+ 
++def normalize_dispatch_owner(owner: Optional[str]) -> Optional[str]:
++    """Normalize a board dispatch owner: trim + lowercase; empty means unowned."""
++    if owner is None:
++        return None
++    s = str(owner).strip().lower()
++    return s or None
++
++
+ def kanban_home() -> Path:
+     """Return the shared Hermes root that anchors the kanban board.
+ 
+@@ -379,6 +387,7 @@
+         "color": "",
+         "created_at": None,
+         "archived": False,
++        "dispatch_owner": None,
+     }
+     try:
+         p = board_metadata_path(slug)
+@@ -391,6 +400,7 @@
+                 meta.update(raw)
+     except (OSError, json.JSONDecodeError):
+         pass
++    meta["dispatch_owner"] = normalize_dispatch_owner(meta.get("dispatch_owner"))
+     meta["db_path"] = str(kanban_db_path(slug))
+     return meta
+ 
+@@ -403,6 +413,7 @@
+     icon: Optional[str] = None,
+     color: Optional[str] = None,
+     archived: Optional[bool] = None,
++    dispatch_owner: Optional[str] = None,
+ ) -> dict:
+     """Create / update ``board.json`` for ``board``.
+ 
+@@ -424,6 +435,8 @@
+         meta["color"] = str(color)
+     if archived is not None:
+         meta["archived"] = bool(archived)
++    if dispatch_owner is not None:
++        meta["dispatch_owner"] = normalize_dispatch_owner(dispatch_owner)
+     if not meta.get("created_at"):
+         meta["created_at"] = int(time.time())
+     path = board_metadata_path(slug)
+@@ -443,6 +456,7 @@
+     description: Optional[str] = None,
+     icon: Optional[str] = None,
+     color: Optional[str] = None,
++    dispatch_owner: Optional[str] = None,
+ ) -> dict:
+     """Create a new board directory + DB + metadata. Idempotent.
+ 
+@@ -459,6 +473,7 @@
+         description=description,
+         icon=icon,
+         color=color,
++        dispatch_owner=dispatch_owner,
+     )
+     # Touch the DB so list_boards() sees it immediately.
+     init_db(board=normed)
+--- a/hermes_cli/kanban.py
++++ b/hermes_cli/kanban.py
+@@ -227,6 +227,8 @@
+                           help="Optional emoji or single-character icon for the dashboard")
+     b_create.add_argument("--color", default=None,
+                           help="Optional hex color (e.g. '#8b5cf6') for the dashboard")
++    b_create.add_argument("--dispatch-owner", default=None,
++                          help="Optional dispatcher owner for this board (trimmed/lowercased)")
+     b_create.add_argument("--switch", action="store_true",
+                           help="Switch to the new board after creating it")
+ 
+@@ -835,7 +837,7 @@
+     if not boards:
+         print("(no boards — create one with `hermes kanban boards create <slug>`)")
+         return 0
+-    print(f"{'':2s}  {'SLUG':24s}  {'NAME':28s}  COUNTS")
++    print(f"{'':2s}  {'SLUG':24s}  {'NAME':28s}  {'OWNER':16s}  COUNTS")
+     for b in boards:
+         marker = "●" if b["is_current"] else " "
+         counts = b["counts"] or {}
+@@ -846,7 +848,8 @@
+         name = b.get("name") or ""
+         if b.get("archived"):
+             name += " [archived]"
+-        print(f"{marker:2s}  {b['slug']:24s}  {name:28s}  {counts_str}")
++        owner = b.get("dispatch_owner") or "-"
++        print(f"{marker:2s}  {b['slug']:24s}  {name:28s}  {owner:16s}  {counts_str}")
+     print()
+     print(f"Current board: {current}")
+     if len(boards) > 1:
+@@ -870,11 +873,13 @@
+         description=args.description,
+         icon=args.icon,
+         color=args.color,
++        dispatch_owner=getattr(args, "dispatch_owner", None),
+     )
+     verb = "already exists" if already else "created"
+     print(f"Board {meta['slug']!r} {verb}.")
+     print(f"  Display name: {meta.get('name', '')}")
+     print(f"  DB path:      {meta['db_path']}")
++    print(f"  Dispatch owner: {meta.get('dispatch_owner') or '-'}")
+     if getattr(args, "switch", False):
+         kb.set_current_board(meta["slug"])
+         print(f"  Switched to {meta['slug']!r}.")
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -4644,6 +4644,32 @@
+         interval = float(kanban_cfg.get("dispatch_interval_seconds", 60) or 60)
+         interval = max(interval, 1.0)  # sanity floor — tighter than this is a footgun
+ 
++        dispatch_owner = _kb.normalize_dispatch_owner(
++            os.environ.get("HERMES_KANBAN_DISPATCH_OWNER", kanban_cfg.get("dispatch_owner"))
++        )
++        raw_unowned = os.environ.get(
++            "HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS",
++            kanban_cfg.get("dispatch_unowned_boards", True),
++        )
++        if isinstance(raw_unowned, str):
++            dispatch_unowned_boards = raw_unowned.strip().lower() not in {"0", "false", "no", "off"}
++        else:
++            dispatch_unowned_boards = bool(raw_unowned)
++
++        def _dispatchable_boards() -> list[dict]:
++            try:
++                boards = _kb.list_boards(include_archived=False)
++            except Exception:
++                boards = [_kb.read_board_metadata(_kb.DEFAULT_BOARD)]
++            if not dispatch_owner:
++                return boards
++            out = []
++            for b in boards:
++                owner = _kb.normalize_dispatch_owner(b.get("dispatch_owner"))
++                if owner == dispatch_owner or (owner is None and dispatch_unowned_boards):
++                    out.append(b)
++            return out
++
+         # Read max_spawn config to limit concurrent kanban tasks
+         max_spawn = kanban_cfg.get("max_spawn", None)
+         if max_spawn is not None:
+@@ -4720,10 +4746,7 @@
+             when users create a new board mid-run: no restart required,
+             the next tick picks it up automatically.
+             """
+-            try:
+-                boards = _kb.list_boards(include_archived=False)
+-            except Exception:
+-                boards = [_kb.read_board_metadata(_kb.DEFAULT_BOARD)]
++            boards = _dispatchable_boards()
+             out: list[tuple[str, "Optional[object]"]] = []
+             for b in boards:
+                 slug = b.get("slug") or _kb.DEFAULT_BOARD
+@@ -4742,10 +4765,7 @@
+             here keeps the stuck-warn fire only on real failures (broken
+             PATH, missing venv, credential loss for a real Hermes profile).
+             """
+-            try:
+-                boards = _kb.list_boards(include_archived=False)
+-            except Exception:
+-                boards = [_kb.read_board_metadata(_kb.DEFAULT_BOARD)]
++            boards = _dispatchable_boards()
+             for b in boards:
+                 slug = b.get("slug") or _kb.DEFAULT_BOARD
+                 conn = None
+@@ -4763,6 +4783,12 @@
+                             pass
+             return False
+ 
++        if dispatch_owner:
++            logger.info(
++                "kanban dispatcher: owner=%s unowned=%s",
++                dispatch_owner,
++                dispatch_unowned_boards,
++            )
+         logger.info(
+             "kanban dispatcher: embedded in gateway (interval=%.1fs)", interval
+         )
+--- a/plugins/kanban/dashboard/plugin_api.py
++++ b/plugins/kanban/dashboard/plugin_api.py
+@@ -1417,6 +1417,7 @@
+     description: Optional[str] = None
+     icon: Optional[str] = None
+     color: Optional[str] = None
++    dispatch_owner: Optional[str] = None
+     switch: bool = False
+ 
+ 
+@@ -1425,6 +1426,7 @@
+     description: Optional[str] = None
+     icon: Optional[str] = None
+     color: Optional[str] = None
++    dispatch_owner: Optional[str] = None
+ 
+ 
+ def _board_counts(slug: str) -> dict[str, int]:
+@@ -1467,6 +1469,7 @@
+             description=payload.description,
+             icon=payload.icon,
+             color=payload.color,
++            dispatch_owner=payload.dispatch_owner,
+         )
+     except ValueError as exc:
+         raise HTTPException(status_code=400, detail=str(exc))
+@@ -1493,6 +1496,7 @@
+         description=payload.description,
+         icon=payload.icon,
+         color=payload.color,
++        dispatch_owner=payload.dispatch_owner,
+     )
+     return {"board": meta}
+ 
+--- a/tests/hermes_cli/test_kanban_boards.py
++++ b/tests/hermes_cli/test_kanban_boards.py
+@@ -219,6 +219,7 @@
+             description="desc",
+             icon="📦",
+             color="#abcdef",
++            dispatch_owner=" Moss ",
+         )
+         assert meta["slug"] == "baz"
+         assert meta["name"] == "Baz"
+@@ -228,6 +229,9 @@
+         assert again["name"] == "Baz"
+         assert again["description"] == "desc"
+         assert again["icon"] == "📦"
++        assert again["dispatch_owner"] == "moss"
++        kb.write_board_metadata("baz", dispatch_owner="")
++        assert kb.read_board_metadata("baz")["dispatch_owner"] is None
+ 
+     def test_remove_archive(self, fresh_home):
+         kb.create_board("toremove")
+@@ -436,7 +440,7 @@
+     def test_boards_create_and_switch(self, tmp_path):
+         env = {"HERMES_HOME": str(tmp_path)}
+         r1 = _cli(
+-            ["boards", "create", "myproj", "--name", "My Project", "--switch"],
++            ["boards", "create", "myproj", "--name", "My Project", "--dispatch-owner", "Moss", "--switch"],
+             env_extra=env,
+         )
+         assert r1.returncode == 0, r1.stderr
+@@ -447,6 +451,7 @@
+         data = json.loads(r2.stdout)
+         cur = [b for b in data if b["is_current"]][0]
+         assert cur["slug"] == "myproj"
++        assert cur["dispatch_owner"] == "moss"
+ 
+     def test_per_board_task_isolation_via_cli(self, tmp_path):
+         env = {"HERMES_HOME": str(tmp_path)}
