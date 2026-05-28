@@ -2,7 +2,10 @@ FROM the-ai-crowd/moss:local
 
 USER root
 
-ARG HERMES_WEBUI_REV=48a2e79224c355ce40bc596e2165df0b558dc17e
+ARG HERMES_AGENT_REPO=https://github.com/rcortese/hermes-agent.git
+ARG HERMES_AGENT_REV=d399a05609b4d0d73aa3c80d579c19e268e32984
+ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
+ARG HERMES_WEBUI_REV=74a4032d49566405a0d7f485452edcef59615ebc
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -12,27 +15,30 @@ RUN apt-get update \
         supervisor \
     && rm -rf /var/lib/apt/lists/*
 
-COPY ops/patches/kanban-dispatch-owner.patch /tmp/kanban-dispatch-owner.patch
-COPY ops/patches/webui-kanban-dispatch-owner-ui.patch /tmp/webui-kanban-dispatch-owner-ui.patch
-RUN cd /opt/hermes \
-    && git apply --check /tmp/kanban-dispatch-owner.patch \
-    && git apply /tmp/kanban-dispatch-owner.patch \
+RUN mv /opt/hermes/.venv /tmp/hermes-venv \
+    && rm -rf /opt/hermes \
+    && git clone "${HERMES_AGENT_REPO}" /opt/hermes \
+    && cd /opt/hermes \
+    && git checkout --detach "${HERMES_AGENT_REV}" \
+    && test "$(git rev-parse HEAD)" = "${HERMES_AGENT_REV}" \
+    && mv /tmp/hermes-venv /opt/hermes/.venv \
     && /opt/hermes/.venv/bin/python3 -m py_compile \
         hermes_cli/config.py \
         hermes_cli/kanban_db.py \
         hermes_cli/kanban.py \
         gateway/run.py \
         plugins/kanban/dashboard/plugin_api.py \
-        tests/hermes_cli/test_kanban_boards.py
+        tests/hermes_cli/test_kanban_boards.py \
+    && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
+        tests/hermes_cli/test_kanban_boards.py \
+        tests/plugins/test_kanban_dashboard_plugin.py
 
-RUN git clone https://github.com/nesquena/hermes-webui.git /opt/hermes-webui \
+RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
     && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
-    && git apply --check /tmp/webui-kanban-dispatch-owner-ui.patch \
-    && git apply /tmp/webui-kanban-dispatch-owner-ui.patch \
     && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py \
-    && /opt/hermes/.venv/bin/python3 -m pytest -q tests/test_kanban_dispatch_owner_ui_patch.py \
+    && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q tests/test_kanban_dispatch_owner_ui_patch.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt \
