@@ -82,6 +82,30 @@ if new not in text:
 py_compile.compile(str(transport), doraise=True)
 PY
 
+# Remove bundled plugins/integration adapters that The AI Crowd does not configure.
+# Keep production persona images aligned with the enabled runtime surface.
+RUN rm -rf \
+        /opt/hermes/plugins/platforms/google_chat \
+        /opt/hermes/plugins/platforms/irc \
+        /opt/hermes/plugins/platforms/line \
+        /opt/hermes/plugins/platforms/simplex \
+        /opt/hermes/plugins/platforms/teams \
+        /opt/hermes/plugins/google_meet \
+        /opt/hermes/plugins/spotify \
+        /opt/hermes/plugins/teams_pipeline \
+        /opt/hermes/plugins/observability/langfuse \
+        /opt/hermes/plugins/memory/byterover \
+        /opt/hermes/plugins/memory/hindsight \
+        /opt/hermes/plugins/memory/holographic \
+        /opt/hermes/plugins/memory/mem0 \
+        /opt/hermes/plugins/memory/openviking \
+        /opt/hermes/plugins/memory/retaindb \
+        /opt/hermes/plugins/memory/supermemory \
+        /opt/hermes/plugins/image_gen/openai \
+        /opt/hermes/plugins/image_gen/xai \
+        /opt/hermes/plugins/video_gen/fal \
+        /opt/hermes/plugins/video_gen/xai
+
 LABEL the-ai-crowd.agent="moss" \
       the-ai-crowd.role="technical-operations" \
       the-ai-crowd.runtime="hermes-agent-ops"
