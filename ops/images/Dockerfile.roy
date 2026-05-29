@@ -68,6 +68,10 @@ else:
     print('entrypoint chown block already changed or unmatched; continuing')
 PY
 
+COPY ops/patches/roy-codex-null-output.py /tmp/roy-codex-null-output.py
+RUN python3 /tmp/roy-codex-null-output.py \
+    && rm /tmp/roy-codex-null-output.py
+
 WORKDIR /agents/roy/private
 
 USER 99:100
