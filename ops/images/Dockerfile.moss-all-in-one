@@ -252,6 +252,12 @@ sys.path.insert(0, '/opt/hermes-webui')
 for module_name in ('server', 'api.config', 'api.providers'):
     importlib.import_module(module_name)
 PY
+
+# Runtime UID 99 performs WebUI update checks against /opt/hermes.
+# Keep the baked agent checkout both Git-safe and writable after root-run build patches.
+RUN git config --system --add safe.directory /opt/hermes \
+    && chown -R 99:100 /opt/hermes
+
 COPY ops/supervisor/moss-all-in-one-supervisord.conf /etc/supervisor/conf.d/moss-all-in-one.conf
 
 ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}" \
