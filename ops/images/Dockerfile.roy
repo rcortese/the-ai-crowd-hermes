@@ -1,0 +1,77 @@
+ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:b6e41c155d6bfce5ad83c5d0fec670086db8a43250e4511c9474134be5482d33
+FROM ${HERMES_AGENT_IMAGE}
+
+USER root
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        dnsutils \
+        fd-find \
+        git \
+        iputils-ping \
+        jq \
+        netcat-openbsd \
+        openssh-client \
+        python3 \
+        python3-venv \
+        ripgrep \
+        rsync \
+        sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Remove bundled plugins/integration adapters that The AI Crowd does not configure.
+# Keep production persona images aligned with the enabled runtime surface.
+RUN rm -rf \
+        /opt/hermes/plugins/platforms/google_chat \
+        /opt/hermes/plugins/platforms/irc \
+        /opt/hermes/plugins/platforms/line \
+        /opt/hermes/plugins/platforms/simplex \
+        /opt/hermes/plugins/platforms/teams \
+        /opt/hermes/plugins/google_meet \
+        /opt/hermes/plugins/spotify \
+        /opt/hermes/plugins/teams_pipeline \
+        /opt/hermes/plugins/observability/langfuse \
+        /opt/hermes/plugins/memory/byterover \
+        /opt/hermes/plugins/memory/hindsight \
+        /opt/hermes/plugins/memory/holographic \
+        /opt/hermes/plugins/memory/mem0 \
+        /opt/hermes/plugins/memory/openviking \
+        /opt/hermes/plugins/memory/retaindb \
+        /opt/hermes/plugins/memory/supermemory \
+        /opt/hermes/plugins/image_gen/openai \
+        /opt/hermes/plugins/image_gen/xai \
+        /opt/hermes/plugins/video_gen/fal \
+        /opt/hermes/plugins/video_gen/xai
+
+LABEL the-ai-crowd.agent="roy" \
+      the-ai-crowd.role="intake-live-input-triage" \
+      the-ai-crowd.runtime="hermes-agent-intake-triage"
+
+ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
+
+# Bake Hermes runtime identity as UID/GID 99:100 so Compose can run
+# the whole container without a root privilege-drop phase.
+RUN usermod -u 99 -g 100 hermes \
+    && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
+
+RUN python3 - <<'PY'
+from pathlib import Path
+path = Path('/opt/hermes/docker/entrypoint.sh')
+text = path.read_text()
+old = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" 2>/dev/null || \\\n            echo "Warning: chown .venv failed (rootless container?) — continuing anyway"'
+new = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" "$INSTALL_DIR/ui-tui" 2>/dev/null || \\\n            echo "Warning: chown .venv/ui-tui failed (rootless container?) — continuing anyway"'
+if old in text:
+    path.write_text(text.replace(old, new))
+else:
+    print('entrypoint chown block already changed or unmatched; continuing')
+PY
+
+WORKDIR /agents/roy/private
+
+USER 99:100
+
+# The AI Crowd image owns Roy's long-lived Hermes dashboard command.
+ENV HERMES_DASHBOARD_TUI=1
+CMD ["dashboard", "--host", "0.0.0.0", "--port", "9123", "--insecure", "--no-open", "--tui", "--skip-build"]
