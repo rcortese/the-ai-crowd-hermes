@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONTRACT_VERSION="jen-morning-due-adjust.v1"
+AUDIT_CONTRACT_VERSION="jen-morning-due-adjust.audit.v1"
+WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+SEMANTICS="${JEN_MORNING_DUE_ADJUST_SEMANTICS:-$WORKSPACE_ROOT/bin/jen-todoist-due-semantics}"
+TASK_RUNTIME="${JEN_MORNING_DUE_ADJUST_TASK_RUNTIME:-$WORKSPACE_ROOT/bin/jen-task-runtime}"
+AUDIT_DIR="${JEN_MORNING_DUE_ADJUST_AUDIT_DIR:-$WORKSPACE_ROOT/memory/morning-due-adjustments}"
+IDEMPOTENCY_DIR="${JEN_MORNING_DUE_ADJUST_IDEMPOTENCY_DIR:-$AUDIT_DIR/idempotency}"
+MAX_CANDIDATES="${JEN_MORNING_DUE_ADJUST_MAX_CANDIDATES:-5}"
+RUN_ID="${JEN_MORNING_DUE_ADJUST_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+
+now_utc() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+json_out() { printf '%s\n' "$1"; }
+
+valid_date_ymd() {
+  [[ "${1:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$(date -u -d "$1" +%F 2>/dev/null || true)" == "$1" ]]
+}
+
+valid_nonnegative_int() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]]
+}
+
+idempotency_key() {
+  local task_id="$1" original_due="$2" action="$3" project="$4"
+  printf '%s' "$from_date|$to_date|$today|$task_id|$original_due|$action|$project" | sha256sum | cut -d' ' -f1
+}
+
+emit_failed() {
+  local failure_class="$1" mode="${2:-dry-run}" checked_at="${3:-$(now_utc)}" classified_json="${4:-null}"
+  jq -nc \
+    --arg contract_version "$CONTRACT_VERSION" \
+    --arg status failed \
+    --arg failure_class "$failure_class" \
+    --arg mode "$mode" \
+    --arg checked_at "$checked_at" \
+    --argjson classified "$classified_json" '
+    def safe_tasks: if ($classified|type) == "object" and (($classified.tasks|type)=="array") then $classified.tasks else [] end;
+    (safe_tasks) as $tasks
+    | ($tasks | map(select(.past_due_raw == true and .classification.category == "soft_surface" and ((.due.is_recurring // false) != true)))) as $candidates
+    | {
+        contract_version:$contract_version,
+        command:"morning-due-adjust",
+        status:$status,
+        failure_class:$failure_class,
+        mode:$mode,
+        checked_at:$checked_at,
+        summary:{total_classified:($tasks|length),candidate_count:($candidates|length),blocked_count:(($tasks|length)-($candidates|length)),write_count:0},
+        complete:false
+      }'
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: jen-morning-due-adjust [--dry-run|--apply] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--soft-action today|clear|move] [--project-id ID]
+
+Morning due-date hygiene wrapper. Dry-run is the default and performs zero writes.
+Apply requires JEN_MORNING_DUE_ADJUST_ENABLE_APPLY=1 and mutates only soft_surface past-due candidates classified by bin/jen-todoist-due-semantics.
+EOF
+}
+
+mode="dry-run"
+today="$(date -u +%F)"
+from_date=""
+to_date=""
+soft_action="today"
+project_id=""
+
+while (($#)); do
+  case "$1" in
+    --dry-run) mode="dry-run"; shift ;;
+    --apply) mode="apply"; shift ;;
+    --today) today="${2:-}"; shift 2 ;;
+    --from) from_date="${2:-}"; shift 2 ;;
+    --to) to_date="${2:-}"; shift 2 ;;
+    --soft-action) soft_action="${2:-}"; shift 2 ;;
+    --project-id|--list-id) project_id="${2:-}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) emit_failed invalid_argument ;;
+  esac
+done
+
+valid_date_ymd "$today" || emit_failed invalid_argument "$mode"
+if [[ -z "$from_date" ]]; then from_date="$(date -u -d "$today -1 day" +%F)"; fi
+if [[ -z "$to_date" ]]; then to_date="$from_date"; fi
+valid_date_ymd "$from_date" || emit_failed invalid_argument "$mode"
+valid_date_ymd "$to_date" || emit_failed invalid_argument "$mode"
+[[ "$from_date" < "$to_date" || "$from_date" == "$to_date" ]] || emit_failed invalid_argument "$mode"
+case "$soft_action" in today|clear|move) ;; *) emit_failed invalid_argument "$mode" ;; esac
+if [[ "$soft_action" == "move" && -z "$project_id" ]]; then emit_failed invalid_argument "$mode"; fi
+valid_nonnegative_int "$MAX_CANDIDATES" || emit_failed invalid_argument "$mode"
+[[ -x "$SEMANTICS" ]] || emit_failed semantics_missing "$mode"
+[[ -x "$TASK_RUNTIME" ]] || emit_failed runtime_missing "$mode"
+
+checked_at="$(now_utc)"
+classified_json="$($SEMANTICS live-due-window --from "$from_date" --to "$to_date" --today "$today")" || emit_failed semantics_failed "$mode" "$checked_at"
+jq -e '.status == "ok" and (.tasks|type == "array")' <<<"$classified_json" >/dev/null || emit_failed semantics_failed "$mode" "$checked_at" "$classified_json"
+
+candidates_json="$(jq -c --arg today "$today" --arg soft_action "$soft_action" --arg project_id "$project_id" '
+  .tasks
+  | map(select(.past_due_raw == true and .classification.category == "soft_surface" and ((.due.is_recurring // false) != true)))
+  | map(. + {
+      planned_action:(if $soft_action == "today" then "update-due" elif $soft_action == "clear" then "clear-due" else "move-task" end),
+      planned_due:(if $soft_action == "today" then $today elif $soft_action == "clear" then "no date" else null end),
+      planned_project_id:(if $soft_action == "move" then $project_id else null end)
+    })' <<<"$classified_json")"
+blocked_json="$(jq -c '.tasks | map(select((.past_due_raw != true) or (.classification.category != "soft_surface") or ((.due.is_recurring // false) == true)))' <<<"$classified_json")"
+total_classified="$(jq '.tasks|length' <<<"$classified_json")"
+candidate_count="$(jq 'length' <<<"$candidates_json")"
+blocked_count="$(jq 'length' <<<"$blocked_json")"
+
+if [[ "$mode" == "dry-run" ]]; then
+  jq -nc \
+    --arg contract_version "$CONTRACT_VERSION" --arg mode "$mode" --arg checked_at "$checked_at" \
+    --arg today "$today" --arg from "$from_date" --arg to "$to_date" \
+    --argjson total "$total_classified" --argjson candidate_count "$candidate_count" --argjson blocked_count "$blocked_count" \
+    --argjson candidates "$candidates_json" --argjson blocked "$blocked_json" \
+    '{contract_version:$contract_version,command:"morning-due-adjust",status:"ok",mode:$mode,checked_at:$checked_at,today:$today,from:$from,to:$to,summary:{total_classified:$total,candidate_count:$candidate_count,blocked_count:$blocked_count,write_count:0},candidates:$candidates,blocked:$blocked,writes:[],audit_log_path:null,complete:true}'
+  exit 0
+fi
+
+if (( candidate_count > MAX_CANDIDATES )); then
+  emit_failed too_many_candidates "$mode" "$checked_at" "$classified_json"
+fi
+
+if [[ "${JEN_MORNING_DUE_ADJUST_ENABLE_APPLY:-}" != "1" ]]; then
+  emit_failed apply_disabled "$mode" "$checked_at" "$classified_json"
+fi
+
+mkdir -p "$AUDIT_DIR" "$IDEMPOTENCY_DIR"
+audit_log_path="$AUDIT_DIR/$(date -u +%Y%m%dT%H%M%SZ)-$RUN_ID-morning-due-adjust.json"
+writes_file="$(mktemp)"
+printf '[]
+' > "$writes_file"
+
+write_audit_snapshot() {
+  local status="$1"
+  jq -nc \
+    --arg contract_version "$AUDIT_CONTRACT_VERSION" --arg mode "$mode" --arg status "$status" \
+    --arg run_id "$RUN_ID" --arg checked_at "$checked_at" \
+    --arg today "$today" --arg from "$from_date" --arg to "$to_date" \
+    --argjson classified "$classified_json" --argjson candidates "$candidates_json" --argjson blocked "$blocked_json" --argjson writes "$(cat "$writes_file")" \
+    '{contract_version:$contract_version,mode:$mode,status:$status,run_id:$run_id,checked_at:$checked_at,today:$today,from:$from,to:$to,classified:$classified,candidates:$candidates,blocked:$blocked,writes:$writes}' > "$audit_log_path"
+}
+
+write_audit_snapshot in_progress
+idx=0
+while [[ "$idx" -lt "$candidate_count" ]]; do
+  task_json="$(jq -c --argjson idx "$idx" '.[$idx]' <<<"$candidates_json")"
+  task_id="$(jq -r '.id' <<<"$task_json")"
+  original_due="$(jq -r '.due.date // .due.string // ""' <<<"$task_json")"
+  [[ -n "$task_id" && "$task_id" != "null" ]] || emit_failed invalid_candidate "$mode" "$checked_at" "$classified_json"
+  key="$(idempotency_key "$task_id" "$original_due" "$soft_action" "$project_id")"
+  idempotency_path="$IDEMPOTENCY_DIR/$key.json"
+  if [[ -f "$idempotency_path" ]]; then
+    tmp="$(mktemp)"
+    jq \
+      --arg id "$task_id" --arg operation "idempotent-skip" --arg key "$key" --arg idempotency_path "$idempotency_path" \
+      --argjson task "$task_json" '
+        . + [{id:$id,operation:$operation,status:"skipped",reason:"idempotency_key_already_succeeded",idempotency_key:$key,idempotency_path:$idempotency_path,deadline:$task.deadline}]' "$writes_file" > "$tmp"
+    mv "$tmp" "$writes_file"
+    write_audit_snapshot in_progress
+    idx=$((idx + 1))
+    continue
+  fi
+  runtime_command=""
+  runtime_result=""
+  operation=""
+  due_arg=""
+  if [[ "$soft_action" == "today" ]]; then
+    operation="update-due"; runtime_command="update-due"; due_arg="$today"
+  elif [[ "$soft_action" == "clear" ]]; then
+    operation="clear-due"; runtime_command="update-due"; due_arg="no date"
+  else
+    operation="move-task"; runtime_command="move-task"
+  fi
+  tmp="$(mktemp)"
+  jq \
+    --arg id "$task_id" --arg operation "$operation" --arg runtime_command "$runtime_command" --arg due "$due_arg" --arg project_id "$project_id" --arg key "$key" \
+    --argjson task "$task_json" '
+      . + [{id:$id,operation:$operation,status:"planned",runtime_command:$runtime_command,due:(if $due == "" then null else $due end),project_id:(if $project_id == "" then null else $project_id end),idempotency_key:$key,deadline:$task.deadline}]' "$writes_file" > "$tmp"
+  mv "$tmp" "$writes_file"
+  write_audit_snapshot in_progress
+  if [[ "$soft_action" == "today" || "$soft_action" == "clear" ]]; then
+    runtime_result="$($TASK_RUNTIME update-due --task-id "$task_id" --due "$due_arg")" || { write_audit_snapshot failed; emit_failed runtime_failed "$mode" "$checked_at" "$classified_json"; }
+  else
+    runtime_result="$($TASK_RUNTIME move-task --task-id "$task_id" --project-id "$project_id")" || { write_audit_snapshot failed; emit_failed runtime_failed "$mode" "$checked_at" "$classified_json"; }
+  fi
+  jq -e '.status == "ok"' <<<"$runtime_result" >/dev/null || { write_audit_snapshot failed; emit_failed runtime_failed "$mode" "$checked_at" "$classified_json"; }
+  tmp="$(mktemp)"
+  jq \
+    --arg id "$task_id" --argjson runtime_result "$runtime_result" '
+      map(if .id == $id and .status == "planned" then . + {status:"ok", runtime_result:$runtime_result} else . end)' "$writes_file" > "$tmp"
+  mv "$tmp" "$writes_file"
+  jq -nc --arg id "$task_id" --arg key "$key" --arg operation "$operation" --arg checked_at "$(now_utc)" --argjson runtime_result "$runtime_result" \
+    '{idempotency_key:$key,task_id:$id,operation:$operation,status:"ok",completed_at:$checked_at,runtime_result:$runtime_result}' > "$idempotency_path"
+  write_audit_snapshot in_progress
+  idx=$((idx + 1))
+done
+writes_json="$(jq 'map(select(.status != "skipped"))' "$writes_file")"
+skipped_json="$(jq 'map(select(.status == "skipped"))' "$writes_file")"
+write_audit_snapshot ok
+rm -f "$writes_file"
+
+jq -nc \
+  --arg contract_version "$CONTRACT_VERSION" --arg mode "$mode" --arg checked_at "$checked_at" \
+  --arg today "$today" --arg from "$from_date" --arg to "$to_date" --arg audit_log_path "$audit_log_path" --arg run_id "$RUN_ID" \
+  --argjson total "$total_classified" --argjson candidate_count "$candidate_count" --argjson blocked_count "$blocked_count" \
+  --argjson candidates "$candidates_json" --argjson blocked "$blocked_json" --argjson writes "$writes_json" --argjson skipped "$skipped_json" \
+  '{contract_version:$contract_version,command:"morning-due-adjust",status:"ok",mode:$mode,run_id:$run_id,checked_at:$checked_at,today:$today,from:$from,to:$to,summary:{total_classified:$total,candidate_count:$candidate_count,blocked_count:$blocked_count,write_count:($writes|length),skipped_count:($skipped|length)},candidates:$candidates,blocked:$blocked,writes:$writes,skipped:$skipped,audit_log_path:$audit_log_path,complete:true}'
