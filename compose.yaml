@@ -79,6 +79,8 @@ services:
 
   jen:
     <<: *hermes-common
+    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
+    user: "0:0"
     env_file: *hermes-llm-env-files
     build:
       context: .
@@ -115,6 +117,8 @@ services:
 
   denholm:
     <<: *hermes-common
+    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
+    user: "0:0"
     env_file: *hermes-llm-env-files
     build:
       context: .
@@ -147,12 +151,15 @@ services:
 
   roy:
     <<: *hermes-common
+    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
+    user: "0:0"
     env_file: *hermes-llm-env-files
     build:
       context: .
       dockerfile: ops/images/Dockerfile.roy
     image: the-ai-crowd/roy:local
     working_dir: /agents/roy/private
+    command: ["gateway", "run"]
     environment:
       <<: *hermes-env
       HERMES_HOME: /opt/data
@@ -166,6 +173,13 @@ services:
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/roy/private
       HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/roy
+      WEBHOOK_ENABLED: "true"
+      WEBHOOK_PORT: "8644"
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: "9123"
+      HERMES_DASHBOARD_TUI: "1"
+      HERMES_DASHBOARD_INSECURE: "1"
     volumes:
       - ./runtime/roy-home:/opt/data
       - ./agents/public/roy:/agents/roy/public:ro
@@ -173,8 +187,9 @@ services:
       - ./state/shared:/mnt/hermes-shared
     expose:
       - "9123"
+      - "8644"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9123/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9123/ >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
