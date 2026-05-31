@@ -48,4 +48,4 @@ Use a prepared host-side script, not foreground `docker compose up -d moss` from
 ## Current repaired SHAs
 
 - Agent: `54fa84fa6925cd5e6d2f5874dff08151ee6e5aec`
-- WebUI: `2b234e3a4bbe2b680c008d2791f857d4cf96409e`
+- WebUI: `b63ccf8c14c77a4144810e4c5945173148aba713`
