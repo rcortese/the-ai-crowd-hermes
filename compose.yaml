@@ -63,6 +63,7 @@ services:
       private_proxy:
         aliases:
           - hermes
+      local_llm:
     expose:
       - "8787"
       - "9119"
@@ -255,3 +256,6 @@ networks:
   private_proxy:
     external: true
     name: ${THE_AI_CROWD_PROXY_NETWORK:-network_default}
+  local_llm:
+    external: true
+    name: local-llm-net
