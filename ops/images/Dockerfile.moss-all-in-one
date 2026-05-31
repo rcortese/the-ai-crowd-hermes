@@ -3,7 +3,7 @@ FROM the-ai-crowd/moss:local
 USER root
 
 ARG HERMES_AGENT_REPO=https://github.com/rcortese/hermes-agent.git
-ARG HERMES_AGENT_REV=54fa84fa6925cd5e6d2f5874dff08151ee6e5aec
+ARG HERMES_AGENT_REV=73af888c6fbb4d8f7f0052695cc2244ad424b1f6
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
 ARG HERMES_WEBUI_REV=b63ccf8c14c77a4144810e4c5945173148aba713
 
