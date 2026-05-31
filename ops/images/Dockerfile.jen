@@ -62,6 +62,11 @@ ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 # the whole container without a root privilege-drop phase.
 RUN usermod -u 99 -g 100 hermes \
     && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
+
+# Ensure Python packages installed by the base image remain importable by the
+# runtime UID even when upstream wheel files are owned by root with restrictive
+# modes. Honcho status/import must work as UID/GID 99:100.
+RUN chmod -R a+rX /opt/hermes/.venv/lib/python3.13/site-packages/honcho*
 ENV GOG_HOME="/opt/data/gog" \
     GOG_KEYRING_BACKEND="file"
 
