@@ -195,10 +195,10 @@ services:
       retries: 10
       start_period: 60s
 
-
   richmond:
     <<: *hermes-common
     profiles: ["richmond"]
+    env_file: *hermes-llm-env-files
     build:
       context: .
       dockerfile: ops/images/Dockerfile.richmond
