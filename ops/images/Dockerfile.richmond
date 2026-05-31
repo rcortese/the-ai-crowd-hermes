@@ -1,4 +1,4 @@
-ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:b6e41c155d6bfce5ad83c5d0fec670086db8a43250e4511c9474134be5482d33
+ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:2bba4ab37729ebdd864d4caf277b24fec4cd8bfc2855185fd9f4c90f9bf7bfa3
 FROM ${HERMES_AGENT_IMAGE}
 
 USER root
@@ -49,7 +49,29 @@ LABEL the-ai-crowd.agent="richmond" \
 RUN usermod -u 99 -g 100 hermes \
     && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
 
-WORKDIR /workspace
+ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
+
+# Runtime processes run as UID/GID 99:100 and cannot mutate the root-owned
+# Hermes venv. Bake Richmond's enabled Honcho memory client so rebuilds do not
+# regress to built-in-only memory.
+RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install honcho-ai==2.0.1 \
+    && chmod -R a+rX /opt/hermes/.venv/lib/python3.13/site-packages/honcho*
+
+RUN python3 - <<'PY2'
+from pathlib import Path
+path = Path('/opt/hermes/docker/entrypoint.sh')
+text = path.read_text()
+old = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" 2>/dev/null || \\\
+            echo "Warning: chown .venv failed (rootless container?) — continuing anyway"'
+new = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" "$INSTALL_DIR/ui-tui" 2>/dev/null || \\\
+            echo "Warning: chown .venv/ui-tui failed (rootless container?) — continuing anyway"'
+if old in text:
+    path.write_text(text.replace(old, new))
+else:
+    print('entrypoint chown block already changed or unmatched; continuing')
+PY2
+
+WORKDIR /agents/richmond/private
 
 USER 99:100
 
