@@ -5,7 +5,7 @@ USER root
 ARG HERMES_AGENT_REPO=https://github.com/rcortese/hermes-agent.git
 ARG HERMES_AGENT_REV=73af888c66d807c625eb9526efeaef650f9ddba4
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=afd6396d9f8fcc7fe4a29c7e55e0f51f81196d28
+ARG HERMES_WEBUI_REV=e857bb02c817a2a3ccc8e03f6b839018f200e99c
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
