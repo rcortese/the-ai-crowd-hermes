@@ -31,3 +31,8 @@ venv/
 # macOS/editor
 .DS_Store
 *.swp
+# Honcho local lab source checkout and private env
+/honcho-local/honcho-src/
+/honcho-local/.env
+/honcho-local/honcho.env
+/honcho-local/litellm.env
