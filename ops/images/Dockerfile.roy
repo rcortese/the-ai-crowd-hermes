@@ -68,6 +68,11 @@ else:
     print('entrypoint chown block already changed or unmatched; continuing')
 PY
 
+# Runtime processes run as UID/GID 99:100 and cannot mutate the root-owned
+# Hermes venv. Bake Roy's enabled Honcho memory client so rebuilds do not
+# regress to the prior runtime-only hotfix state.
+RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install honcho-ai==2.0.1
+
 # Roy Codex null-output hotfix removed for Hermes Agent v0.15.2; upstream codex runtime handles this path.
 
 
