@@ -211,6 +211,10 @@ services:
       AGENT_PRIVATE: /agents/richmond/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      TERMINAL_CWD: /agents/richmond/private
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/richmond
+      HERMES_KANBAN_DISPATCH_OWNER: richmond
+      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
     volumes:
       - ./runtime/richmond-home:/opt/data
       - ./agents/public/richmond:/agents/richmond/public:ro
