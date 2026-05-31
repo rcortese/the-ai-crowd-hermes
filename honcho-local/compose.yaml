@@ -1,0 +1,170 @@
+name: honcho-local
+
+x-honcho-common: &honcho-common
+  build:
+    context: ./honcho-src
+    dockerfile: Dockerfile
+  image: the-ai-crowd/honcho-local:lab
+  restart: unless-stopped
+  env_file:
+    - path: ./honcho.env
+      required: true
+  environment:
+    DB_CONNECTION_URI: postgresql+psycopg://honcho:${HONCHO_POSTGRES_PASSWORD:?set_in_private_env}@honcho-postgres:5432/honcho
+    LLM_OPENAI_API_KEY: ${LITELLM_MASTER_KEY:?set_in_private_env}
+    HONCHO_EMBEDDINGS_API_KEY: ${HONCHO_EMBEDDINGS_API_KEY:?set_in_private_env}
+    CACHE_ENABLED: "true"
+    CACHE_URL: redis://honcho-redis:6379/0?suppress=true
+    VECTOR_STORE_TYPE: pgvector
+    VECTOR_STORE_MIGRATED: "false"
+    EMBED_MESSAGES: "true"
+    EMBEDDING_VECTOR_DIMENSIONS: "1536"
+    DREAM_ENABLED: "false"
+    SUMMARY_ENABLED: "true"
+    DERIVER_ENABLED: "true"
+    TELEMETRY_ENABLED: "false"
+    SENTRY_ENABLED: "false"
+    METRICS_ENABLED: "false"
+    AUTH_USE_AUTH: ${HONCHO_AUTH_USE_AUTH:-false}
+  depends_on:
+    honcho-postgres:
+      condition: service_healthy
+    honcho-redis:
+      condition: service_healthy
+    litellm:
+      condition: service_healthy
+  networks:
+    honcho_local:
+
+services:
+  honcho-api:
+    <<: *honcho-common
+    entrypoint: ["sh", "docker/entrypoint.sh"]
+    ports:
+      - "127.0.0.1:18000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      honcho_local:
+        aliases: [honcho-api]
+
+  honcho-deriver:
+    <<: *honcho-common
+    command: ["python", "-m", "src.deriver"]
+    depends_on:
+      honcho-api:
+        condition: service_healthy
+      honcho-postgres:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from pathlib import Path; data=Path('/proc/1/cmdline').read_text(); assert 'src.deriver' in data"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  honcho-postgres:
+    image: pgvector/pgvector:pg15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: honcho
+      POSTGRES_USER: honcho
+      POSTGRES_PASSWORD: ${HONCHO_POSTGRES_PASSWORD:?set_in_private_env}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command: ["postgres", "-c", "max_connections=200"]
+    volumes:
+      - honcho_pgdata:/var/lib/postgresql/data
+      - ./honcho-src/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honcho -d honcho"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      honcho_local:
+        aliases: [honcho-postgres]
+
+  honcho-redis:
+    image: redis:8.2
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - honcho_redis_data:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      honcho_local:
+        aliases: [honcho-redis]
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    env_file:
+      - path: ./litellm.env
+        required: true
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set_in_private_env}
+    volumes:
+      - ./litellm.config.yaml:/app/config.yaml:ro
+      - litellm_token_state:/var/lib/litellm/tokens
+    ports:
+      - "127.0.0.1:14000:4000"
+    expose:
+      - "4000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/readiness', timeout=2).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      honcho_local:
+        aliases: [litellm]
+
+  embeddings-local:
+    profiles: ["local-embeddings"]
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    restart: unless-stopped
+    command: ["--model-id", "BAAI/bge-small-en-v1.5", "--port", "8080"]
+    volumes:
+      - embedding_model_cache:/data
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    networks:
+      honcho_local:
+        aliases: [embeddings-local]
+
+networks:
+  honcho_local:
+    driver: bridge
+    internal: false
+
+volumes:
+  honcho_pgdata:
+  honcho_redis_data:
+  litellm_token_state:
+  embedding_model_cache:
