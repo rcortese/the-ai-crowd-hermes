@@ -1,0 +1,752 @@
+{
+  "schema": "jen.todoist_due_semantics.v2.historical_golden_fixtures",
+  "version": 2,
+  "updated_at": "2026-06-01",
+  "source_contract": "/agents/moss/private/ops/plans/jen-todoist-due-semantics-v2-spec-policy-contract.md",
+  "notes": [
+    "Fixture data is deliberately compact: task-like fields plus expected category/evidence/rationale/mutation eligibility.",
+    "No provider messages, Todoist writes, calendar writes, or full Todoist dumps are embedded."
+  ],
+  "fixtures": [
+    {
+      "id": "historical-grow-tomar-conta",
+      "content": "The-ai-crowd tomar conta do grow",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "confirmed_soft_surface",
+        "ambiguous_cue"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [
+            "conta",
+            "tomar conta"
+          ],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Rodolfo confirmed this is soft; conta in tomar conta is ambiguous, not a standalone hard deadline cue.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-carteira-vacinacao-brutus",
+      "content": "Carteira de vacinação Brutus",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "nonrecurring_soft_backlog"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Historical non-recurring backlog item with due date used for surfacing; no explicit deadline or reviewed hard policy evidence.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-robo-milho-soja",
+      "content": "Robô com preço milho/soja",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "nonrecurring_soft_backlog"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Historical non-recurring backlog item with due date used for surfacing; no explicit deadline or reviewed hard policy evidence.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-livro-miguel",
+      "content": "Livro Miguel",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "nonrecurring_soft_backlog"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Historical non-recurring backlog item with due date used for surfacing; no explicit deadline or reviewed hard policy evidence.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-investir-dinheiro-parado",
+      "content": "Investir dinheiro parado",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "nonrecurring_soft_backlog"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Historical non-recurring backlog item with due date used for surfacing; no explicit deadline or reviewed hard policy evidence.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-dr-osorio-tricologista",
+      "content": "Dr Osório Tricologista",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "nonrecurring_soft_backlog"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Historical non-recurring backlog item with due date used for surfacing; no explicit deadline or reviewed hard policy evidence.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-encontrar-chave-deposito",
+      "content": "Encontrar chave depósito",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "nonrecurring_soft_backlog"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Historical non-recurring backlog item with due date used for surfacing; no explicit deadline or reviewed hard policy evidence.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-comprar-passagem-talita",
+      "content": "Comprar passagem casamento Talita",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "nonrecurring_soft_backlog"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Historical non-recurring backlog item with due date used for surfacing; no explicit deadline or reviewed hard policy evidence.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-cortar-unha",
+      "content": "Cortar unha",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-26",
+        "datetime": null,
+        "string": "toda semana",
+        "is_recurring": true
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "recurring_maintenance"
+      ],
+      "expected": {
+        "category": "recurring_maintenance",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": true,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "recurring_due_no_hard_evidence"
+        },
+        "rationale": "Recurring Todoist due string represents care/cadence and must be preserved by recurring maintenance handling.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "recurring_maintenance",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-escovar-dentes-brutus",
+      "content": "Escovar dentes Brutus",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-26",
+        "datetime": null,
+        "string": "todo 3 dias",
+        "is_recurring": true
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "recurring_maintenance"
+      ],
+      "expected": {
+        "category": "recurring_maintenance",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": true,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "recurring_due_no_hard_evidence"
+        },
+        "rationale": "Recurring Todoist due string represents care/cadence and must be preserved by recurring maintenance handling.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "recurring_maintenance",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-organizar-remedios",
+      "content": "Organizar remédios",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-26",
+        "datetime": null,
+        "string": "todo 8 dias",
+        "is_recurring": true
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "recurring_maintenance"
+      ],
+      "expected": {
+        "category": "recurring_maintenance",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": true,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "recurring_due_no_hard_evidence"
+        },
+        "rationale": "Recurring Todoist due string represents care/cadence and must be preserved by recurring maintenance handling.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "recurring_maintenance",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-falar-com-camila",
+      "content": "Falar com Camila",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-26",
+        "datetime": null,
+        "string": "toda segunda",
+        "is_recurring": true
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "recurring_maintenance"
+      ],
+      "expected": {
+        "category": "recurring_maintenance",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": true,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "recurring_due_no_hard_evidence"
+        },
+        "rationale": "Recurring Todoist due string represents care/cadence and must be preserved by recurring maintenance handling.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "recurring_maintenance",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "historical-luz-enel",
+      "content": "Luz - Enel",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-06-04",
+        "datetime": null,
+        "string": "4 Jun",
+        "is_recurring": false
+      },
+      "deadline": {
+        "date": "2026-06-05"
+      },
+      "coverage_groups": [
+        "confirmed_hard"
+      ],
+      "expected": {
+        "category": "hard_deadline",
+        "evidence": {
+          "explicit_deadline": true,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "explicit_deadline"
+        },
+        "rationale": "Explicit Todoist deadline object makes this a hard deadline; soft hygiene must not move it.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": false,
+          "phase": "none",
+          "skip_reason": "deadline_present"
+        }
+      }
+    },
+    {
+      "id": "synthetic-pagar-boleto",
+      "content": "Pagar boleto condomínio",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "strong_hard_cue"
+      ],
+      "expected": {
+        "category": "hard_deadline",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [
+            "pagar",
+            "boleto"
+          ],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "strong_hard_cue_combination"
+        },
+        "rationale": "Strong payment/deadline cue combination is treated as hard only because cue context is obligation-like, not because of a weak standalone token.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": false,
+          "phase": "none",
+          "skip_reason": "hard_deadline"
+        }
+      }
+    },
+    {
+      "id": "synthetic-pagar-fatura",
+      "content": "Pagar fatura cartão",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "strong_hard_cue"
+      ],
+      "expected": {
+        "category": "hard_deadline",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [
+            "pagar",
+            "fatura"
+          ],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "strong_hard_cue_combination"
+        },
+        "rationale": "Strong payment/deadline cue combination is treated as hard only because cue context is obligation-like, not because of a weak standalone token.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": false,
+          "phase": "none",
+          "skip_reason": "hard_deadline"
+        }
+      }
+    },
+    {
+      "id": "synthetic-vencimento-imposto",
+      "content": "Vencimento imposto",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "strong_hard_cue"
+      ],
+      "expected": {
+        "category": "hard_deadline",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [
+            "vencimento",
+            "imposto"
+          ],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "strong_hard_cue_combination"
+        },
+        "rationale": "Strong payment/deadline cue combination is treated as hard only because cue context is obligation-like, not because of a weak standalone token.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": false,
+          "phase": "none",
+          "skip_reason": "hard_deadline"
+        }
+      }
+    },
+    {
+      "id": "synthetic-invoice-payment",
+      "content": "Pay invoice for hosting",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "strong_hard_cue"
+      ],
+      "expected": {
+        "category": "hard_deadline",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [
+            "invoice"
+          ],
+          "ambiguous_cues": [],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "strong_hard_cue_combination"
+        },
+        "rationale": "Strong payment/deadline cue combination is treated as hard only because cue context is obligation-like, not because of a weak standalone token.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": false,
+          "phase": "none",
+          "skip_reason": "hard_deadline"
+        }
+      }
+    },
+    {
+      "id": "ambiguous-tomar-conta-grow",
+      "content": "tomar conta do grow",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "ambiguous_cue"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [
+            "conta",
+            "tomar conta"
+          ],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Weak/ambiguous lexical cue must not classify hard without explicit deadline, payment, appointment, or reviewed hard policy context.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    },
+    {
+      "id": "ambiguous-consultar-documentacao",
+      "content": "consultar documentação",
+      "description": "",
+      "labels": [],
+      "due": null,
+      "deadline": null,
+      "coverage_groups": [
+        "ambiguous_cue"
+      ],
+      "expected": {
+        "category": "ambiguous",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [
+            "consulta",
+            "consultar documentação"
+          ],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "ambiguous_only"
+        },
+        "rationale": "Weak/ambiguous lexical cue must not classify hard without explicit deadline, payment, appointment, or reviewed hard policy context.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": false,
+          "phase": "none",
+          "skip_reason": "ambiguous_requires_review"
+        }
+      }
+    },
+    {
+      "id": "ambiguous-conta-standalone",
+      "content": "revisar conta do projeto",
+      "description": "",
+      "labels": [],
+      "due": {
+        "date": "2026-05-30",
+        "datetime": null,
+        "string": "30 May",
+        "is_recurring": false
+      },
+      "deadline": null,
+      "coverage_groups": [
+        "ambiguous_cue"
+      ],
+      "expected": {
+        "category": "soft_surface",
+        "evidence": {
+          "explicit_deadline": false,
+          "recurring_due": false,
+          "strong_hard_cues": [],
+          "ambiguous_cues": [
+            "conta"
+          ],
+          "soft_policy_matches": [],
+          "hard_policy_matches": [],
+          "ambiguous_policy_matches": [],
+          "task_override": null,
+          "decision_source": "due_no_hard_evidence"
+        },
+        "rationale": "Weak/ambiguous lexical cue must not classify hard without explicit deadline, payment, appointment, or reviewed hard policy context.",
+        "mutation_eligibility": {
+          "writable_by_morning_hygiene": true,
+          "phase": "soft_non_recurring",
+          "skip_reason": null
+        }
+      }
+    }
+  ]
+}
