@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "updated_at": "2026-06-01",
+  "task_overrides": {},
+  "soft_patterns": [],
+  "hard_patterns": [],
+  "ambiguous_patterns": [
+    {
+      "id": "standalone-conta-ambiguous",
+      "pattern": "conta",
+      "match_mode": "token",
+      "category": "ambiguous",
+      "reason": "Standalone conta is semantically overloaded and must not decide hard alone.",
+      "source": "synthetic-contract"
+    },
+    {
+      "id": "tomar-conta-ambiguous",
+      "pattern": "tomar conta",
+      "match_mode": "phrase",
+      "category": "ambiguous",
+      "reason": "Synthetic phrase example: tomar conta do projeto fictício is not a deadline.",
+      "source": "synthetic-contract"
+    },
+    {
+      "id": "consultar-documentacao-ambiguous",
+      "pattern": "consultar documentação|consultar documentacao",
+      "match_mode": "regex",
+      "category": "ambiguous",
+      "reason": "Documentation consultation is not appointment/deadline evidence.",
+      "source": "synthetic-contract"
+    }
+  ],
+  "strong_hard_cues": [
+    "pay",
+    "pagar",
+    "pagamento",
+    "boleto",
+    "fatura",
+    "invoice",
+    "vencimento",
+    "vencer",
+    "imposto"
+  ],
+  "caps": {
+    "soft_non_recurring_lookback_days": 14,
+    "soft_non_recurring_max_candidates": 25,
+    "recurring_lookback_days": 14,
+    "recurring_max_candidates": 25
+  },
+  "data_origin": "synthetic"
+}
