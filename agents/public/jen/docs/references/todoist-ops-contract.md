@@ -8,12 +8,35 @@
 - If this workspace declares `tools/todoist/todoist-api.sh`, that adapter is authoritative for Todoist capability checks and writes behind the runtime boundary.
 - Chat-time Todoist mutations must not call `tools/todoist/todoist-api.sh` or generic Todoist mutation commands directly. They must use `bin/jen-task-runtime` or an approved thin wrapper that delegates to it.
 - `bin/jen-todoist-capture` is the direct-chat capture wrapper and delegates to `bin/jen-task-runtime capture-task`.
-- `bin/jen-morning-due-adjust` is the active morning due-date hygiene wrapper. It classifies past-due `due` signals through `bin/jen-todoist-due-semantics`, mutates only safe `due` re-anchors through `bin/jen-task-runtime update-due`, preserves `deadline`, and writes a change log under `memory/morning-due-adjustments/` for later conversation.
+- `bin/jen-morning-due-adjust` is the active morning due-date hygiene wrapper. It classifies past-due `due` signals through `bin/jen-todoist-due-semantics`, mutates only safe non-recurring `soft_surface` tasks with `deadline == null` through `bin/jen-task-runtime update-due`, preserves `deadline`, defaults to a max-candidate cap of 25, and writes a change log under `memory/morning-due-adjustments/` for later conversation.
+- `tools/cron-scripts/jen-morning-soft-due-hygiene.sh` is the source-controlled copy of the single scheduled morning orchestration entrypoint installed at `/opt/data/scripts/jen-morning-soft-due-hygiene.sh`. It may synchronously call `/opt/data/scripts/jen-morning-recurring-maintenance-reanchor.sh`; do not add a second time-coupled cron for recurring maintenance.
+- `tools/cron-scripts/jen-morning-recurring-maintenance-reanchor.sh` / runtime copy `/opt/data/scripts/jen-morning-recurring-maintenance-reanchor.sh` re-anchor only past-due `recurring_maintenance` tasks with `deadline == null`, `due.is_recurring == true`, and a non-empty `due.string`. It calls `jen-task-runtime update-due --due "$existing_due_string"`, defaults to max 25 candidates, fails closed before writes when the cap is exceeded, and records candidates/skipped/writes plus classifier evidence in `/opt/data/state/jen-cron/morning-recurring-maintenance-reanchor/latest.json` and audit packets.
+- `bin/jen-todoist-due-semantics` v2 must report evidence separately from final decision. Lexical/regex matches populate evidence only; final category comes from deterministic precedence and reviewed policy.
+- `config/todoist-due-semantics-policy.v2.json` is the auditable source for exact overrides and reviewed hard/soft/ambiguous patterns. Historical or Jen-context knowledge must be converted into this policy or into committed fixtures before it affects unattended write eligibility.
 - `bin/jen-task-read` is the grouped direct-read wrapper and delegates to `bin/jen-task-runtime` read commands.
 - `bin/jen-task-read recent-completed` is the supported grouped-read path for `read-recent-completed`; it delegates to the runtime and should not be treated as a separate wrapper category.
 - Generic Todoist or task CLIs on `PATH` are observability only; their absence is not evidence that Todoist is unavailable, and their presence does not override the workspace adapter.
 - Treat Todoist API v1 as canonical in this workspace.
 - Do not assume REST v2 or Sync v9 are available.
+
+## V2 due semantics validation workflow
+
+Use this workflow when changing Todoist due semantics, policy, fixtures, morning due hygiene, or recurring maintenance re-anchor behavior. Run it in the Jen container without restarts, provider messages, calendar writes, or task creation.
+
+1. Static source checks from `/agents/jen/public`:
+   - `bash -n bin/jen-todoist-due-semantics bin/jen-morning-due-adjust tools/cron-scripts/jen-morning-soft-due-hygiene.sh tools/cron-scripts/jen-morning-recurring-maintenance-reanchor.sh tests/jen-todoist-due-semantics-v2.contract.sh tests/jen-morning-due-adjust.contract.sh tests/jen-morning-soft-due-hygiene-wrapper.contract.sh tests/jen-morning-recurring-maintenance-reanchor.contract.sh`
+   - `jq -e . config/todoist-due-semantics-policy.v2.json fixtures/todoist-due-semantics-v2/historical-golden-fixtures.json`
+2. Contract tests:
+   - `tests/jen-todoist-due-semantics-v2.contract.sh`
+   - `tests/jen-morning-due-adjust.contract.sh`
+   - `tests/jen-morning-soft-due-hygiene-wrapper.contract.sh`
+   - `tests/jen-morning-recurring-maintenance-reanchor.contract.sh`
+3. Read-only live classifier smoke over a bounded window with `bin/jen-todoist-due-semantics live-due-window --from YYYY-MM-DD --to YYYY-MM-DD --today YYYY-MM-DD`. Confirm `The-ai-crowd tomar conta do grow` stays `soft_surface` and `Luz - Enel` stays `hard_deadline` because of explicit `deadline`.
+4. Morning hygiene dry-run with `bin/jen-morning-due-adjust --dry-run ...`. Confirm candidate/write counts and cap state before any apply path.
+5. Apply validation, only when candidates are zero or explicitly reviewed safe, through `/opt/data/scripts/jen-morning-soft-due-hygiene.sh` with `JEN_MORNING_SOFT_DUE_HYGIENE_APPLY=1`. Prefer this scheduled wrapper path because it writes audit/idempotency state under `/opt/data/state/jen-cron/...`; a bare source wrapper defaults to a read-only source-tree audit directory in the runtime container.
+6. Read back `/opt/data/state/jen-cron/morning-soft-due-hygiene/latest.json`, `/opt/data/state/jen-cron/morning-recurring-maintenance-reanchor/latest.json`, and `/opt/data/cron/jobs.json`. Confirm both soft and recurring caps default to 25, fail closed on cap exceedance, preserve recurring `due.string`, skip deadline-bearing tasks, and keep exactly one scheduled cron named `Jen morning soft-due hygiene apply`.
+
+No-touch confirmations for this workflow: no calendar writes, no Todoist task creation, no provider messages, no container/gateway restarts or recreates, no second time-based cron, and no direct LLM authorization of unattended Todoist writes.
 
 ## Runtime contract
 - Contract version is pinned to `jen-task-runtime.v1`.

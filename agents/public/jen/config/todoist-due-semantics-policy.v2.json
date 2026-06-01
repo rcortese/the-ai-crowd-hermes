@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "updated_at": "2026-06-01",
+  "task_overrides": {},
+  "soft_patterns": [],
+  "hard_patterns": [],
+  "ambiguous_patterns": [
+    {"id":"standalone-conta-ambiguous","pattern":"conta","match_mode":"token","category":"ambiguous","reason":"Standalone conta is semantically overloaded and must not decide hard alone.","source":"operator-confirmation"},
+    {"id":"tomar-conta-ambiguous","pattern":"tomar conta","match_mode":"phrase","category":"ambiguous","reason":"Rodolfo confirmed tomar conta do grow is soft surface, not hard deadline.","source":"operator-confirmation"},
+    {"id":"consultar-documentacao-ambiguous","pattern":"consultar documentação|consultar documentacao","match_mode":"regex","category":"ambiguous","reason":"Documentation consultation is not appointment/deadline evidence.","source":"historical-fixture"}
+  ],
+  "strong_hard_cues": ["pay", "pagar", "pagamento", "boleto", "fatura", "invoice", "vencimento", "vencer", "imposto"],
+  "caps": {
+    "soft_non_recurring_lookback_days": 14,
+    "soft_non_recurring_max_candidates": 25,
+    "recurring_lookback_days": 14,
+    "recurring_max_candidates": 25
+  }
+}

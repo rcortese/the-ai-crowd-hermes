@@ -1,41 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONTRACT_VERSION="jen-todoist-due-semantics.v1"
+CONTRACT_VERSION="jen-todoist-due-semantics.v2"
 WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 TASK_RUNTIME="${JEN_TODOIST_DUE_SEMANTICS_TASK_RUNTIME:-$WORKSPACE_ROOT/bin/jen-task-runtime}"
+POLICY_PATH="${JEN_TODOIST_DUE_SEMANTICS_POLICY:-$WORKSPACE_ROOT/config/todoist-due-semantics-policy.v2.json}"
 
-now_utc() {
-  date -u +"%Y-%m-%dT%H:%M:%SZ"
-}
-
-json_out() {
-  printf '%s\n' "$1"
-}
+now_utc() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+json_out() { printf '%s\n' "$1"; }
 
 emit_failed() {
-  local command="$1"
-  local failure_class="$2"
-  json_out "$(jq -nc \
-    --arg contract_version "$CONTRACT_VERSION" \
-    --arg command "$command" \
-    --arg status failed \
-    --arg failure_class "$failure_class" \
-    '{contract_version:$contract_version,command:$command,status:$status,failure_class:$failure_class,complete:false}')"
+  local command="$1" failure_class="$2"
+  json_out "$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command "$command" --arg status failed --arg failure_class "$failure_class" '{contract_version:$contract_version,command:$command,status:$status,failure_class:$failure_class,complete:false}')"
   exit 1
 }
 
-valid_date_ymd() {
-  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$(date -d "$1" +%F 2>/dev/null || true)" == "$1" ]]
-}
-
-require_option_value() {
-  local command="$1"
-  local value="${2:-}"
-  if [[ -z "$value" || "$value" == --* ]]; then
-    emit_failed "$command" invalid_argument
-  fi
-}
+valid_date_ymd() { [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$(date -d "$1" +%F 2>/dev/null || true)" == "$1" ]]; }
+require_option_value() { local command="$1" value="${2:-}"; [[ -n "$value" && "$value" != --* ]] || emit_failed "$command" invalid_argument; }
 
 usage() {
   cat <<'EOF'
@@ -43,20 +24,24 @@ Usage:
   jen-todoist-due-semantics classify [--today YYYY-MM-DD]
   jen-todoist-due-semantics live-due-window --from YYYY-MM-DD --to YYYY-MM-DD [--today YYYY-MM-DD]
 
-Read-only helper that classifies Todoist due/past-date task semantics before Jen uses lateness wording.
-Live mode may call only bin/jen-task-runtime read-due-window; it does not call the Todoist provider adapter directly and performs no mutations.
+Read-only helper that classifies Todoist due/past-date task semantics using v2 evidence-plus-policy semantics.
+Live mode may call only bin/jen-task-runtime read-due-window; it performs no mutations.
 EOF
 }
 
+load_policy_json() {
+  [[ -f "$POLICY_PATH" ]] || emit_failed "$1" policy_missing
+  jq -e '.version == 2 and (.task_overrides|type)=="object" and (.soft_patterns|type)=="array" and (.hard_patterns|type)=="array" and (.ambiguous_patterns|type)=="array" and (.strong_hard_cues|type)=="array" and (.caps|type)=="object"' "$POLICY_PATH" >/dev/null || emit_failed "$1" policy_invalid
+  jq -c . "$POLICY_PATH"
+}
+
+policy_sha256() { sha256sum "$POLICY_PATH" | awk '{print $1}'; }
+
 classify_tasks_json() {
-  local tasks_json="$1"
-  local command="$2"
-  local source="$3"
-  local today="$4"
-  local from_date="$5"
-  local to_date="$6"
-  local checked_at
+  local tasks_json="$1" command="$2" source="$3" today="$4" from_date="$5" to_date="$6" checked_at policy_json policy_sha
   checked_at="$(now_utc)"
+  policy_json="$(load_policy_json "$command")"
+  policy_sha="$(policy_sha256)"
 
   jq -nc \
     --arg contract_version "$CONTRACT_VERSION" \
@@ -67,76 +52,107 @@ classify_tasks_json() {
     --arg today "$today" \
     --arg from "$from_date" \
     --arg to "$to_date" \
+    --arg policy_path "$POLICY_PATH" \
+    --arg policy_sha "$policy_sha" \
+    --argjson policy "$policy_json" \
     --argjson tasks_in "$tasks_json" '
     def text_blob:
       [(.content // ""), (.description // ""), ((.labels // []) | join(" ")), (.due.string // ""), (.deadline.date // ""), (.deadline.datetime // "")]
-      | join(" ")
-      | ascii_downcase;
-
-    def has_due: ((.due | type) == "object") and ((.due.date // "") != "");
-    def past_due($today): has_due and ((.due.date // "") < $today);
-    def has_hard_deadline_cue:
-      ((.deadline | type) == "object")
-      or (text_blob | test("\\b(boleto|conta|vencimento|vencer|pagar|pagamento|imposto|consulta|m[eé]dico|dentista|appointment|deadline|due by|entregar|entrega|contrato|documento|renova[cç][aã]o|license|licen[cç]a|invoice|fatura)\\b"));
+      | join(" ") | ascii_downcase;
+    def has_due: ((.due | type) == "object") and (((.due.date // "") != "") or ((.due.datetime // "") != ""));
+    def due_date: (.due.date // ((.due.datetime // "") | split("T")[0]) // null);
+    def deadline_present: ((.deadline | type) == "object") and ((((.deadline.date // "") != "") or ((.deadline.datetime // "") != "")) or ((.deadline | length) > 0));
+    def deadline_date: if ((.deadline | type) == "object") then (.deadline.date // ((.deadline.datetime // "") | split("T")[0]) // null) else null end;
+    def past_due($today): has_due and ((due_date // "9999-99-99") < $today);
     def content_present: (((.content // "") | gsub("\\s+"; "") | length) > 0);
-    def recurring_hard_obligation: has_due and (.due.is_recurring == true) and has_hard_deadline_cue;
-    def category($today):
-      if recurring_hard_obligation then "recurring_hard_obligation"
-      elif has_due and (.due.is_recurring == true) then "recurring_maintenance"
-      elif has_hard_deadline_cue then "hard_deadline"
-      elif has_due and content_present then "soft_surface"
-      else "ambiguous" end;
-    def confidence($today):
-      if recurring_hard_obligation then "high"
-      elif has_due and (.due.is_recurring == true) then "high"
-      elif ((.deadline | type) == "object") then "high"
-      elif has_hard_deadline_cue then "medium"
-      elif has_due and content_present and past_due($today) then "low"
-      elif has_due and content_present then "medium"
-      else "low" end;
-    def reason($today):
-      if recurring_hard_obligation then "Todoist marks a recurring due date and hard-deadline evidence; treat due as intended execution/cadence and deadline as the current-cycle cutoff."
-      elif has_due and (.due.is_recurring == true) then "Todoist marks the due date as recurring, so treat it as cadence/maintenance rather than automatic debt."
-      elif ((.deadline | type) == "object") then "Todoist exposes an explicit deadline object, so stronger deadline handling is allowed."
-      elif has_hard_deadline_cue then "Task text, labels, due string, or deadline fields contain real-world deadline cues."
-      elif has_due and content_present and past_due($today) then "Task has a date before today, but no hard-deadline cue; past_due_raw is only a date signal."
-      elif has_due and content_present then "Task has a due date but no hard-deadline cue; treat it as a surfaced candidate."
-      else "Insufficient due/content evidence to classify date semantics safely." end;
-    def suggested_action($today):
-      (category($today)) as $category
-      | if $category == "hard_deadline" then "Do it, renegotiate it, reschedule it explicitly, or set/verify deadline."
-        elif $category == "recurring_hard_obligation" then "Preserve recurring due as intended execution/cadence; verify or update the current-cycle deadline from policy."
-        elif $category == "recurring_maintenance" then "Choose the next viable occurrence or re-anchor the cadence."
-        elif $category == "soft_surface" then "Keep it today, move it to `Esta Semana`, or remove the due date."
-        else "Ask one focused question or suggest a short review." end;
-    def signals($today):
+    def policy_match($task; $entry):
+      ($entry.match_mode // "regex") as $mode
+      | ($entry.pattern // "") as $pat
+      | ($task | text_blob) as $text
+      | if $pat == "" then false
+        elif $mode == "substring" or $mode == "phrase" then ($text | contains($pat | ascii_downcase))
+        elif $mode == "token" then ($text | test("(^|[^[:alnum:]_])" + ($pat | ascii_downcase) + "([^[:alnum:]_]|$)"))
+        else ($text | test($pat; "i")) end;
+    def matched_ids($entries): . as $task | [ $entries[]? | select(policy_match($task; .)) | .id ];
+    def matched_override($policy):
+      (($policy.task_overrides[((.id // .task_id // "") | tostring)] // null));
+    def strong_cues($policy):
+      [ $policy.strong_hard_cues[]? as $cue | select(text_blob | test("(^|[^[:alnum:]_])" + ($cue | ascii_downcase) + "([^[:alnum:]_]|$)")) | $cue ];
+    def ambiguous_cues:
       ([
-        (if has_due then "has_due_date" else empty end),
-        (if past_due($today) then "past_due_raw" else empty end),
-        (if (.due.is_recurring == true) then "todoist_recurring_due" else empty end),
-        (if ((.deadline | type) == "object") then "todoist_deadline_object" else empty end),
-        (if has_hard_deadline_cue then "hard_deadline_cue" else empty end)
+        (if (text_blob | test("(^|[^[:alnum:]_])conta([^[:alnum:]_]|$)")) then "conta" else empty end),
+        (if (text_blob | contains("tomar conta")) then "tomar conta" else empty end),
+        (if (text_blob | test("(^|[^[:alnum:]_])consulta(r)?([^[:alnum:]_]|$)")) then "consulta" else empty end),
+        (if (text_blob | test("consultar documenta(c|ç)(a|ã)o")) then "consultar documentação" else empty end)
       ] | unique);
-
-    ($tasks_in | if type == "array" then . else error("tasks_not_array") end) as $input_tasks
-    | ($input_tasks | map(
-        . as $task
-        | ($task | category($today)) as $category
-        | {
-            id: (($task.id // $task.task_id // null) | tostring),
+    def due_summary: if ((.due | type) == "object") then {present:true,date:(.due.date // null),datetime:(.due.datetime // null),string:(.due.string // null),is_recurring:(.due.is_recurring == true)} else {present:false,date:null,datetime:null,string:null,is_recurring:false} end;
+    def deadline_summary: if deadline_present then {present:true,date:deadline_date} else {present:false,date:null} end;
+    def classify_one($policy; $today):
+      . as $task
+      | ($task | matched_override($policy)) as $override
+      | ($task | matched_ids($policy.hard_patterns)) as $hard_matches
+      | ($task | matched_ids($policy.soft_patterns)) as $soft_matches
+      | ($task | matched_ids($policy.ambiguous_patterns)) as $ambiguous_matches
+      | ($task | strong_cues($policy)) as $strong
+      | ($task | ambiguous_cues) as $ambiguous
+      | ($task.due.is_recurring == true) as $recurring
+      | ($task | deadline_present) as $deadline
+      | (if $override != null then {category:$override.category, source:"task_override"}
+         elif $deadline then {category:(if $recurring then "recurring_hard_obligation" else "hard_deadline" end), source:"explicit_deadline"}
+         elif ($hard_matches|length) > 0 then {category:(if $recurring then "recurring_hard_obligation" else "hard_deadline" end), source:"hard_policy_match"}
+         elif ($soft_matches|length) > 0 then {category:(if $recurring then "recurring_maintenance" else "soft_surface" end), source:"soft_policy_match"}
+         elif ($strong|length) >= 2 then {category:(if $recurring then "recurring_hard_obligation" else "hard_deadline" end), source:"strong_hard_cue_combination"}
+         elif ($strong|length) > 0 then {category:"ambiguous", source:"strong_hard_cue_insufficient"}
+         elif $recurring then {category:"recurring_maintenance", source:"recurring_due_no_hard_evidence"}
+         elif (($ambiguous|length) > 0 or ($ambiguous_matches|length) > 0) and (has_due and content_present) then {category:"soft_surface", source:"due_no_hard_evidence"}
+         elif (($ambiguous|length) > 0 or ($ambiguous_matches|length) > 0) then {category:"ambiguous", source:"ambiguous_only"}
+         elif has_due and content_present then {category:"soft_surface", source:"due_no_hard_evidence"}
+         else {category:"ambiguous", source:"insufficient_evidence"} end) as $decision
+      | ($task | past_due($today)) as $past
+      | (if $decision.category == "soft_surface" and $past and ($deadline|not) and ($recurring|not) then true
+         elif $decision.category == "recurring_maintenance" and $past and ($deadline|not) and $recurring and ((.due.string // "") != "") then true
+         else false end) as $writable
+      | (if $writable then null
+         elif $deadline then "deadline_present"
+         elif $decision.category == "hard_deadline" then "hard_deadline"
+         elif $decision.category == "recurring_hard_obligation" then "recurring_hard_obligation"
+         elif $decision.category == "ambiguous" then (if $decision.source == "strong_hard_cue_insufficient" then "strong_hard_cue_insufficient" else "ambiguous_requires_review" end)
+         elif $recurring and ((.due.string // "") == "") then "missing_due_string_for_recurring_preservation"
+         else "not_soft_category" end) as $skip
+      | {
+          id: (($task.id // $task.task_id // null) | tostring),
+          content: ($task.content // ""),
+          due: (if (($task.due | type) == "object") then $task.due else null end),
+          deadline: (if (($task.deadline | type) == "object") then $task.deadline else null end),
+          past_due_raw: $past,
+          evidence: {
+            task_id: (($task.id // $task.task_id // null) | tostring),
             content: ($task.content // ""),
-            due: (if (($task.due | type) == "object") then $task.due else null end),
-            deadline: (if (($task.deadline | type) == "object") then $task.deadline else null end),
-            past_due_raw: ($task | past_due($today)),
-            classification: {
-              category: $category,
-              confidence: ($task | confidence($today)),
-              reason: ($task | reason($today)),
-              suggested_action: ($task | suggested_action($today))
-            },
-            signals: ($task | signals($today))
-          }
-      )) as $classified
+            due: ($task | due_summary),
+            deadline: ($task | deadline_summary),
+            past_due_raw: $past,
+            explicit_deadline: $deadline,
+            recurring_due: $recurring,
+            strong_hard_cues: $strong,
+            ambiguous_cues: $ambiguous,
+            soft_policy_matches: $soft_matches,
+            hard_policy_matches: $hard_matches,
+            ambiguous_policy_matches: $ambiguous_matches,
+            task_override: $override,
+            decision_source: $decision.source,
+            final_category: $decision.category,
+            writable: $writable,
+            skip_reason: $skip
+          },
+          decision_source: $decision.source,
+          final_category: $decision.category,
+          writable: $writable,
+          skip_reason: $skip,
+          classification: {category:$decision.category, confidence:(if $decision.source == "explicit_deadline" or $decision.source == "recurring_due_no_hard_evidence" or $decision.source == "task_override" then "high" elif $decision.source == "strong_hard_cue_combination" then "medium" else "low" end), reason:$decision.source, suggested_action:(if $writable then "Eligible for capped morning hygiene." else "Skip or review according to skip_reason." end)},
+          signals: ([ (if has_due then "has_due_date" else empty end), (if $past then "past_due_raw" else empty end), (if $recurring then "todoist_recurring_due" else empty end), (if $deadline then "todoist_deadline_object" else empty end), (if ($strong|length)>0 then "strong_hard_cue" else empty end), (if ($ambiguous|length)>0 then "ambiguous_cue" else empty end) ] | unique)
+        };
+    ($tasks_in | if type == "array" then . else error("tasks_not_array") end) as $input_tasks
+    | ($input_tasks | map(classify_one($policy; $today))) as $classified
     | {
         contract_version:$contract_version,
         command:$command,
@@ -146,10 +162,9 @@ classify_tasks_json() {
         today:$today,
         from:(if $from == "" then null else $from end),
         to:(if $to == "" then null else $to end),
-        summary:{
-          task_count:($classified|length),
-          category_counts:($classified | group_by(.classification.category) | map({key:.[0].classification.category,value:length}) | from_entries)
-        },
+        policy:{path:$policy_path,version:$policy.version,sha256:$policy_sha},
+        caps:{soft_non_recurring:{limit:$policy.caps.soft_non_recurring_max_candidates,candidates:([ $classified[] | select(.writable and .final_category == "soft_surface") ]|length),exceeded:false},recurring:{limit:$policy.caps.recurring_max_candidates,candidates:([ $classified[] | select(.writable and .final_category == "recurring_maintenance") ]|length),exceeded:false}},
+        summary:{task_count:($classified|length),category_counts:($classified | group_by(.final_category) | map({key:.[0].final_category,value:length}) | from_entries)},
         tasks:$classified,
         complete:true
       }
@@ -160,22 +175,12 @@ classify_command() {
   local today="$(date +%F)"
   while (($#)); do
     case "$1" in
-      --today)
-        require_option_value classify "${2:-}"
-        today="$2"
-        shift 2
-        ;;
-      -h|--help)
-        usage
-        exit 0
-        ;;
-      *)
-        emit_failed classify invalid_argument
-        ;;
+      --today) require_option_value classify "${2:-}"; today="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) emit_failed classify invalid_argument ;;
     esac
   done
   valid_date_ymd "$today" || emit_failed classify invalid_argument
-
   local input_json
   if ! input_json="$(cat)" || [[ -z "$input_json" ]] || ! jq -e 'type == "array"' <<<"$input_json" >/dev/null 2>&1; then
     emit_failed classify provider_shape_invalid
@@ -187,38 +192,18 @@ live_due_window_command() {
   local from_date="" to_date="" today="$(date +%F)"
   while (($#)); do
     case "$1" in
-      --from)
-        require_option_value live-due-window "${2:-}"
-        from_date="$2"
-        shift 2
-        ;;
-      --to)
-        require_option_value live-due-window "${2:-}"
-        to_date="$2"
-        shift 2
-        ;;
-      --today)
-        require_option_value live-due-window "${2:-}"
-        today="$2"
-        shift 2
-        ;;
-      -h|--help)
-        usage
-        exit 0
-        ;;
-      *)
-        emit_failed live-due-window invalid_argument
-        ;;
+      --from) require_option_value live-due-window "${2:-}"; from_date="$2"; shift 2 ;;
+      --to) require_option_value live-due-window "${2:-}"; to_date="$2"; shift 2 ;;
+      --today) require_option_value live-due-window "${2:-}"; today="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) emit_failed live-due-window invalid_argument ;;
     esac
   done
-  if [[ -z "$from_date" || -z "$to_date" ]]; then
-    emit_failed live-due-window invalid_argument
-  fi
+  if [[ -z "$from_date" || -z "$to_date" ]]; then emit_failed live-due-window invalid_argument; fi
   valid_date_ymd "$from_date" || emit_failed live-due-window invalid_argument
   valid_date_ymd "$to_date" || emit_failed live-due-window invalid_argument
   valid_date_ymd "$today" || emit_failed live-due-window invalid_argument
   [[ "$from_date" < "$to_date" || "$from_date" == "$to_date" ]] || emit_failed live-due-window invalid_argument
-
   local runtime_file runtime_status tasks_json failure_class
   runtime_file=$(mktemp)
   set +e

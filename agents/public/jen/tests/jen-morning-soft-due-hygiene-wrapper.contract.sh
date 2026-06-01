@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+runner="$ROOT/tools/cron-scripts/jen-morning-soft-due-hygiene.sh"
+fail() { echo "assertion failed: $*" >&2; exit 1; }
+assert_jq() { local json="$1" filter="$2" message="$3"; jq -e "$filter" <<<"$json" >/dev/null || { echo "assertion failed: $message" >&2; echo "$json" >&2; exit 1; }; }
+[[ -f "$runner" ]] || fail "missing source-controlled morning soft-due hygiene wrapper"
+bash -n "$runner" || fail "wrapper syntax"
+state="$(mktemp -d)"
+mock_dir="$(mktemp -d)"
+trap 'rm -rf "$state" "$mock_dir"' EXIT
+wrapper_log="$mock_dir/wrapper.log"
+recurring_log="$mock_dir/recurring.log"
+mock_wrapper="$mock_dir/jen-morning-due-adjust"
+mock_recurring="$mock_dir/jen-morning-recurring-maintenance-reanchor.sh"
+cat >"$mock_wrapper" <<'MOCKWRAP'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${WRAPPER_LOG:?}"
+jq -nc '{contract_version:"jen-morning-due-adjust.v2",status:"ok",mode:(if (["$ARGS.positional[]"]|length) then "unknown" else "ok" end),summary:{candidate_count:0,blocked_count:0,write_count:0,skipped_count:0},audit_log_path:null}'
+MOCKWRAP
+chmod +x "$mock_wrapper"
+cat >"$mock_recurring" <<'MOCKREC'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'called\n' >> "${RECURRING_LOG:?}"
+jq -nc '{contract_version:"jen-morning-recurring-maintenance-reanchor.v2",status:"ok",summary:{candidate_count:0,write_count:0,failure_count:0}}' >/dev/null
+MOCKREC
+chmod +x "$mock_recurring"
+WRAPPER_LOG="$wrapper_log" RECURRING_LOG="$recurring_log" \
+JEN_MORNING_SOFT_DUE_STATE_DIR="$state/dry" \
+JEN_MORNING_SOFT_DUE_WRAPPER="$mock_wrapper" \
+JEN_MORNING_RECURRING_RUNNER="$mock_recurring" \
+JEN_MORNING_SOFT_DUE_HYGIENE_APPLY=0 \
+JEN_MORNING_SOFT_DUE_TZ=UTC \
+"$runner"
+[[ ! -s "$recurring_log" ]] || fail "dry-run must not invoke recurring reanchor"
+assert_jq "$(cat "$state/dry/latest.json")" '.status == "ok" and .mode == "dry-run" and .boundaries.dry_run_only == true and .boundaries.todoist_write_enabled == false and .boundaries.no_calendar_write == true and .boundaries.no_task_creation == true and .boundaries.no_provider_message == true' 'dry-run packet boundaries'
+WRAPPER_LOG="$wrapper_log" RECURRING_LOG="$recurring_log" \
+JEN_MORNING_SOFT_DUE_STATE_DIR="$state/apply" \
+JEN_MORNING_SOFT_DUE_WRAPPER="$mock_wrapper" \
+JEN_MORNING_RECURRING_RUNNER="$mock_recurring" \
+JEN_MORNING_SOFT_DUE_HYGIENE_APPLY=1 \
+JEN_MORNING_SOFT_DUE_TZ=UTC \
+"$runner"
+[[ "$(grep -c '^called$' "$recurring_log")" == "1" ]] || fail "apply must invoke recurring reanchor exactly once"
+assert_jq "$(cat "$state/apply/latest.json")" '.status == "ok" and .mode == "apply" and .boundaries.dry_run_only == false and .boundaries.todoist_write_enabled == true and .boundaries.no_calendar_write == true and .boundaries.no_task_creation == true and .boundaries.no_provider_message == true' 'apply packet boundaries'
+[[ "$(grep -c -- '--apply --soft-action today' "$wrapper_log")" == "1" ]] || fail "apply wrapper args include bounded apply action"
+[[ "$(grep -c -- '--dry-run' "$wrapper_log")" == "1" ]] || fail "dry-run wrapper args include dry-run"
+echo "jen-morning-soft-due-hygiene-wrapper-contract: ok"

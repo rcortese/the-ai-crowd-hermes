@@ -21,15 +21,17 @@ trap 'rm -rf "$mock_dir"' EXIT
 sem_log="$mock_dir/semantics.log"
 runtime_log="$mock_dir/runtime.log"
 audit_dir="$mock_dir/audit"
-mock_semantics="$mock_dir/jen-todoist-due-semantics"
-mock_runtime="$mock_dir/jen-task-runtime"
+space_dir="$mock_dir/path with spaces"
+mkdir -p "$space_dir"
+mock_semantics="$space_dir/jen-todoist-due-semantics mock"
+mock_runtime="$space_dir/jen-task-runtime mock"
 
 cat > "$mock_semantics" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${JEN_MORNING_TEST_SEMANTICS_LOG:?}"
 [[ "$*" == "live-due-window --from 2026-05-28 --to 2026-05-28 --today 2026-05-29" ]] || { jq -nc '{status:"failed",failure_class:"unexpected_semantics_args"}'; exit 1; }
-jq -nc '{contract_version:"jen-todoist-due-semantics.v1",command:"live-due-window",status:"ok",source:"live",today:"2026-05-29",from:"2026-05-28",to:"2026-05-28",summary:{task_count:5,category_counts:{soft_surface:1,hard_deadline:1,recurring_hard_obligation:1,recurring_maintenance:1,ambiguous:1}},tasks:[{id:"soft-1",content:"Review note",due:{date:"2026-05-28",is_recurring:false},deadline:{date:"2026-06-03"},past_due_raw:true,classification:{category:"soft_surface",confidence:"low",reason:"soft",suggested_action:"Keep it today, move it to `Esta Semana`, or remove the due date."},signals:["past_due_raw"]},{id:"hard-1",content:"Pagar boleto",due:{date:"2026-05-28",is_recurring:false},deadline:{date:"2026-05-30"},past_due_raw:true,classification:{category:"hard_deadline",confidence:"high",reason:"hard",suggested_action:"Do it."},signals:["past_due_raw","hard_deadline_cue"]},{id:"rec-hard-1",content:"Pagar aluguel",due:{date:"2026-05-28",string:"todo mês",is_recurring:true},deadline:{date:"2026-05-31"},past_due_raw:true,classification:{category:"recurring_hard_obligation",confidence:"high",reason:"rec hard",suggested_action:"Preserve recurring due."},signals:["past_due_raw","todoist_recurring_due"]},{id:"rec-maint-1",content:"Weekly review",due:{date:"2026-05-28",string:"every week",is_recurring:true},deadline:null,past_due_raw:true,classification:{category:"recurring_maintenance",confidence:"high",reason:"rec",suggested_action:"Re-anchor cadence."},signals:["past_due_raw","todoist_recurring_due"]},{id:"amb-1",content:"",due:null,deadline:null,past_due_raw:false,classification:{category:"ambiguous",confidence:"low",reason:"amb",suggested_action:"Ask."},signals:[]}],complete:true}'
+jq -nc '{contract_version:"jen-todoist-due-semantics.v1",command:"live-due-window",status:"ok",source:"live",today:"2026-05-29",from:"2026-05-28",to:"2026-05-28",summary:{task_count:5,category_counts:{soft_surface:1,hard_deadline:1,recurring_hard_obligation:1,recurring_maintenance:1,ambiguous:1}},tasks:[{id:"soft-1",content:"Review note",due:{date:"2026-05-28",is_recurring:false},deadline:null,past_due_raw:true,classification:{category:"soft_surface",confidence:"low",reason:"soft",suggested_action:"Keep it today, move it to `Esta Semana`, or remove the due date."},signals:["past_due_raw"]},{id:"hard-1",content:"Pagar boleto",due:{date:"2026-05-28",is_recurring:false},deadline:{date:"2026-05-30"},past_due_raw:true,classification:{category:"hard_deadline",confidence:"high",reason:"hard",suggested_action:"Do it."},signals:["past_due_raw","hard_deadline_cue"]},{id:"rec-hard-1",content:"Pagar aluguel",due:{date:"2026-05-28",string:"todo mês",is_recurring:true},deadline:{date:"2026-05-31"},past_due_raw:true,classification:{category:"recurring_hard_obligation",confidence:"high",reason:"rec hard",suggested_action:"Preserve recurring due."},signals:["past_due_raw","todoist_recurring_due"]},{id:"rec-maint-1",content:"Weekly review",due:{date:"2026-05-28",string:"every week",is_recurring:true},deadline:null,past_due_raw:true,classification:{category:"recurring_maintenance",confidence:"high",reason:"rec",suggested_action:"Re-anchor cadence."},signals:["past_due_raw","todoist_recurring_due"]},{id:"amb-1",content:"",due:null,deadline:null,past_due_raw:false,classification:{category:"ambiguous",confidence:"low",reason:"amb",suggested_action:"Ask."},signals:[]}],complete:true}'
 EOF
 chmod +x "$mock_semantics"
 
@@ -49,7 +51,7 @@ chmod +x "$mock_runtime"
 dry_json="$(JEN_MORNING_DUE_ADJUST_SEMANTICS="$mock_semantics" JEN_MORNING_DUE_ADJUST_TASK_RUNTIME="$mock_runtime" JEN_MORNING_TEST_SEMANTICS_LOG="$sem_log" JEN_MORNING_TEST_RUNTIME_LOG="$runtime_log" JEN_MORNING_DUE_ADJUST_AUDIT_DIR="$audit_dir" "$helper" --today 2026-05-29 --from 2026-05-28 --to 2026-05-28)"
 assert_jq "$dry_json" '.contract_version == "jen-morning-due-adjust.v1" and .status == "ok" and .mode == "dry-run" and .complete == true' 'dry-run output shape'
 assert_jq "$dry_json" '.summary.total_classified == 5 and .summary.write_count == 0 and .summary.candidate_count == 1 and .summary.blocked_count == 4' 'dry-run summary counts'
-assert_jq "$dry_json" '.candidates[] | select(.id == "soft-1" and .planned_action == "update-due" and .planned_due == "2026-05-29" and .deadline.date == "2026-06-03")' 'soft surface candidate re-anchors to today and preserves deadline evidence'
+assert_jq "$dry_json" '.candidates[] | select(.id == "soft-1" and .planned_action == "update-due" and .planned_due == "2026-05-29" and .deadline == null)' 'soft surface candidate re-anchors to today and has no deadline'
 assert_jq "$dry_json" 'all(.blocked[]; .classification.category != "soft_surface")' 'non-soft categories are blocked from mutation'
 [[ ! -s "$runtime_log" ]] || fail "dry-run must not call jen-task-runtime mutations"
 [[ ! -e "$audit_dir" ]] || fail "dry-run must not write audit logs"

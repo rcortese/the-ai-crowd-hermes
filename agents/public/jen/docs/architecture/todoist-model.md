@@ -53,6 +53,24 @@ Before Jen mentions Todoist due, overdue, or past-date items in user-facing guid
 When semantics are unclear, use neutral wording such as "items with past dates", "it appeared in Todoist today", or "it still has yesterday's date" instead of deadline, debt, guilt, or lateness wording.
 Today and Overdue can contain hard commitments, recurring cadence, soft surfaced work, or ambiguous items; do not infer the kind from Today or Overdue alone.
 
+## Classifier v2 policy contract
+
+Jen's v2 Todoist due classifier separates evidence extraction from the final deterministic decision. Regex and lexical cues may emit evidence such as `strong_hard_cues`, `ambiguous_cues`, and policy matches, but they do not directly decide the final category.
+
+The source-controlled v2 policy file is `config/todoist-due-semantics-policy.v2.json`. Policy entries are audited JSON objects rather than ad hoc memory. `deadline` remains the hard-cutoff signal; `due` remains surfacing or cadence unless explicit deadline, reviewed hard policy, or strong hard cue combination evidence says otherwise.
+
+Important Portuguese ambiguity: standalone `conta`, including `tomar conta`, is ambiguous and must not classify a task as hard by itself. `The-ai-crowd tomar conta do grow` is a `soft_surface` case when no explicit deadline or reviewed hard evidence exists. `Luz - Enel` is hard only when Todoist exposes its explicit `deadline` object.
+
+Morning soft-due hygiene must stay deterministic, capped, and fail-closed. Recurring maintenance updates preserve recurrence by reusing the existing Todoist due string; ambiguous or deadline-bearing tasks are skipped rather than moved.
+
+### V2 decision precedence and overrides
+
+Classifier v2 is deterministic policy, not free-form interpretation at write time. Jen may use historical/contextual knowledge only after it has been materialized into reviewed policy or fixtures. The policy file can contain exact task overrides, reviewed soft patterns, reviewed hard patterns, ambiguous cues, and strong hard cues. Those entries are explanation-bearing inputs to the deterministic classifier; they are not a direct LLM permission channel for unattended Todoist writes.
+
+Decision order is: exact task override, explicit Todoist `deadline`, reviewed hard policy, reviewed soft policy, strong hard cue combination, standalone strong cue requiring review, recurring due with no deadline, ambiguous cue only, due date with no hard evidence, then ambiguous. For recurring tasks, strong hard cue combinations classify as `recurring_hard_obligation`; standalone strong cues classify as `ambiguous`; neither is eligible for recurring-maintenance re-anchor. This means regex is evidence extraction. It can explain why a task was examined, but it cannot by itself turn `due` into `deadline`.
+
+Every v2 classification should preserve the split between `evidence` and `final_category` in audit output. Reviewers should be able to see, for example, that `conta` was found as an ambiguous cue while the final decision stayed `soft_surface` because no deadline or reviewed hard evidence existed.
+
 ## Structural interpretation
 
 - `#` labels define horizons or buckets.
