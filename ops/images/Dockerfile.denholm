@@ -56,10 +56,11 @@ ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 RUN usermod -u 99 -g 100 hermes \
     && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
 
-# Ensure Python packages installed by the base image remain importable by the
-# runtime UID even when upstream wheel files are owned by root with restrictive
-# modes. Honcho status/import must work as UID/GID 99:100.
-RUN chmod -R a+rX /opt/hermes/.venv/lib/python3.13/site-packages/honcho*
+# Install and expose Honcho client support in this persona image. Do not rely on
+# the upstream base image to include honcho-ai: memory status can show the plugin
+# as available while honcho status fails without this package.
+RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install honcho-ai==2.0.1 \
+    && chmod -R a+rX /opt/hermes/.venv/lib/python3.13/site-packages/honcho*
 
 RUN python3 - <<'PY'
 from pathlib import Path
