@@ -1,4 +1,4 @@
-ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:2bba4ab37729ebdd864d4caf277b24fec4cd8bfc2855185fd9f4c90f9bf7bfa3
+ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:adc1fd5b6283c20ad353bfc7b37e63cfdff2e55ce00c865c019e7bf3dbf6e00a
 FROM ${HERMES_AGENT_IMAGE}
 
 USER root
@@ -44,43 +44,6 @@ RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install \
         elevenlabs==1.59.0
 
 
-# Patch Hermes/OpenAI Codex integration for Responses API edge cases observed
-# with Codex: OpenAI SDK may receive response.output=None, and the Hermes
-# transport must not send tools=None.
-RUN python3 - <<'PY'
-from pathlib import Path
-import py_compile
-
-parser = Path('/opt/hermes/.venv/lib/python3.13/site-packages/openai/lib/_parsing/_responses.py')
-text = parser.read_text()
-old = 'for output in response.output:'
-new = 'for output in (response.output or []):  # PATCH: tolerate null response.output from Responses streams'
-if new not in text:
-    if old not in text:
-        raise SystemExit(f'expected SDK loop not found in {parser}')
-    parser.write_text(text.replace(old, new, 1))
-py_compile.compile(str(parser), doraise=True)
-
-transport = Path('/opt/hermes/agent/transports/codex.py')
-text = transport.read_text()
-old = '''            "tools": response_tools,
-            "store": False,
-        }
-        if response_tools:
-            kwargs["tool_choice"] = "auto"
-            kwargs["parallel_tool_calls"] = True'''
-new = '''            "store": False,
-        }
-        if response_tools:
-            kwargs["tools"] = response_tools
-            kwargs["tool_choice"] = "auto"
-            kwargs["parallel_tool_calls"] = True'''
-if new not in text:
-    if old not in text:
-        raise SystemExit(f'expected transport block not found in {transport}')
-    transport.write_text(text.replace(old, new, 1))
-py_compile.compile(str(transport), doraise=True)
-PY
 
 # Remove bundled plugins/integration adapters that The AI Crowd does not configure.
 # Keep production persona images aligned with the enabled runtime surface.
@@ -121,19 +84,6 @@ ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 RUN usermod -u 99 -g 100 hermes \
     && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
 
-# Runtime UID/GID are remapped by the Hermes entrypoint in private deployments.
-# The base entrypoint already re-owns the venv after remap; extend that to ui-tui because
-# the WebUI/TUI can rebuild dist/entry.js at runtime.
-RUN python3 - <<'PY'
-from pathlib import Path
-path = Path('/opt/hermes/docker/entrypoint.sh')
-text = path.read_text()
-old = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" 2>/dev/null || \\\n            echo "Warning: chown .venv failed (rootless container?) — continuing anyway"'
-new = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" "$INSTALL_DIR/ui-tui" 2>/dev/null || \\\n            echo "Warning: chown .venv/ui-tui failed (rootless container?) — continuing anyway"'
-if old not in text:
-    raise SystemExit('entrypoint chown block not found')
-path.write_text(text.replace(old, new))
-PY
 
 WORKDIR /workspace
 
