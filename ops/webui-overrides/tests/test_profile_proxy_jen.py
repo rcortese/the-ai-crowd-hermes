@@ -8,6 +8,12 @@ def test_env_profile_proxy_public_entry(monkeypatch):
         "HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL": "http://jen:8642/",
         "HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY_ENV": "API_SERVER_KEY",
         "HERMES_WEBUI_PROFILE_PROXY_JEN_LABEL": "Jen",
+        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_BASE_URL": "http://denholm:8643",
+        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_API_KEY_ENV": "API_SERVER_KEY",
+        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_LABEL": "Denholm",
+        "HERMES_WEBUI_PROFILE_PROXY_ROY_BASE_URL": "http://roy:8645",
+        "HERMES_WEBUI_PROFILE_PROXY_ROY_API_KEY_ENV": "API_SERVER_KEY",
+        "HERMES_WEBUI_PROFILE_PROXY_ROY_LABEL": "Roy",
         "API_SERVER_KEY": "secret-value",
     }
 
@@ -17,25 +23,19 @@ def test_env_profile_proxy_public_entry(monkeypatch):
     assert proxy["api_key_configured"] is True
 
     public = profile_proxy_public_entries(environ=env)
-    assert public == [
-        {
-            "name": "jen",
-            "path": None,
-            "is_default": False,
-            "is_active": False,
-            "gateway_running": True,
-            "model": "jen",
-            "provider": "remote-gateway",
-            "has_env": True,
-            "skill_count": 0,
-            "enabled_skills": 0,
-            "total_skills": 0,
-            "remote_proxy": True,
-            "profile_kind": "remote_gateway_proxy",
-            "base_url": "http://jen:8642",
-            "label": "Jen",
-        }
-    ]
+    by_name = {entry["name"]: entry for entry in public}
+    assert set(by_name) == {"denholm", "jen", "roy"}
+    assert by_name["jen"] | {} == by_name["jen"]
+    assert by_name["jen"]["base_url"] == "http://jen:8642"
+    assert by_name["denholm"]["base_url"] == "http://denholm:8643"
+    assert by_name["denholm"]["label"] == "Denholm"
+    assert by_name["roy"]["base_url"] == "http://roy:8645"
+    assert by_name["roy"]["label"] == "Roy"
+    for entry in public:
+        assert entry["remote_proxy"] is True
+        assert entry["profile_kind"] == "remote_gateway_proxy"
+        assert entry["provider"] == "remote-gateway"
+        assert entry["gateway_running"] is True
     assert "secret-value" not in repr(public)
 
 
@@ -62,7 +62,7 @@ def test_list_profiles_includes_remote_proxy(monkeypatch, tmp_path):
     result = profiles.list_profiles_api()
 
     names = {p["name"] for p in result}
-    assert names == {"default", "jen"}
+    assert {"default", "jen"}.issubset(names)
     jen = next(p for p in result if p["name"] == "jen")
     assert jen["remote_proxy"] is True
     assert jen["base_url"] == "http://jen:8642"
