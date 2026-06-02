@@ -5,7 +5,7 @@ x-hermes-env: &hermes-env
     HERMES_UID: 99
     HERMES_GID: 100
     HOME: /opt/data
-    HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
+    HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
     HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
     HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
 x-hermes-llm-env-files: &hermes-llm-env-files
@@ -99,7 +99,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/jen/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/jen
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8642"
@@ -142,7 +142,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/denholm/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/denholm
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
       HERMES_DASHBOARD: "1"
       HERMES_DASHBOARD_HOST: 0.0.0.0
       HERMES_DASHBOARD_PORT: "9122"
@@ -185,7 +185,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/roy/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/roy
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
       WEBHOOK_ENABLED: "true"
       WEBHOOK_PORT: "8644"
       HERMES_DASHBOARD: "1"
@@ -225,7 +225,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/richmond/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/richmond
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
       HERMES_KANBAN_DISPATCH_OWNER: richmond
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
     volumes:
