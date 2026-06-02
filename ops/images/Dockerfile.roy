@@ -1,4 +1,4 @@
-ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:2bba4ab37729ebdd864d4caf277b24fec4cd8bfc2855185fd9f4c90f9bf7bfa3
+ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:adc1fd5b6283c20ad353bfc7b37e63cfdff2e55ce00c865c019e7bf3dbf6e00a
 FROM ${HERMES_AGENT_IMAGE}
 
 USER root
@@ -56,24 +56,11 @@ ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 RUN usermod -u 99 -g 100 hermes \
     && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
 
-RUN python3 - <<'PY'
-from pathlib import Path
-path = Path('/opt/hermes/docker/entrypoint.sh')
-text = path.read_text()
-old = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" 2>/dev/null || \\\n            echo "Warning: chown .venv failed (rootless container?) — continuing anyway"'
-new = 'chown -R hermes:hermes "$INSTALL_DIR/.venv" "$INSTALL_DIR/ui-tui" 2>/dev/null || \\\n            echo "Warning: chown .venv/ui-tui failed (rootless container?) — continuing anyway"'
-if old in text:
-    path.write_text(text.replace(old, new))
-else:
-    print('entrypoint chown block already changed or unmatched; continuing')
-PY
 
 # Runtime processes run as UID/GID 99:100 and cannot mutate the root-owned
 # Hermes venv. Bake Roy's enabled Honcho memory client so rebuilds do not
 # regress to the prior runtime-only hotfix state.
 RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install honcho-ai==2.0.1
-
-# Roy Codex null-output hotfix removed for Hermes Agent v0.15.2; upstream codex runtime handles this path.
 
 
 WORKDIR /agents/roy/private
