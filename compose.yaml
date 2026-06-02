@@ -24,7 +24,9 @@ services:
     # All-in-one runtime: supervisord starts gateway, dashboard, and WebUI.
     # Runs supervisor as root only to drop child programs to hermes UID/GID 99:100.
     user: "0:0"
-    env_file: *hermes-llm-env-files
+    env_file:
+      - ./state/secrets/hermes-llm/fleet.env
+      - ./state/secrets/jen-api-server/api-server.env
     build:
       context: .
       dockerfile: ops/images/Dockerfile.moss-all-in-one
@@ -53,6 +55,11 @@ services:
       HERMES_WEBUI_PORT: "8787"
       HERMES_WEBUI_STATE_DIR: /opt/data/webui
       HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/moss/private
+      HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL: http://jen:8642
+      HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY_ENV: API_SERVER_KEY
+      HERMES_WEBUI_PROFILE_PROXY_JEN_LABEL: Jen
+      HERMES_WEBUI_PROFILE_PROXY_JEN_REMOTE_PROFILE: default
+      HERMES_WEBUI_PROFILE_PROXY_JEN_SESSION_KEY_PREFIX: webui:moss:jen
     volumes:
       - ./runtime/moss-home:/opt/data
       - ./agents/public/moss:/agents/moss/public:ro

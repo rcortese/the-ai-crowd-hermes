@@ -34,7 +34,25 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
-    && rm -rf /opt/hermes-webui/.git \
+    && rm -rf /opt/hermes-webui/.git
+
+COPY ops/webui-overrides/ /tmp/hermes-webui-overrides/
+RUN cp -a /tmp/hermes-webui-overrides/. /opt/hermes-webui/ \
+    && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
+       HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-jen-proxy-tests \
+       HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/moss/private \
+       /opt/hermes/.venv/bin/python3 -m py_compile \
+        /opt/hermes-webui/api/gateway_chat.py \
+        /opt/hermes-webui/api/profiles.py \
+        /opt/hermes-webui/api/routes.py \
+    && cd /opt/hermes-webui \
+    && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
+       HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-jen-proxy-tests \
+       HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/moss/private \
+       /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
+        tests/test_profile_proxy_jen.py \
+        tests/test_webui_gateway_chat_backend.py \
+    && rm -rf /tmp/hermes-webui-overrides \
     && chown -R 99:100 /opt/hermes-webui
 
 
