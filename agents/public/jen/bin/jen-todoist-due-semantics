@@ -110,9 +110,11 @@ classify_tasks_json() {
          else {category:"ambiguous", source:"insufficient_evidence"} end) as $decision
       | ($task | past_due($today)) as $past
       | (if $decision.category == "soft_surface" and $past and ($deadline|not) and ($recurring|not) then true
+         elif $decision.category == "hard_deadline" and $past and $deadline and ($recurring|not) and ((deadline_date // "0000-00-00") >= $today) then true
          elif $decision.category == "recurring_maintenance" and $past and ($deadline|not) and $recurring and ((.due.string // "") != "") then true
          else false end) as $writable
       | (if $writable then null
+         elif $deadline and $decision.category == "hard_deadline" and ($recurring|not) and ((deadline_date // "0000-00-00") < $today) then "deadline_passed"
          elif $deadline then "deadline_present"
          elif $decision.category == "hard_deadline" then "hard_deadline"
          elif $decision.category == "recurring_hard_obligation" then "recurring_hard_obligation"
