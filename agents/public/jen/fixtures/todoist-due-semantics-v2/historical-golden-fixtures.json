@@ -450,9 +450,9 @@
       "description": "",
       "labels": [],
       "due": {
-        "date": "2026-06-04",
+        "date": "2026-05-31",
         "datetime": null,
-        "string": "4 Jun",
+        "string": "31 mai.",
         "is_recurring": false
       },
       "deadline": {
@@ -474,11 +474,11 @@
           "task_override": null,
           "decision_source": "explicit_deadline"
         },
-        "rationale": "Explicit Todoist deadline object makes this a hard deadline; soft hygiene must not move it.",
+        "rationale": "Explicit Todoist deadline object makes this a hard deadline; morning hygiene may move the surfacing due date forward up to the deadline without changing the deadline.",
         "mutation_eligibility": {
-          "writable_by_morning_hygiene": false,
-          "phase": "none",
-          "skip_reason": "deadline_present"
+          "writable_by_morning_hygiene": true,
+          "phase": "deadline_surface",
+          "skip_reason": null
         }
       }
     },

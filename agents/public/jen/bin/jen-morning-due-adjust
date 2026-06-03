@@ -35,10 +35,15 @@ emit_failed() {
     --arg failure_class "$failure_class" \
     --arg mode "$mode" \
     --arg checked_at "$checked_at" \
+    --arg today "${today:-}" \
+    --arg soft_action "${soft_action:-today}" \
     --argjson classified "$classified_json" '
     def safe_tasks: if ($classified|type) == "object" and (($classified.tasks|type)=="array") then $classified.tasks else [] end;
+    def deadline_date: if ((.deadline | type) == "object") then (.deadline.date // ((.deadline.datetime // "") | split("T")[0]) // null) else null end;
+    def soft_candidate: .past_due_raw == true and .classification.category == "soft_surface" and (.deadline == null) and ((.due.is_recurring // false) != true);
+    def deadline_surface_candidate: $soft_action == "today" and .past_due_raw == true and .classification.category == "hard_deadline" and (.deadline != null) and ((.due.is_recurring // false) != true) and ((deadline_date // "0000-00-00") >= $today);
     (safe_tasks) as $tasks
-    | ($tasks | map(select(.past_due_raw == true and .classification.category == "soft_surface" and (.deadline == null) and ((.due.is_recurring // false) != true)))) as $candidates
+    | ($tasks | map(select(soft_candidate or deadline_surface_candidate))) as $candidates
     | {
         contract_version:$contract_version,
         command:"morning-due-adjust",
@@ -57,7 +62,7 @@ usage() {
 Usage: jen-morning-due-adjust [--dry-run|--apply] [--today YYYY-MM-DD] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--soft-action today|clear|move] [--project-id ID]
 
 Morning due-date hygiene wrapper. Dry-run is the default and performs zero writes.
-Apply requires JEN_MORNING_DUE_ADJUST_ENABLE_APPLY=1 and mutates only soft_surface past-due candidates classified by bin/jen-todoist-due-semantics.
+Apply requires JEN_MORNING_DUE_ADJUST_ENABLE_APPLY=1. It mutates only capped past-due candidates classified by bin/jen-todoist-due-semantics: non-recurring soft_surface items, plus non-recurring hard_deadline items whose explicit deadline is still today/future. Deadline items are only surfaced with --soft-action today and keep their deadline unchanged.
 EOF
 }
 
@@ -99,14 +104,21 @@ classified_json="$("$SEMANTICS" live-due-window --from "$from_date" --to "$to_da
 jq -e '.status == "ok" and (.tasks|type == "array")' <<<"$classified_json" >/dev/null || emit_failed semantics_failed "$mode" "$checked_at" "$classified_json"
 
 candidates_json="$(jq -c --arg today "$today" --arg soft_action "$soft_action" --arg project_id "$project_id" '
+  def deadline_date: if ((.deadline | type) == "object") then (.deadline.date // ((.deadline.datetime // "") | split("T")[0]) // null) else null end;
+  def soft_candidate: .past_due_raw == true and .classification.category == "soft_surface" and (.deadline == null) and ((.due.is_recurring // false) != true);
+  def deadline_surface_candidate: $soft_action == "today" and .past_due_raw == true and .classification.category == "hard_deadline" and (.deadline != null) and ((.due.is_recurring // false) != true) and ((deadline_date // "0000-00-00") >= $today);
   .tasks
-  | map(select(.past_due_raw == true and .classification.category == "soft_surface" and (.deadline == null) and ((.due.is_recurring // false) != true)))
+  | map(select(soft_candidate or deadline_surface_candidate))
   | map(. + {
       planned_action:(if $soft_action == "today" then "update-due" elif $soft_action == "clear" then "clear-due" else "move-task" end),
-      planned_due:(if $soft_action == "today" then $today elif $soft_action == "clear" then "no date" else null end),
+      planned_due:(if $soft_action == "today" then ([ $today, (deadline_date // $today) ] | min) elif $soft_action == "clear" then "no date" else null end),
       planned_project_id:(if $soft_action == "move" then $project_id else null end)
     })' <<<"$classified_json")"
-blocked_json="$(jq -c '.tasks | map(select((.past_due_raw != true) or (.classification.category != "soft_surface") or (.deadline != null) or ((.due.is_recurring // false) == true)))' <<<"$classified_json")"
+blocked_json="$(jq -c --arg today "$today" --arg soft_action "$soft_action" '
+  def deadline_date: if ((.deadline | type) == "object") then (.deadline.date // ((.deadline.datetime // "") | split("T")[0]) // null) else null end;
+  def soft_candidate: .past_due_raw == true and .classification.category == "soft_surface" and (.deadline == null) and ((.due.is_recurring // false) != true);
+  def deadline_surface_candidate: $soft_action == "today" and .past_due_raw == true and .classification.category == "hard_deadline" and (.deadline != null) and ((.due.is_recurring // false) != true) and ((deadline_date // "0000-00-00") >= $today);
+  .tasks | map(select((soft_candidate or deadline_surface_candidate) | not))' <<<"$classified_json")"
 total_classified="$(jq '.tasks|length' <<<"$classified_json")"
 candidate_count="$(jq 'length' <<<"$candidates_json")"
 blocked_count="$(jq 'length' <<<"$blocked_json")"
@@ -170,7 +182,7 @@ while [[ "$idx" -lt "$candidate_count" ]]; do
   operation=""
   due_arg=""
   if [[ "$soft_action" == "today" ]]; then
-    operation="update-due"; runtime_command="update-due"; due_arg="$today"
+    operation="update-due"; runtime_command="update-due"; due_arg="$(jq -r '.planned_due // $today' --arg today "$today" <<<"$task_json")"
   elif [[ "$soft_action" == "clear" ]]; then
     operation="clear-due"; runtime_command="update-due"; due_arg="no date"
   else
