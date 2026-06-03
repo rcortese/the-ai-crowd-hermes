@@ -101,11 +101,87 @@ cp "$packet" "$archive_packet"
 find "$ARCHIVE_DIR" -maxdepth 1 -type f -name '*.json' -mtime +"$RETENTION_DAYS" -delete 2>/dev/null || true
 
 # Keep recurring maintenance re-anchoring coupled to this cron execution rather
-# than a separate time-based job. This preserves ordering even if the schedule
-# for the main morning hygiene job changes.
-RECURRING_RUNNER="${JEN_MORNING_RECURRING_RUNNER:-/opt/data/scripts/jen-morning-recurring-maintenance-reanchor.sh}"
-if [[ "${JEN_MORNING_RECURRING_REANCHOR_ENABLED:-1}" == "1" && "$mode" == "apply" && -x "$RECURRING_RUNNER" ]]; then
-  "$RECURRING_RUNNER"
+# than a separate time-based job. Reuse the already-classified wrapper result so
+# the morning cron does not perform a second live Todoist read and exceed the
+# scheduler timeout after non-recurring writes have already succeeded.
+reanchor_recurring_from_packet() {
+  local task_runtime="${JEN_MORNING_RECURRING_TASK_RUNTIME:-/agents/jen/public/bin/jen-task-runtime}"
+  local recurring_state_dir="${JEN_MORNING_RECURRING_STATE_DIR:-/opt/data/state/jen-cron/morning-recurring-maintenance-reanchor}"
+  local recurring_audit_dir="$recurring_state_dir/audit"
+  local recurring_max="${JEN_MORNING_RECURRING_MAX_CANDIDATES:-25}"
+  local recurring_packet="$recurring_state_dir/latest.json"
+  local recurring_audit="$recurring_audit_dir/$(date -u +%Y%m%dT%H%M%SZ)-jen-recurring-maint-${today}-from-soft-due-${run_id}.json"
+  local recurring_tmp writes_file candidates skipped candidate_count idx task task_id due_string result tmpw status write_count failure_count
+
+  [[ "$recurring_max" =~ ^[0-9]+$ ]] || return 2
+  [[ -x "$task_runtime" ]] || return 2
+  mkdir -p "$recurring_state_dir" "$recurring_audit_dir"
+  recurring_tmp="$(mktemp)"
+  writes_file="$(mktemp)"
+  printf '[]\n' > "$writes_file"
+
+  candidates="$(jq -c '[.result.blocked[]? | select(.past_due_raw == true and .classification.category == "recurring_maintenance" and (.deadline == null) and (.due.is_recurring == true) and ((.due.string // "") != "")) | {id,content,due_string:.due.string,due:.due,deadline,evidence:(.evidence // null),classification,signals:(.signals // [])}]' "$packet")"
+  skipped="$(jq -c '[.result.blocked[]? | select((.past_due_raw != true) or (.classification.category != "recurring_maintenance") or (.deadline != null) or (.due.is_recurring != true) or ((.due.string // "") == "")) | {id,content,due:(.due // null),deadline:(.deadline // null),evidence:(.evidence // null),classification:(.classification // null),signals:(.signals // []),skipped_reason:(if .past_due_raw != true then "not_past_due" elif .deadline != null then "has_deadline" elif .due.is_recurring != true then "not_recurring" elif ((.due.string // "") == "") then "missing_due_string" else "not_recurring_maintenance" end)}]' "$packet")"
+  candidate_count="$(jq 'length' <<<"$candidates")"
+
+  write_recurring_packet() {
+    local packet_status="$1" failure_class="${2:-}" writes_json
+    writes_json="$(cat "$writes_file")"
+    jq -nc \
+      --arg contract_version jen-morning-recurring-maintenance-reanchor.v3 \
+      --arg run_id "jen-recurring-maint-${today}-from-soft-due-${run_id}" \
+      --arg date "$today" --arg from "$from_date" --arg to "$to_date" --arg mode apply \
+      --arg status "$packet_status" --arg failure_class "$failure_class" \
+      --arg source_packet "$packet" --arg audit_log_path "$recurring_audit" \
+      --argjson max_candidates "$recurring_max" --argjson candidates "$candidates" --argjson skipped "$skipped" --argjson writes "$writes_json" '
+        {
+          contract_version:$contract_version,run_id:$run_id,date:$date,from:$from,to:$to,mode:$mode,status:$status,
+          failure_class:(if $failure_class == "" then null else $failure_class end),source_packet:$source_packet,
+          boundaries:{preserve_recurring_due:true,no_deadline_write:true,no_calendar_write:true,no_task_creation:true,no_provider_message:true,max_candidates:$max_candidates,fail_closed_on_cap:true,source_snapshot_reused:true},
+          summary:{candidate_count:($candidates|length),skipped_count:($skipped|length),write_count:([ $writes[]? | select(.status == "ok") ] | length),failure_count:([ $writes[]? | select(.status != "ok") ] | length)},
+          audit_log_path:$audit_log_path,candidates:$candidates,skipped:$skipped,writes:$writes,complete:($status == "ok")
+        }' > "$recurring_tmp"
+    mv "$recurring_tmp" "$recurring_packet"
+    cp "$recurring_packet" "$recurring_audit" 2>/dev/null || true
+  }
+
+  if (( candidate_count > recurring_max )); then
+    write_recurring_packet failed too_many_candidates
+    rm -f "$writes_file"
+    return 1
+  fi
+
+  write_recurring_packet in_progress
+  idx=0
+  while [[ "$idx" -lt "$candidate_count" ]]; do
+    task="$(jq -c --argjson idx "$idx" '.[$idx]' <<<"$candidates")"
+    task_id="$(jq -r '.id' <<<"$task")"
+    due_string="$(jq -r '.due_string' <<<"$task")"
+    tmpw="$(mktemp)"
+    if result="$("$task_runtime" update-due --task-id "$task_id" --due "$due_string")" && jq -e '.status == "ok"' <<<"$result" >/dev/null; then
+      jq --argjson task "$task" --argjson result "$result" '. + [{task:$task,status:"ok",operation:"reanchor-recurring-due",due_string:$task.due_string,runtime_result:$result}]' "$writes_file" > "$tmpw"
+    else
+      jq --argjson task "$task" '. + [{task:$task,status:"failed",operation:"reanchor-recurring-due",due_string:$task.due_string}]' "$writes_file" > "$tmpw"
+    fi
+    mv "$tmpw" "$writes_file"
+    write_recurring_packet in_progress
+    idx=$((idx + 1))
+  done
+
+  status="ok"
+  if jq -e '[.[] | select(.status != "ok")] | length > 0' "$writes_file" >/dev/null; then status="degraded"; fi
+  write_recurring_packet "$status"
+  write_count="$(jq '[.[] | select(.status == "ok")] | length' "$writes_file")"
+  failure_count="$(jq '[.[] | select(.status != "ok")] | length' "$writes_file")"
+  rm -f "$writes_file"
+  if [[ "$write_count" != "0" || "$failure_count" != "0" ]]; then
+    printf 'Jen morning recurring maintenance reanchor: candidates=%s writes=%s failures=%s packet=%s\n' "$candidate_count" "$write_count" "$failure_count" "$recurring_packet"
+  fi
+  [[ "$status" == "ok" ]]
+}
+
+if [[ "${JEN_MORNING_RECURRING_REANCHOR_ENABLED:-1}" == "1" && "$mode" == "apply" ]]; then
+  reanchor_recurring_from_packet
 fi
 
 candidate_count="$(jq -r '.result.summary.candidate_count // 0' "$packet")"
