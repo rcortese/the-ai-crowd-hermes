@@ -2,8 +2,8 @@ FROM the-ai-crowd/moss:local
 
 USER root
 
-ARG HERMES_WEBUI_REPO=https://github.com/nesquena/hermes-webui.git
-ARG HERMES_WEBUI_REV=383e0501db9f199c95ddbdd560e8339866a2c305
+ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
+ARG HERMES_WEBUI_REV=fc930491a8b7cb42717c2bdbb20779bdeaf847fb
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
