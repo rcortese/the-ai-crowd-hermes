@@ -1084,6 +1084,24 @@ def _get_profile_skills_stats(profile_dir: Path) -> tuple[int, int]:
     return res
 
 
+_PROFILE_LIST_ORDER = {
+    "default": 0,
+    "moss": 0,
+    "jen": 10,
+    "denholm": 20,
+    "roy": 30,
+    "richmond": 40,
+    "the-elders": 50,
+}
+
+
+def _profile_list_sort_key(profile: dict) -> tuple[int, str]:
+    name = str(profile.get('name') or '').strip().lower()
+    if profile.get('is_default'):
+        return (-10, name)
+    return (_PROFILE_LIST_ORDER.get(name, 1000), name)
+
+
 def list_profiles_api() -> list:
     """List all profiles with metadata, serialized for JSON response."""
     try:
@@ -1122,7 +1140,7 @@ def list_profiles_api() -> list:
             result.append(proxy)
     except Exception:
         logger.debug("Failed to append profile proxy entries", exc_info=True)
-    return result
+    return sorted(result, key=_profile_list_sort_key)
 
 
 def _default_profile_dict() -> dict:

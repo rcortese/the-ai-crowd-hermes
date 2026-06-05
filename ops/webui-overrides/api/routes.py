@@ -1062,6 +1062,73 @@ def _kanban_unknown_endpoint(handler, parsed, method: str) -> bool:
     ) or True
 
 
+def _remote_cron_proxy_unsupported_payload(profile: str, proxy: dict | None = None) -> dict:
+    """Payload for remote profile cron surfaces that are intentionally disabled.
+
+    A remote_profile_proxy selector is an execution boundary.  Until a reviewed
+    remote cron API exists, cron endpoints must fail closed rather than reading
+    or mutating Moss-local cron state under the remote persona label.
+    """
+    profile = str(profile or "default")
+    proxy = proxy or {}
+    return {
+        "ok": False,
+        "error": "remote_cron_proxy_unsupported",
+        "message": (
+            f"Schedule management for remote profile '{profile}' is not available yet. "
+            "Moss-local cron jobs were not read or modified."
+        ),
+        "profile": profile,
+        "profile_kind": "remote_profile_proxy",
+        "remote_proxy": True,
+        "proxy_profile": profile,
+        "remote_profile": proxy.get("remote_profile") or "default",
+        "backend": "unsupported_remote",
+    }
+
+
+def _active_remote_cron_proxy() -> tuple[str, dict] | None:
+    """Return the active remote profile proxy for cron routing, if any.
+
+    Local root/default cron behavior must remain available even if proxy
+    discovery has a transient failure.  For a non-root selected profile whose
+    proxy resolution fails, fail closed rather than risk local cron fallback
+    under a remote persona label.
+    """
+    try:
+        from api.profiles import get_active_profile_name
+        profile = get_active_profile_name()
+    except Exception:
+        logger.warning("Failed to resolve active profile for cron endpoint", exc_info=True)
+        return None
+
+    try:
+        from api.gateway_chat import profile_proxy_for
+
+        proxy = profile_proxy_for(profile)
+        if proxy:
+            return profile, proxy
+        return None
+    except Exception:
+        logger.warning("Failed to resolve remote profile proxy for cron endpoint", exc_info=True)
+        if str(profile or "").strip().lower() in {"", "default", "root"}:
+            return None
+        return profile, {"remote_profile": "default"}
+
+
+def _guard_remote_cron_proxy(handler) -> bool:
+    """Fail closed for /api/crons* when the selected profile is remote.
+
+    Returns True when the request has been handled with a stable proxy error;
+    False means the caller may continue to the existing Moss-local cron handler.
+    """
+    active = _active_remote_cron_proxy()
+    if not active:
+        return False
+    profile, proxy = active
+    return j(handler, _remote_cron_proxy_unsupported_payload(profile, proxy), status=409)
+
+
 def _clear_stale_stream_state(session) -> bool:
     """Clear persisted streaming flags when the in-memory stream no longer exists.
 
@@ -5152,6 +5219,8 @@ def handle_get(handler, parsed) -> bool:
     # os.environ (process-global) at call time. Wrap in cron_profile_context
     # so the TLS-active profile's jobs.json is read, not the process default.
     if parsed.path == "/api/crons":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from cron.jobs import list_jobs
         from api.profiles import cron_profile_context
 
@@ -5159,36 +5228,48 @@ def handle_get(handler, parsed) -> bool:
             return j(handler, {"jobs": _cron_jobs_for_api(list_jobs(include_disabled=True))})
 
     if parsed.path == "/api/crons/output":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_output(handler, parsed)
 
     if parsed.path == "/api/crons/history":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_history(handler, parsed)
 
     if parsed.path == "/api/crons/run":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_run_detail(handler, parsed)
 
     if parsed.path == "/api/crons/recent":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_recent(handler, parsed)
 
     if parsed.path == "/api/crons/status":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_status(handler, parsed)
 
     if parsed.path == "/api/crons/delivery-options":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
@@ -6345,36 +6426,48 @@ def handle_post(handler, parsed) -> bool:
     # See GET-side comment above: wrap in cron_profile_context so writes go
     # to the TLS-active profile's jobs.json instead of the process default.
     if parsed.path == "/api/crons/create":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_create(handler, body)
 
     if parsed.path == "/api/crons/update":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_update(handler, body)
 
     if parsed.path == "/api/crons/delete":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_delete(handler, body)
 
     if parsed.path == "/api/crons/run":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_run(handler, body)
 
     if parsed.path == "/api/crons/pause":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():
             return _handle_cron_pause(handler, body)
 
     if parsed.path == "/api/crons/resume":
+        if _guard_remote_cron_proxy(handler):
+            return True
         from api.profiles import cron_profile_context
 
         with cron_profile_context():

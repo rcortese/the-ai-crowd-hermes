@@ -47,6 +47,9 @@ RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install \
 
 # Remove bundled plugins/integration adapters that The AI Crowd does not configure.
 # Keep production persona images aligned with the enabled runtime surface.
+# Moss intentionally keeps /opt/hermes/plugins/image_gen/openai-codex for
+# text-to-image smoke/auxiliary creative work (Livro Miguel still needs
+# OpenClaw for reference-image/image-edit inputs).
 RUN rm -rf \
         /opt/hermes/plugins/platforms/google_chat \
         /opt/hermes/plugins/platforms/irc \
@@ -64,7 +67,6 @@ RUN rm -rf \
         /opt/hermes/plugins/memory/openviking \
         /opt/hermes/plugins/memory/retaindb \
         /opt/hermes/plugins/memory/supermemory \
-        /opt/hermes/plugins/image_gen/openai \
         /opt/hermes/plugins/image_gen/xai \
         /opt/hermes/plugins/video_gen/fal \
         /opt/hermes/plugins/video_gen/xai

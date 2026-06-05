@@ -55,6 +55,14 @@ def test_list_profiles_includes_remote_proxy(monkeypatch, tmp_path):
     monkeypatch.setattr(profiles, "_get_profile_skills_stats", lambda path: (0, 0))
     monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL", "http://jen:8642")
     monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY", "secret-value")
+    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_DENHOLM_BASE_URL", "http://denholm:8643")
+    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_DENHOLM_API_KEY", "secret-value")
+    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_ROY_BASE_URL", "http://roy:8645")
+    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_ROY_API_KEY", "secret-value")
+    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_RICHMOND_BASE_URL", "http://richmond:8646")
+    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_RICHMOND_API_KEY", "secret-value")
+    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_BASE_URL", "http://the-elders:8647")
+    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_API_KEY", "secret-value")
 
     import hermes_cli.profiles as cli_profiles
 
@@ -62,7 +70,8 @@ def test_list_profiles_includes_remote_proxy(monkeypatch, tmp_path):
     result = profiles.list_profiles_api()
 
     names = {p["name"] for p in result}
-    assert {"default", "jen"}.issubset(names)
+    assert {"default", "jen", "denholm", "roy", "richmond", "the-elders"}.issubset(names)
+    assert [p["name"] for p in result[:6]] == ["default", "jen", "denholm", "roy", "richmond", "the-elders"]
     jen = next(p for p in result if p["name"] == "jen")
     assert jen["remote_proxy"] is True
     assert jen["base_url"] == "http://jen:8642"
