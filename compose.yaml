@@ -5,7 +5,7 @@ x-hermes-env: &hermes-env
     HERMES_UID: 99
     HERMES_GID: 100
     HOME: /opt/data
-    HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
+    HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
     HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
     HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
 x-hermes-llm-env-files: &hermes-llm-env-files
@@ -41,7 +41,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/moss/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
       HERMES_KANBAN_DISPATCH_OWNER: moss
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
       WEBHOOK_ENABLED: "true"
@@ -127,7 +127,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/jen/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8642"
@@ -172,7 +172,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/denholm/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
       HERMES_DASHBOARD: "1"
       HERMES_DASHBOARD_HOST: 0.0.0.0
       HERMES_DASHBOARD_PORT: "9122"
@@ -221,7 +221,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/roy/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
       WEBHOOK_ENABLED: "true"
       WEBHOOK_PORT: "8644"
       HERMES_DASHBOARD: "1"
@@ -250,6 +250,8 @@ services:
 
   richmond:
     <<: *hermes-common
+    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
+    user: "0:0"
     env_file:
       - ./state/secrets/hermes-llm/fleet.env
       - ./state/secrets/jen-api-server/api-server.env
@@ -268,7 +270,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/richmond/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/moss
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
       HERMES_KANBAN_DISPATCH_OWNER: richmond
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
       HERMES_DASHBOARD: "1"
@@ -296,6 +298,8 @@ services:
 
   the-elders:
     <<: *hermes-common
+    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
+    user: "0:0"
     env_file:
       - ./state/secrets/hermes-llm/fleet.env
       - ./state/secrets/jen-api-server/api-server.env
