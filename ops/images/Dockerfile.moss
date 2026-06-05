@@ -1,4 +1,4 @@
-ARG HERMES_AGENT_IMAGE=nousresearch/hermes-agent@sha256:2bba4ab37729ebdd864d4caf277b24fec4cd8bfc2855185fd9f4c90f9bf7bfa3
+ARG HERMES_AGENT_IMAGE=the-ai-crowd/hermes-agent:fork-65a34aa71dc8
 FROM ${HERMES_AGENT_IMAGE}
 
 USER root
