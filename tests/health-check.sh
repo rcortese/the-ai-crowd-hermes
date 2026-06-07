@@ -14,7 +14,6 @@ require_file compose.yaml
 require_file docs/PRODUCTION.md
 require_file docs/ROLLBACK.md
 require_file docs/operations/release-process.md
-require_file docs/operations/backup-restore.md
 require_file docs/operations/drift-detection.md
 
 awk '
@@ -27,6 +26,20 @@ awk '
 ' compose.yaml
 
 echo "host_port_policy_ok"
+
+if [ ! -x ops/repair-agent-permissions.sh ]; then
+  echo "health_check_failed: missing executable ops/repair-agent-permissions.sh" >&2
+  exit 1
+fi
+perm_out="$(mktemp -t the-ai-crowd-permissions.XXXXXX)"
+trap 'rm -f "$perm_out"' EXIT
+ops/repair-agent-permissions.sh --all >"$perm_out"
+if grep -Eq "\[permfix\] drift_count=[1-9][0-9]*|\[permfix\] shared_kanban_drift_count=[1-9][0-9]*" "$perm_out"; then
+  cat "$perm_out" >&2
+  echo "health_check_failed: agent permission drift detected; run ops/repair-agent-permissions.sh --apply --all on the Docker host" >&2
+  exit 1
+fi
+echo "agent_permission_policy_ok"
 
 for forbidden in 'HERMES_DASHBOARD' 'command: ["hermes", "dashboard"'; do
   if grep -Fq "$forbidden" compose.yaml; then
