@@ -40,4 +40,5 @@ venv/
 # Local operational evidence and candidate artifacts
 /logs/
 /ops/candidates/
+/build-contexts/
 /compose.yaml.bak-*
