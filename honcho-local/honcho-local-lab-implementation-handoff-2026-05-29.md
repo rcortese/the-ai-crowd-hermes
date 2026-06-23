@@ -2,8 +2,8 @@
 
 Task: t_c382c974
 Date: 2026-05-29
-Host: media.lan / Unraid
-Target path: /mnt/user/appdata/the-ai-crowd/honcho-local
+Host: <docker-host> / Unraid
+Target path: <stack-root>/honcho-local
 
 ## Result
 
@@ -13,12 +13,12 @@ Reason: the task body requires explicit operator authorization before any contai
 
 ## Files staged on host
 
-- /mnt/user/appdata/the-ai-crowd/honcho-local/compose.yaml
-- /mnt/user/appdata/the-ai-crowd/honcho-local/honcho.env.example
-- /mnt/user/appdata/the-ai-crowd/honcho-local/litellm.env.example
-- /mnt/user/appdata/the-ai-crowd/honcho-local/litellm.config.yaml
-- /mnt/user/appdata/the-ai-crowd/honcho-local/project.env.example
-- /mnt/user/appdata/the-ai-crowd/honcho-local/honcho-src/ cloned from https://github.com/plastic-labs/honcho.git
+- <stack-root>/honcho-local/compose.yaml
+- <stack-root>/honcho-local/honcho.env.example
+- <stack-root>/honcho-local/litellm.env.example
+- <stack-root>/honcho-local/litellm.config.yaml
+- <stack-root>/honcho-local/project.env.example
+- <stack-root>/honcho-local/honcho-src/ cloned from https://github.com/plastic-labs/honcho.git
 
 Pinned source observed after clone:
 
@@ -71,7 +71,7 @@ Read-only / non-disruptive checks:
    - Docker server version: 29.4.3
    - Docker Compose version: v2.40.3
 2. Verified canonical The AI Crowd path exists:
-   - /mnt/user/appdata/the-ai-crowd
+   - <stack-root>
 3. Verified existing external integration network exists but was not used:
    - the-ai-crowd_internal
 4. Rendered staged compose with dummy non-secret env files in a temporary directory:
@@ -86,14 +86,14 @@ Read-only / non-disruptive checks:
 
 ## Commands used
 
-Commands were run from the Kanban workspace and via ssh -F /opt/data/.ssh/config media.
+Commands were run from the Kanban workspace and via ssh -F <ssh-config> <host>.
 
-- ssh media 'hostname; docker version; docker compose version; test -d /mnt/user/appdata/the-ai-crowd; docker network ls ...'
-- ssh media 'install -d -m 0750 /mnt/user/appdata/the-ai-crowd/honcho-local; git clone --depth 1 https://github.com/plastic-labs/honcho.git honcho-src'
-- scp compose/config templates to media:/mnt/user/appdata/the-ai-crowd/honcho-local/
-- ssh media 'chmod 0640 ...; chown -R 99:100 /mnt/user/appdata/the-ai-crowd/honcho-local'
-- ssh media 'docker compose --env-file project.env.render config --quiet' in /tmp/honcho-local-compose-render with dummy env files
-- ssh media 'docker ps/docker network/docker volume filters for com.docker.compose.project=honcho-local'
+- ssh <host> 'hostname; docker version; docker compose version; test -d <stack-root>; docker network ls ...'
+- ssh <host> 'install -d -m 0750 <stack-root>/honcho-local; git clone --depth 1 https://github.com/plastic-labs/honcho.git honcho-src'
+- scp compose/config templates to <host>:<stack-root>/honcho-local/
+- ssh <host> 'chmod 0640 ...; chown -R 99:100 <stack-root>/honcho-local'
+- ssh <host> 'docker compose --env-file project.env.render config --quiet' in /tmp/honcho-local-compose-render with dummy env files
+- ssh <host> 'docker ps/docker network/docker volume filters for com.docker.compose.project=honcho-local'
 
 No docker compose up, docker start, docker restart, docker compose down, volume deletion, or container/service lifecycle mutation was run.
 
@@ -118,15 +118,15 @@ Credential decisions still needed before actual apply:
 Only after explicit operator authorization and private env files are in place:
 
 ```bash
-ssh -F /opt/data/.ssh/config media 'cd /mnt/user/appdata/the-ai-crowd/honcho-local && docker compose config --quiet && docker compose up -d honcho-postgres honcho-redis litellm honcho-api honcho-deriver'
+ssh -F <ssh-config> <host> 'cd <stack-root>/honcho-local && docker compose config --quiet && docker compose up -d honcho-postgres honcho-redis litellm honcho-api honcho-deriver'
 ```
 
 Then validate:
 
 - docker compose ps
 - docker compose logs --tail=200 for each service, with secret scan/redaction discipline
-- curl http://127.0.0.1:18000/health from media host
-- curl http://127.0.0.1:14000/health/readiness from media host
+- curl http://127.0.0.1:18000/health from <docker-host>
+- curl http://127.0.0.1:14000/health/readiness from <docker-host>
 - functional harness from t_c186b991 against http://localhost:18000 or from an approved container/network path
 
 Do not attach honcho-api to the-ai-crowd_internal and do not modify Moss/Jen/Denholm honcho.json/.env until a separate cutover/integration card approves it.
