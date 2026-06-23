@@ -1,4 +1,4 @@
-ARG HERMES_AGENT_IMAGE=the-ai-crowd/hermes-agent:release-v2026.6.19-681cd638d3cf
+ARG HERMES_AGENT_IMAGE=the-ai-crowd/hermes-agent:release-v2026.6.19-fork-35bb891f0b90
 FROM ${HERMES_AGENT_IMAGE}
 
 USER root
