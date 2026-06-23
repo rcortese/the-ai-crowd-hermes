@@ -5,7 +5,7 @@ x-hermes-env: &hermes-env
     HERMES_UID: 99
     HERMES_GID: 100
     HOME: /opt/data
-    HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
+    HERMES_KANBAN_HOME: /mnt/hermes-shared
     HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
     HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
 x-hermes-llm-env-files: &hermes-llm-env-files
@@ -41,7 +41,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/moss/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
       HERMES_KANBAN_DISPATCH_OWNER: moss
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
       WEBHOOK_ENABLED: "true"
@@ -123,7 +123,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/jen/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8642"
@@ -168,7 +168,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/denholm/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8643"
@@ -181,7 +181,7 @@ services:
       - "9122"
       - "8643"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9122/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8643/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
@@ -212,7 +212,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/roy/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
       WEBHOOK_ENABLED: "true"
       WEBHOOK_PORT: "8644"
       API_SERVER_ENABLED: "true"
@@ -228,7 +228,7 @@ services:
       - "8644"
       - "8645"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9123/ >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS http://127.0.0.1:8645/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
@@ -256,7 +256,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/richmond/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
       HERMES_KANBAN_DISPATCH_OWNER: richmond
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
       API_SERVER_ENABLED: "true"
@@ -271,7 +271,7 @@ services:
       - "9120"
       - "8646"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9120/ >/dev/null && curl -fsS http://127.0.0.1:8646/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8646/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
@@ -317,11 +317,32 @@ services:
       - "9130"
       - "8647"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9130/ >/dev/null && curl -fsS http://127.0.0.1:8647/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8647/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
       start_period: 60s
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222", "-n", "nats"]
+    restart: unless-stopped
+    networks:
+      - internal
+    volumes:
+      - nats_data:/data
+    expose:
+      - "4222"
+      - "8222"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8222/healthz?js-enabled=true || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  nats_data:
 
 networks:
   internal:

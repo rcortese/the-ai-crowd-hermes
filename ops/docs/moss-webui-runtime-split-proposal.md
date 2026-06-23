@@ -1,7 +1,7 @@
 # Moss WebUI / Moss runtime split proposal
 
 Date: 2026-06-02
-Scope: The AI Crowd `media:/mnt/user/appdata/the-ai-crowd`
+Scope: The AI Crowd `<host>:<stack-root>`
 Status: proposal only; no runtime mutation in this artifact.
 
 ## Context

@@ -18,7 +18,7 @@ USAGE
 APPLY=0
 AGENT=""
 ALL=0
-ROOT="/mnt/user/appdata/the-ai-crowd"
+: "${ROOT:?set ROOT to the stack root}"
 UID_EXPECTED="99"
 GID_EXPECTED="100"
 

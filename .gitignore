@@ -36,3 +36,8 @@ venv/
 /honcho-local/.env
 /honcho-local/honcho.env
 /honcho-local/litellm.env
+
+# Local operational evidence and candidate artifacts
+/logs/
+/ops/candidates/
+/compose.yaml.bak-*

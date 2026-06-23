@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # Host-side Moss all-in-one self-replace helper.
-# Run on the Docker host (Unraid/media), not from inside the Moss container.
+# Run on the Docker host, not from inside the Moss container.
 # The point is to keep the observer/recovery loop alive while Moss is replaced.
 
-STACK_DIR="${STACK_DIR:-/mnt/user/appdata/the-ai-crowd}"
+: "${STACK_DIR:?set STACK_DIR to the stack root}"
 SERVICE="${SERVICE:-moss}"
 CONTAINER="${CONTAINER:-the-ai-crowd-moss-1}"
 IMAGE="${IMAGE:-the-ai-crowd/moss-all-in-one:local}"
@@ -14,9 +14,9 @@ MAX_HEALTH_ATTEMPTS="${MAX_HEALTH_ATTEMPTS:-30}"
 HEALTH_SLEEP_SECONDS="${HEALTH_SLEEP_SECONDS:-5}"
 
 TS="${TS:-$(date +%Y%m%dT%H%M%S%z)}"
-RUN_DIR="${RUN_DIR:-/mnt/user/appdata/the-ai-crowd/runtime/moss-home/ops/cutovers/${TS}-self-replace}"
+RUN_DIR="${RUN_DIR:-${STACK_DIR}/runtime/moss-home/ops/cutovers/${TS}-self-replace}"
 LOG_FILE="${LOG_FILE:-$RUN_DIR/deploy.log}"
-SUCCESS_MARKER="${SUCCESS_MARKER:-/mnt/user/appdata/the-ai-crowd/runtime/moss-home/ops/cutovers/latest-self-replace-success}"
+SUCCESS_MARKER="${SUCCESS_MARKER:-${STACK_DIR}/runtime/moss-home/ops/cutovers/latest-self-replace-success}"
 
 mkdir -p "$RUN_DIR"
 chmod 0700 "$RUN_DIR" || true
@@ -120,5 +120,5 @@ log 'validating host-visible gateway endpoint'
 curl -fsS http://127.0.0.1:8644/health >/dev/null
 
 date -Is > "$SUCCESS_MARKER"
-printf '%s\n' "$RUN_DIR" > /mnt/user/appdata/the-ai-crowd/runtime/moss-home/ops/cutovers/latest-self-replace-run-dir
+printf '%s\n' "$RUN_DIR" > "${STACK_DIR}/runtime/moss-home/ops/cutovers/latest-self-replace-run-dir"
 log "SUCCESS marker=$SUCCESS_MARKER"
