@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""The Elders private meeting-corpus query helper.
+
+Reads only an approved private corpus. stdout is status-only; answer text is
+written to the requested private output file.
+"""
+from __future__ import annotations
+import argparse, json, re, sqlite3, sys, time
+from pathlib import Path
+
+def fail(msg: str, code: int = 2) -> None:
+    print(json.dumps({'status':'error','error':msg}, sort_keys=True), file=sys.stderr); raise SystemExit(code)
+
+def load_jsonl(path: Path):
+    rows=[]
+    with path.open(encoding='utf-8') as f:
+        for line in f:
+            if line.strip(): rows.append(json.loads(line))
+    return rows
+
+def tokens(text: str):
+    return [t for t in re.findall(r'[A-Za-zÀ-ÿ0-9_]+', text.lower()) if len(t) >= 4]
+
+def main() -> int:
+    ap=argparse.ArgumentParser(description='Query an approved private meeting corpus')
+    ap.add_argument('--corpus-dir', required=True); ap.add_argument('--approval', required=True); ap.add_argument('--question', required=True); ap.add_argument('--output', required=True)
+    args=ap.parse_args(); corpus=Path(args.corpus_dir).resolve(); approval_path=Path(args.approval).resolve(); output=Path(args.output).resolve(); output.parent.mkdir(parents=True, exist_ok=True)
+    approval=json.loads(approval_path.read_text(encoding='utf-8'))
+    if approval.get('approval_status') != 'approved': fail('corpus is not approved')
+    if 'the-elders' not in approval.get('allowed_consumers', []): fail('the-elders not allowed consumer')
+    manifest=json.loads((corpus/'corpus-manifest.json').read_text(encoding='utf-8'))
+    if manifest.get('corpus_ref') != approval.get('corpus_ref'): fail('approval corpus_ref mismatch')
+    chunks=load_jsonl(corpus/'chunks.jsonl')
+    qtokens=tokens(args.question)
+    scored=[]
+    for ch in chunks:
+        text=ch.get('text','').lower(); score=sum(1 for t in qtokens if t in text)
+        if score: scored.append((score, ch))
+    if not scored and chunks: scored=[(0, chunks[0])]
+    scored=sorted(scored, key=lambda x:(-x[0], x[1].get('start',0)))[:3]
+    citations=[{'chunk_id':ch['chunk_id'],'segment_ids':ch.get('segment_ids',[]),'start':ch.get('start'),'end':ch.get('end'),'speaker_clusters':ch.get('speaker_clusters',[])} for _,ch in scored]
+    # Private answer may quote the private corpus. It must not be written to shared artifacts.
+    answer_text=' '.join(ch.get('text','') for _,ch in scored).strip()
+    answer={'schema_version':'the-elders-private-meeting-corpus-answer/v0.1','status':'answered_from_private_full_corpus','answer_mode':'private_full_corpus','question':args.question,'answer_text':answer_text,'citations':citations,'limits':['computational interpretation only','speaker names remain unmapped unless separately approved','not legal advice'],'created_at_epoch':int(time.time()),'corpus_ref':manifest.get('corpus_ref')}
+    output.write_text(json.dumps(answer, ensure_ascii=False, indent=2, sort_keys=True), encoding='utf-8')
+    print(json.dumps({'status':'ok','answer_mode':'private_full_corpus','corpus_ref':manifest.get('corpus_ref'),'citation_count':len(citations),'raw_answer_shared':False}, sort_keys=True))
+    return 0
+if __name__ == '__main__': raise SystemExit(main())
