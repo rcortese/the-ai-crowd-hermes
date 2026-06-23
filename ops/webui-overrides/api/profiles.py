@@ -19,6 +19,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from api.session_events import publish_session_list_changed
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,15 @@ _PROFILE_DIRS = [
     'logs', 'plans', 'workspace', 'cron',
 ]
 _CLONE_CONFIG_FILES = ['config.yaml', '.env', 'SOUL.md']
+
+# ── Snapshot initial HERMES_HOME before init_profile_state() mutates it ──────
+# _is_isolated_profile_mode() needs to detect whether HERMES_HOME *at startup*
+# points to a profile subdirectory (e.g., ~/.hermes/profiles/user1), not the
+# base home (~/.hermes). But init_profile_state() overwrites HERMES_HOME to the
+# base home, which would disable isolation detection. Snapshot it here at import
+# time (before init_profile_state runs) and use the snapshot in the detector.
+_INITIAL_HERMES_HOME = os.getenv('HERMES_HOME', '').strip()
+_ISOLATED_SYMLINK_WARNING_EMITTED = False
 
 # ── Module state ────────────────────────────────────────────────────────────
 _active_profile = 'default'
@@ -112,6 +123,52 @@ def _unwrap_profile_home_to_base(home: Path) -> Path:
     if home.parent.name == 'profiles':
         return home.parent.parent
     return home
+
+
+def _is_isolated_profile_mode() -> bool:
+    """Detect isolated single-profile mode from HERMES_HOME env var.
+
+    Returns True when HERMES_HOME points at a concrete profile subdirectory
+    (e.g., ~/.hermes/profiles/user1) rather than the base home (~/.hermes).
+    This indicates a single-profile deployment where the WebUI should pin to
+    that profile and reject cross-profile operations.
+
+    Isolation is derived only from the literal ``*/profiles/<name>`` shape of
+    HERMES_HOME at startup. A normal multi-profile deployment points
+    HERMES_HOME at the base home (``~/.hermes``), which does not match the
+    shape, so isolation stays off. We deliberately do not key this off
+    HERMES_BASE_HOME: that variable normally points at the base home already,
+    so using it as an opt-out silently disables legitimate isolated-profile
+    deployments.
+
+    Uses _INITIAL_HERMES_HOME (snapshotted at import time) to detect isolation,
+    not the current os.environ value. init_profile_state() overwrites HERMES_HOME
+    at startup, which would disable isolation detection if we read it here.
+    """
+    hermes_home = _INITIAL_HERMES_HOME
+    if not hermes_home:
+        return False
+
+    p = Path(hermes_home).expanduser()
+    # Check if this path looks like ~/.hermes/profiles/<name>
+    # i.e., parent dir is named 'profiles' and grandparent exists
+    if p.parent.name == 'profiles' and p.parent.parent.exists():
+        return True
+    if p.is_symlink():
+        global _ISOLATED_SYMLINK_WARNING_EMITTED
+        if not _ISOLATED_SYMLINK_WARNING_EMITTED:
+            logger.warning(
+                "HERMES_HOME symlink %s does not literally match */profiles/<name>; "
+                "isolated profile mode is disabled unless the literal profile path is used.",
+                p,
+            )
+            _ISOLATED_SYMLINK_WARNING_EMITTED = True
+    return False
+
+
+def _isolated_profile_name() -> str:
+    """Return the profile directory name from _INITIAL_HERMES_HOME."""
+    return Path(_INITIAL_HERMES_HOME).expanduser().name
 
 
 def _resolve_base_hermes_home() -> Path:
@@ -279,9 +336,12 @@ def get_active_profile_name() -> str:
     """Return the currently active profile name.
 
     Priority:
-      1. Thread-local (set per-request from hermes_profile cookie) — issue #798
-      2. Process-level default (_active_profile)
+      1. Isolated-profile deployment name from the configured HERMES_HOME path
+      2. Thread-local (set per-request from hermes_profile cookie) — issue #798
+      3. Process-level default (_active_profile)
     """
+    if _is_isolated_profile_mode():
+        return _isolated_profile_name()
     tls_name = getattr(_tls, 'profile', None)
     if tls_name is not None:
         return tls_name
@@ -316,6 +376,17 @@ def _resolve_profile_home_for_name(name: str) -> Path:
     names fall back to the base home so traversal-shaped cookie values cannot
     influence filesystem paths.
     """
+    # In isolated mode, every logical profile lookup clamps to the configured
+    # startup HERMES_HOME so callers cannot resolve a foreign profile path.
+    if _is_isolated_profile_mode():
+        isolated_name = _isolated_profile_name()
+        isolated_home = Path(_INITIAL_HERMES_HOME).expanduser()
+        if name and not _profiles_match(name, isolated_name):
+            logger.warning(
+                "Ignoring profile lookup %r in isolated profile mode; using pinned profile %r",
+                name, isolated_name,
+            )
+        return isolated_home
     if not name or _is_root_profile(name):
         return _DEFAULT_HERMES_HOME
     try:
@@ -336,6 +407,8 @@ def get_active_hermes_home() -> Path:
     Uses get_active_profile_name() so per-request TLS context (issue #798)
     is respected, not just the process-level global.
     """
+    if _is_isolated_profile_mode():
+        return Path(_INITIAL_HERMES_HOME).expanduser()
     return _resolve_profile_home_for_name(get_active_profile_name())
 
 
@@ -383,6 +456,14 @@ def _home_for_scheduled_cron_job(job: dict) -> Path:
     fall back to the server default rather than crashing every scheduler tick.
     """
     raw = str((job or {}).get('profile') or '').strip()
+    if _is_isolated_profile_mode():
+        active = _isolated_profile_name()
+        if raw and not _profiles_match(raw, active):
+            logger.warning(
+                "Cron job %s references profile %r outside isolated profile %r; falling back to isolated home",
+                (job or {}).get('id', '?'), raw, active,
+            )
+        return get_active_hermes_home()
     if not raw:
         return get_active_hermes_home()
     if _is_root_profile(raw):
@@ -432,7 +513,15 @@ def install_cron_scheduler_profile_isolation() -> None:
             with cron_profile_context_for_home(_home_for_scheduled_cron_job(job)):
                 return original(job, *args, **kwargs)
         finally:
-            publish_session_list_changed("cron_complete")
+            event_profile = str((job or {}).get("profile") or "").strip() or None
+            if _is_isolated_profile_mode():
+                event_profile = _isolated_profile_name()
+            try:
+                publish_session_list_changed("cron_complete", profile=event_profile)
+            except TypeError:
+                # Focused tests and older integrations may patch the publisher
+                # with the historical one-argument shape.
+                publish_session_list_changed("cron_complete")
 
     _webui_profile_isolated_run_job._webui_profile_isolated = True
     _webui_profile_isolated_run_job._webui_original_run_job = original
@@ -695,6 +784,40 @@ def get_profile_runtime_env(home: Path) -> dict[str, str]:
     return env
 
 
+# Match Hermes Agent gateway behavior: profile-scoped WebUI runs should
+# project intended runtime vars (credentials, HERMES_HOME, TERMINAL_*)
+# without allowing profile env to override core shell identity variables
+# like HOME or PATH.
+_BLOCKED_RUNTIME_ENV_KEYS = {
+    'HOME',
+    'PATH',
+    'PWD',
+    'SHELL',
+    'USER',
+    'LOGNAME',
+    'SHLVL',
+    'OLDPWD',
+    'PYTHONPATH',
+    'VIRTUAL_ENV',
+    'LD_LIBRARY_PATH',
+}
+
+
+def filter_runtime_env_for_gateway_parity(env: dict[str, str]) -> dict[str, str]:
+    """Return a profile runtime env filtered to mimic Hermes gateway semantics."""
+    filtered: dict[str, str] = {}
+    for key, value in (env or {}).items():
+        k = str(key).strip()
+        if not k:
+            continue
+        if k in _BLOCKED_RUNTIME_ENV_KEYS:
+            continue
+        if k.startswith('XDG_'):
+            continue
+        filtered[k] = value
+    return filtered
+
+
 @contextmanager
 def profile_env_for_background_worker(
     session,
@@ -723,6 +846,7 @@ def profile_env_for_background_worker(
 
         profile_home_path = Path(get_hermes_home_for_profile(profile))
         runtime_env = get_profile_runtime_env(profile_home_path)
+        safe_runtime_env = filter_runtime_env_for_gateway_parity(runtime_env)
     except Exception:
         log.debug(
             "Failed to resolve profile env for %s profile %s; falling back to current env",
@@ -733,7 +857,7 @@ def profile_env_for_background_worker(
         yield
         return
 
-    thread_env = dict(runtime_env)
+    thread_env = dict(safe_runtime_env)
     thread_env["HERMES_HOME"] = str(profile_home_path)
     # Hybrid profile routing: keep the broad runtime env in WebUI's thread-local
     # channel for WebUI helpers, and also mirror it into process env for the
@@ -748,11 +872,11 @@ def profile_env_for_background_worker(
     try:
         _set_thread_env(**thread_env)
         with _ENV_LOCK:
-            old_runtime_env = {key: os.environ.get(key) for key in runtime_env}
+            old_runtime_env = {key: os.environ.get(key) for key in safe_runtime_env}
             had_hermes_home = "HERMES_HOME" in os.environ
             old_hermes_home = os.environ.get("HERMES_HOME")
             skill_home_snapshot = snapshot_skill_home_modules()
-            os.environ.update(runtime_env)
+            os.environ.update(safe_runtime_env)
             os.environ["HERMES_HOME"] = str(profile_home_path)
             try:
                 patch_skill_home_modules(profile_home_path)
@@ -781,6 +905,86 @@ def profile_env_for_background_worker(
                 os.environ.pop("HERMES_HOME", None)
             if skill_home_snapshot is not None:
                 restore_skill_home_modules(skill_home_snapshot)
+
+
+@contextmanager
+def profile_env_for_active_request(
+    purpose: str = "provider/model read",
+    logger_override: Optional[logging.Logger] = None,
+):
+    """Apply the active per-request profile's env around a read-only API call (#3957).
+
+    WebUI profile switching is per-client/cookie scoped (issue #798): a browser
+    on a named profile sets a ``hermes_profile`` cookie, which ``server.py``
+    turns into a thread-local via ``set_request_profile()``.  But the per-client
+    switch deliberately does NOT reload the profile's ``.env`` into
+    ``os.environ`` (that would mutate process-global state shared with other
+    clients).  So read-only endpoints that resolve provider credentials through
+    ``os.environ`` / ``HERMES_HOME`` — ``/api/providers`` (``get_auth_status``
+    probes) and ``/api/models`` (``provider_model_ids`` / custom-key lookup) —
+    resolve against the *default* profile's credentials instead of the active
+    one.  Symptoms: Settings → Providers times out and the model picker shows
+    only the default profile's models.
+
+    This mirrors what streaming already does for the duration of an agent run
+    (``profile_env_for_background_worker``): it temporarily applies the active
+    profile's ``.env`` + terminal config for the duration of the wrapped read,
+    then restores the previous env under ``_ENV_LOCK``.
+
+    No-ops (zero overhead, byte-identical behavior) for the default/root profile
+    — the overwhelmingly common single-profile deployment is unaffected.
+    """
+    profile = (get_active_profile_name() or "").strip()
+    if not profile or _is_root_profile(profile):
+        yield
+        return
+    with profile_env_for_background_worker(
+        profile, purpose, logger_override=logger_override
+    ):
+        yield
+
+
+@contextmanager
+def profile_scope_for_detached_worker(
+    profile_name,
+    purpose: str = "detached worker",
+    logger_override: Optional[logging.Logger] = None,
+):
+    """Bind BOTH the per-request profile TLS and the profile env on a NEW thread (#3957).
+
+    A detached worker thread (e.g. the ``models-catalog-rebuild`` daemon that
+    ``get_available_models`` spawns for a bounded rebuild) inherits neither the
+    spawning request's profile thread-local (issue #798) nor its ``os.environ``.
+    Without re-establishing both, the worker resolves the *default* profile:
+      - profile-keyed paths (``_get_models_cache_path`` / ``_get_config_path`` /
+        ``_get_auth_store_path`` / ``_models_cache_source_fingerprint``) read the
+        per-request profile via ``get_active_profile_name()`` — needs the TLS;
+      - credential lookups (``provider_model_ids`` / ``_lookup_custom_api_key_env``)
+        read ``os.environ`` — needs the profile ``.env`` applied.
+
+    Pass the profile name CAPTURED on the spawning thread (where the TLS is
+    valid) into the worker, then enter this scope at the top of the worker body.
+    It sets the request-profile TLS for this (worker) thread and applies the
+    profile env via ``profile_env_for_background_worker``, restoring both on exit.
+    No-op for the default/root profile.
+
+    Unlike ``profile_env_for_active_request`` (which reads the *current* thread's
+    TLS and must NOT clear it — the request thread keeps using it after the call),
+    this sets and then CLEARS the TLS, which is correct for a dedicated worker
+    thread that has no other use for it.
+    """
+    name = (profile_name or "").strip()
+    if not name or _is_root_profile(name):
+        yield
+        return
+    set_request_profile(name)
+    try:
+        with profile_env_for_background_worker(
+            name, purpose, logger_override=logger_override
+        ):
+            yield
+    finally:
+        clear_request_profile()
 
 
 def _set_hermes_home(home: Path):
@@ -849,8 +1053,12 @@ def init_profile_state() -> None:
     module-level cached paths.  Called once from config.py after imports.
     """
     global _active_profile
-    _active_profile = _read_active_profile_file()
-    home = get_active_hermes_home()
+    if _is_isolated_profile_mode():
+        _active_profile = _isolated_profile_name()
+        home = Path(_INITIAL_HERMES_HOME).expanduser()
+    else:
+        _active_profile = _read_active_profile_file()
+        home = get_active_hermes_home()
     _set_hermes_home(home)
     install_cron_scheduler_profile_isolation()
     _reload_dotenv(home)
@@ -862,6 +1070,9 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
     Validates the profile exists, updates process state, patches module caches,
     reloads .env, and reloads config.yaml.
 
+    In isolated profile mode, switching to a different profile is rejected (403).
+    Switching to the isolated profile itself is allowed (idempotent).
+
     Args:
         name: Profile name to switch to.
         process_wide: If True (default), updates the process-global
@@ -869,9 +1080,19 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
             WebUI where the profile is managed via cookie + thread-local (#798).
 
     Returns: {'profiles': [...], 'active': name}
-    Raises ValueError if profile doesn't exist or agent is busy.
+    Raises ValueError when profile doesn't exist, RuntimeError when agent is running,
+    PermissionError in isolated mode for cross-profile switches.
     """
     global _active_profile
+
+    # In isolated profile mode, reject switching to other profiles
+    if _is_isolated_profile_mode():
+        active = _isolated_profile_name()
+        if name != active:
+            raise PermissionError(
+                f"Profile switching is not allowed in isolated profile mode. "
+                f"Currently pinned to profile '{active}'."
+            )
 
     # Import here to avoid circular import at module load
     from api.config import STREAMS, STREAMS_LOCK, reload_config
@@ -890,15 +1111,18 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
                 )
 
     proxy_info = None
-    try:
-        from api.gateway_chat import profile_proxy_for
+    if not _is_isolated_profile_mode():
+        try:
+            from api.gateway_chat import profile_proxy_for
 
-        proxy_info = profile_proxy_for(name)
-    except Exception:
-        logger.debug("Failed to resolve profile proxy for %s", name, exc_info=True)
+            proxy_info = profile_proxy_for(name)
+        except Exception:
+            logger.debug("Failed to resolve profile proxy for %s", name, exc_info=True)
 
     # Resolve profile directory
-    if _is_root_profile(name):
+    if _is_isolated_profile_mode():
+        home = Path(_INITIAL_HERMES_HOME).expanduser()
+    elif _is_root_profile(name):
         home = _DEFAULT_HERMES_HOME
     elif proxy_info:
         home = _DEFAULT_HERMES_HOME
@@ -1003,6 +1227,7 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
     return {
         'profiles': list_profiles_api(),
         'active': name,
+        'is_default': _is_root_profile(name),
         'default_model': default_model,
         'default_model_provider': default_model_provider,
         'default_workspace': default_workspace,
@@ -1084,6 +1309,95 @@ def _get_profile_skills_stats(profile_dir: Path) -> tuple[int, int]:
     return res
 
 
+_LIST_PROFILES_CACHE: tuple[list, float] | None = None
+_LIST_PROFILES_CACHE_TTL = 4.0  # seconds — short enough that gateway dots / new
+                                # profiles stay near-live, long enough that rapid
+                                # re-opens of the dropdown are free.
+_LIST_PROFILES_CACHE_LOCK = threading.Lock()
+
+
+def _invalidate_list_profiles_cache() -> None:
+    """Drop the cached profile list (call after create/delete/switch)."""
+    global _LIST_PROFILES_CACHE
+    with _LIST_PROFILES_CACHE_LOCK:
+        _LIST_PROFILES_CACHE = None
+
+
+def _build_profile_rows_fast() -> list | None:
+    """Build the profile list WITHOUT the upstream alias scan.
+
+    ``hermes_cli.profiles.list_profiles()`` calls ``find_alias_for_profile()``
+    once per profile, which iterates every file in the wrapper dir
+    (``~/.local/bin``) and ``read_text()``s each one — including large binaries
+    (claude, node, uv, …). On a machine with big binaries on PATH that is
+    hundreds of MB of reads PER PROFILE, which makes the compose-footer profile
+    dropdown hang for many seconds.
+
+    The WebUI never uses the alias data (``list_profiles_api`` does not return
+    ``alias_name``/``alias_path``), so we replicate the cheap part of upstream's
+    ``list_profiles()`` — the same per-profile metadata, the same hardcoded
+    ``"default"`` name for the base home — and simply skip the alias scan.
+
+    Returns ``None`` if the upstream cheap helpers can't be imported, so the
+    caller can fall back to the original (slow but correct) path. Forward-
+    compatible: if upstream fixes ``find_alias_for_profile`` this stays fast and
+    correct with nothing to revert.
+    """
+    try:
+        from hermes_cli.profiles import (
+            _get_default_hermes_home,
+            _get_profiles_root,
+            _read_config_model,
+            _check_gateway_running,
+            _PROFILE_ID_RE as _UPSTREAM_PROFILE_ID_RE,
+        )
+    except Exception:
+        return None
+
+    def _row(home: Path, name: str, is_default: bool) -> dict:
+        try:
+            model, provider = _read_config_model(home)
+        except Exception:
+            model, provider = None, None
+        try:
+            gateway_running = _check_gateway_running(home)
+        except Exception:
+            gateway_running = False
+        enabled_count, total_count = _get_profile_skills_stats(home)
+        return {
+            'name': name,
+            'path': str(home),
+            'is_default': is_default,
+            'is_active': False,  # filled in by caller (cheap, varies per request)
+            'gateway_running': gateway_running,
+            'model': model,
+            'provider': provider,
+            'has_env': (home / '.env').exists(),
+            'visible': _profile_visible_from_meta(home),
+            'skill_count': enabled_count,
+            'enabled_skills': enabled_count,
+            'total_skills': total_count,
+        }
+
+    rows: list = []
+    default_home = _get_default_hermes_home()
+    if default_home.is_dir():
+        # Upstream hardcodes the base home's display name to "default" even when
+        # the directory is literally ".hermes" — match that exactly.
+        rows.append(_row(default_home, 'default', True))
+
+    profiles_root = _get_profiles_root()
+    if profiles_root.is_dir():
+        for entry in sorted(profiles_root.iterdir()):
+            if not entry.is_dir():
+                continue
+            if not _UPSTREAM_PROFILE_ID_RE.match(entry.name):
+                continue
+            rows.append(_row(entry, entry.name, False))
+
+    return rows
+
+
 _PROFILE_LIST_ORDER = {
     "default": 0,
     "moss": 0,
@@ -1102,45 +1416,159 @@ def _profile_list_sort_key(profile: dict) -> tuple[int, str]:
     return (_PROFILE_LIST_ORDER.get(name, 1000), name)
 
 
-def list_profiles_api() -> list:
-    """List all profiles with metadata, serialized for JSON response."""
-    try:
-        from hermes_cli.profiles import list_profiles
-        infos = list_profiles()
-    except ImportError:
-        # hermes_cli not available -- return just the default
-        return [_default_profile_dict()]
+def _append_profile_proxy_entries(rows: list, active: str) -> list:
+    """Merge remote profile proxy selectors into local profile rows.
 
-    active = get_active_profile_name()
-    result = []
-    for p in infos:
-        enabled_count, total_count = _get_profile_skills_stats(p.path)
-        result.append({
-            'name': p.name,
-            'path': str(p.path),
-            'is_default': p.is_default,
-            'is_active': p.name == active,
-            'gateway_running': p.gateway_running,
-            'model': p.model,
-            'provider': p.provider,
-            'has_env': p.has_env,
-            'skill_count': enabled_count,
-            'enabled_skills': enabled_count,
-            'total_skills': total_count,
-        })
+    Proxy selectors are WebUI/Gateway routing entries, not local profile homes.
+    If a local profile has the same name, the local row wins so a proxy cannot
+    shadow a real local profile.
+    """
     try:
         from api.gateway_chat import profile_proxy_public_entries
 
-        existing_names = {str(p.get('name') or '') for p in result}
-        active = get_active_profile_name()
+        existing_names = {str(p.get('name') or '') for p in rows}
         for proxy in profile_proxy_public_entries():
             if proxy.get('name') in existing_names:
                 continue
+            proxy = dict(proxy)
             proxy['is_active'] = proxy.get('name') == active
-            result.append(proxy)
+            rows.append(proxy)
     except Exception:
         logger.debug("Failed to append profile proxy entries", exc_info=True)
-    return sorted(result, key=_profile_list_sort_key)
+    return sorted(rows, key=_profile_list_sort_key)
+
+
+def list_profiles_api() -> list:
+    """List all profiles with metadata, serialized for JSON response.
+
+    In isolated profile mode (HERMES_HOME points to ~/.hermes/profiles/<name>),
+    returns only that single profile and skips other profiles entirely.
+
+    Fast path: build the rows from upstream's cheap per-profile helpers and skip
+    ``find_alias_for_profile`` (whose result the WebUI discards) — see
+    ``_build_profile_rows_fast``. Results are cached for a short TTL so rapid
+    re-opens of the compose-footer dropdown are free; the cache is busted on
+    profile create/delete. Falls back to upstream ``list_profiles()`` if the
+    cheap helpers are unavailable.
+    """
+    import time
+    global _LIST_PROFILES_CACHE
+    now = time.time()
+
+    # In isolated profile mode, return only the active (isolated) profile
+    if _is_isolated_profile_mode():
+        active = _isolated_profile_name()
+        hermes_home = Path(_INITIAL_HERMES_HOME).expanduser()
+        try:
+            from hermes_cli.profiles import list_profiles
+            infos = list_profiles()
+            # When the isolated profile is literally named "default", upstream
+            # can surface the base-home row first. Only trust a row whose path
+            # resolves to the same directory as the isolated startup home.
+            for p in infos:
+                try:
+                    same_home = Path(p.path).expanduser().resolve() == hermes_home.resolve()
+                except OSError:
+                    same_home = False
+                if p.name == active and same_home:
+                    enabled_count, total_count = _get_profile_skills_stats(p.path)
+                    return [{
+                        'name': p.name,
+                        'path': str(p.path),
+                        'is_default': p.is_default,
+                        'is_active': True,  # Always true in isolated mode
+                        'gateway_running': p.gateway_running,
+                        'model': p.model,
+                        'provider': p.provider,
+                        'has_env': p.has_env,
+                        'visible': _profile_visible_from_meta(p.path),
+                        'skill_count': enabled_count,
+                        'enabled_skills': enabled_count,
+                        'total_skills': total_count,
+                    }]
+        except (ImportError, OSError, PermissionError):
+            pass
+        # Fallback: construct profile dict with actual active name and hermes_home path
+        enabled_count, total_count = _get_profile_skills_stats(hermes_home)
+        return [{
+            'name': active,
+            'path': str(hermes_home),
+            'is_default': active == 'default',
+            'is_active': True,
+            'gateway_running': False,
+            'model': None,
+            'provider': None,
+            'has_env': (hermes_home / '.env').exists(),
+            'visible': _profile_visible_from_meta(hermes_home),
+            'skill_count': enabled_count,
+            'enabled_skills': enabled_count,
+            'total_skills': total_count,
+        }]
+
+    with _LIST_PROFILES_CACHE_LOCK:
+        cached = _LIST_PROFILES_CACHE
+    if cached is not None and now - cached[1] < _LIST_PROFILES_CACHE_TTL:
+        active = get_active_profile_name()
+        # Return a fresh copy with is_active recomputed (cheap, per-request).
+        return [{**p, 'is_active': p['name'] == active} for p in cached[0]]
+
+    rows = _build_profile_rows_fast()
+    if rows is None:
+        # Fallback: cheap helpers unavailable — use the original (slow) path,
+        # or the default-only dict if hermes_cli isn't importable at all.
+        logger.debug(
+            "list_profiles_api: fast path unavailable, falling back to "
+            "upstream list_profiles() (slower)"
+        )
+        try:
+            from hermes_cli.profiles import list_profiles
+            infos = list_profiles()
+        except ImportError:
+            active = get_active_profile_name()
+            return _append_profile_proxy_entries([_default_profile_dict()], active)
+
+        active = get_active_profile_name()
+        result = []
+        for p in infos:
+            enabled_count, total_count = _get_profile_skills_stats(p.path)
+            result.append({
+                'name': p.name,
+                'path': str(p.path),
+                'is_default': p.is_default,
+                'is_active': p.name == active,
+                'gateway_running': p.gateway_running,
+                'model': p.model,
+                'provider': p.provider,
+                'has_env': p.has_env,
+                'visible': _profile_visible_from_meta(p.path),
+                'skill_count': enabled_count,
+                'enabled_skills': enabled_count,
+                'total_skills': total_count,
+            })
+        return _append_profile_proxy_entries(result, active)
+
+    active = get_active_profile_name()
+    rows = _append_profile_proxy_entries(rows, active)
+
+    with _LIST_PROFILES_CACHE_LOCK:
+        _LIST_PROFILES_CACHE = (rows, now)
+
+    return [{**p, 'is_active': p['name'] == active} for p in rows]
+
+
+def _profile_visible_from_meta(profile_path: Path) -> bool:
+    """Return False only for an explicit boolean ``visible: false`` in profile.yaml."""
+    try:
+        meta_path = Path(profile_path) / 'profile.yaml'
+        if not meta_path.exists():
+            return True
+        data = yaml.safe_load(meta_path.read_text(encoding='utf-8'))
+    except Exception:
+        return True
+    if not isinstance(data, dict):
+        return True
+    visible = data.get('visible')
+    return visible is not False
 
 
 def _default_profile_dict() -> dict:
@@ -1155,6 +1583,7 @@ def _default_profile_dict() -> dict:
         'model': None,
         'provider': None,
         'has_env': (_DEFAULT_HERMES_HOME / '.env').exists(),
+        'visible': True,
         'skill_count': enabled_count,
         'enabled_skills': enabled_count,
         'total_skills': compatible_count,
@@ -1496,7 +1925,12 @@ def create_profile_api(name: str, clone_from: str = None,
                        api_key: str = None,
                        default_model: str = None,
                        model_provider: str = None) -> dict:
-    """Create a new profile. Returns the new profile info dict."""
+    """Create a new profile. Returns the new profile info dict.
+
+    In isolated profile mode, profile creation is rejected (403).
+    """
+    if _is_isolated_profile_mode():
+        raise PermissionError("Profile creation is not allowed in isolated profile mode.")
     _validate_profile_name(name)
     # Defense-in-depth: validate clone_from here too, even though routes.py
     # also validates it. Any caller that bypasses the HTTP layer gets protection.
@@ -1569,6 +2003,7 @@ def create_profile_api(name: str, clone_from: str = None,
     # Invalidate cached root-profile-name lookup; create_profile may have added
     # a new profile that flips is_default semantics on the agent side (#1612).
     _SKILLS_STATS_CACHE.clear()
+    _invalidate_list_profiles_cache()
     _invalidate_root_profile_cache()
 
     # Find and return the newly created profile info.
@@ -1594,7 +2029,12 @@ def create_profile_api(name: str, clone_from: str = None,
 
 
 def delete_profile_api(name: str) -> dict:
-    """Delete a profile. Switches to default first if it's the active one."""
+    """Delete a profile. Switches to default first if it's the active one.
+
+    In isolated profile mode, profile deletion is rejected (403).
+    """
+    if _is_isolated_profile_mode():
+        raise PermissionError("Profile deletion is not allowed in isolated profile mode.")
     if _is_root_profile(name):
         raise ValueError("Cannot delete the default profile.")
     _validate_profile_name(name)
@@ -1623,5 +2063,6 @@ def delete_profile_api(name: str) -> dict:
 
     # Drop cached root-profile-name lookup — list_profiles_api() shape changed.
     _SKILLS_STATS_CACHE.clear()
+    _invalidate_list_profiles_cache()
     _invalidate_root_profile_cache()
     return {'ok': True, 'name': name}

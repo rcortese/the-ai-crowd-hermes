@@ -112,3 +112,29 @@ def test_gateway_chat_uses_proxy_config(monkeypatch):
     assert base_url == "http://jen:8642"
     assert api_key == "secret"
     assert f"{session_key_prefix}:abc" == "webui:jen:abc"
+
+
+def test_routes_overlay_preserves_upstream_session_sse_contract():
+    from pathlib import Path
+
+    routes = (Path(__file__).resolve().parents[1] / "api" / "routes.py").read_text(encoding="utf-8")
+
+    assert 'if parsed.path == "/api/session/stream"' in routes
+    assert "def _handle_session_sse_stream" in routes
+    assert "def start_session_turn" in routes
+    assert "len(item) >= 3" in routes
+    assert "_sse_with_id(handler, event, data, event_id)" in routes
+
+
+def test_routes_proxy_resolution_uses_session_profile_before_active_fallback():
+    from pathlib import Path
+
+    routes = (Path(__file__).resolve().parents[1] / "api" / "routes.py").read_text(encoding="utf-8")
+    start = routes.find("def _start_chat_stream_for_session(")
+    assert start != -1
+    body = routes[start:start + 7000]
+
+    assert 'active_profile_name = getattr(s, "profile", None)' in body
+    assert "active_profile_name = get_active_profile_name()" in body
+    assert "gateway_profile_proxy = profile_proxy_for(active_profile_name, cfg)" in body
+    assert 'worker_kwargs["gateway_config"] = gateway_profile_proxy' in body
