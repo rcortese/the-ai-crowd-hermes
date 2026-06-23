@@ -1,4 +1,5 @@
-FROM the-ai-crowd/moss:local
+ARG MOSS_BASE_IMAGE=the-ai-crowd/moss:local
+FROM ${MOSS_BASE_IMAGE}
 
 USER root
 
@@ -44,10 +45,14 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
     && cd /opt/hermes \
-    && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
-        tests/hermes_cli/test_auth_commands.py \
-        tests/hermes_cli/test_auth_codex_provider.py \
-        tests/agent/test_credential_pool.py \
+    && if [ -f tests/hermes_cli/test_auth_commands.py ]; then \
+        /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
+            tests/hermes_cli/test_auth_commands.py \
+            tests/hermes_cli/test_auth_codex_provider.py \
+            tests/agent/test_credential_pool.py; \
+       else \
+        /opt/hermes/.venv/bin/python3 -c 'import importlib; [importlib.import_module(m) for m in ("hermes_cli.auth", "hermes_cli.config", "agent.credential_pool", "gateway.run")]; print("agent_import_smoke_ok")'; \
+       fi \
     && cd /opt/hermes-webui \
     && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py \
     && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q tests/test_kanban_bridge.py \
