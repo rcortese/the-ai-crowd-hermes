@@ -111,8 +111,26 @@ def base(**fields: Any) -> dict[str, Any]:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Evaluate mocked Todoist write-safety evidence")
     parser.add_argument("--stdin", action="store_true", help="read JSON payload from stdin")
+    parser.add_argument("--probe", action="store_true", help="run non-live probe mode")
+    parser.add_argument("--dry-run", action="store_true", help="required with --probe; performs no external writes")
     parser.add_argument("payload", nargs="?", help="JSON payload")
     args = parser.parse_args(argv)
+    if args.probe:
+        if not args.dry_run:
+            print("probe requires --dry-run", file=sys.stderr)
+            return 1
+        fixture: dict[str, Any] = {}
+        if args.payload:
+            try:
+                fixture = json.loads(args.payload)
+            except json.JSONDecodeError as exc:
+                print(json.dumps(base(status="failed", mode="probe", dry_run=True, reason="invalid_json", detail=str(exc)), ensure_ascii=False, sort_keys=True))
+                return 1
+        if fixture.get("status") == "failed":
+            print(json.dumps(base(status="failed", mode="probe", dry_run=True, reason=fixture.get("reason") or "fixture_failed"), ensure_ascii=False, sort_keys=True))
+            return 1
+        print(json.dumps(base(status="ok", mode="probe", dry_run=True, reason="probe_ready"), ensure_ascii=False, sort_keys=True))
+        return 0
     raw = sys.stdin.read() if args.stdin else args.payload
     if not raw:
         print(json.dumps(base(status="failed", copy_state="invalid", reason="missing_payload"), ensure_ascii=False, sort_keys=True))

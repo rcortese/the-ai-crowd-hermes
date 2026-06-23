@@ -2,7 +2,7 @@
   "schema": "jen.todoist_due_semantics.v2.historical_golden_fixtures",
   "version": 2,
   "updated_at": "2026-06-01",
-  "source_contract": "/agents/moss/private/ops/plans/jen-todoist-due-semantics-v2-spec-policy-contract.md",
+  "source_contract": "public-contract:agents/public/jen/docs/architecture/signal-reconciliation.md",
   "notes": [
     "All examples, dates and recurrence strings are artificial fixed-clock test data, not operator/provider history.",
     "Legacy filename/schema retained only for consumer compatibility."

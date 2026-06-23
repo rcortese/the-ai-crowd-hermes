@@ -5,25 +5,30 @@ CONTRACT_VERSION="jen-todoist-interaction-loop.v1"
 WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 TASK_RUNTIME="${JEN_TODOIST_INTERACTION_LOOP_TASK_RUNTIME:-$WORKSPACE_ROOT/bin/jen-task-runtime}"
 DUE_SEMANTICS="${JEN_TODOIST_INTERACTION_LOOP_DUE_SEMANTICS:-$WORKSPACE_ROOT/bin/jen-todoist-due-semantics}"
+CAPTURE_WRAPPER="${JEN_TODOIST_INTERACTION_LOOP_CAPTURE_WRAPPER:-$WORKSPACE_ROOT/bin/jen-todoist-capture}"
+# shellcheck source=../lib/jen-envelope-emit.sh
+source "$WORKSPACE_ROOT/lib/jen-envelope-emit.sh"
 
 now_utc() {
-  date -u +"%Y-%m-%dT%H:%M:%SZ"
+  jen_now_utc
 }
 
 json_out() {
-  printf '%s\n' "$1"
+  jen_json_out "$1"
 }
 
 emit_failed() {
   local failure_class="$1"
-  local checked_at
+  local checked_at detail_json extra_json handoff_id
   checked_at="$(now_utc)"
-  json_out "$(jq -nc \
-    --arg contract_version "$CONTRACT_VERSION" \
-    --arg status failed \
+  handoff_id="$(jen_new_handoff_id "jen-todoist-interaction-loop")"
+  detail_json='{"wrapper_name":"jen-todoist-interaction-loop","mutation_attempted":false,"mutation_state":"unknown","safe_summary":"The Todoist wrapper path is not working correctly right now, so I am handing this to Moss."}'
+  extra_json="$(jq -nc \
     --arg checked_at "$checked_at" \
+    --argjson complete false \
     --arg failure_class "$failure_class" \
-    '{contract_version:$contract_version,status:$status,checked_at:$checked_at,failures:[{source:"loop",failure_class:$failure_class}],complete:false}')"
+    '{checked_at:$checked_at,mode:"canonical_capture",failures:[{source:"loop",failure_class:$failure_class}],complete:$complete}')"
+  json_out "$(jen_emit_envelope "$CONTRACT_VERSION" failed failed technical_failure stop_and_handoff_to_moss "The Todoist wrapper path isn't working correctly right now, so I'm handing this to Moss." "$handoff_id" "$detail_json" "$extra_json")"
   exit 1
 }
 
@@ -46,6 +51,16 @@ run_due_semantics_json() {
   shift
   set +e
   "$DUE_SEMANTICS" "$@" >"$output_file" 2>/dev/null
+  local status=$?
+  set -e
+  return "$status"
+}
+
+run_capture_json() {
+  local output_file="$1"
+  shift
+  set +e
+  "$CAPTURE_WRAPPER" "$@" >"$output_file" 2>/dev/null
   local status=$?
   set -e
   return "$status"
@@ -78,12 +93,186 @@ wrap_runtime_result() {
   jq -nc --arg source "$source" --arg failure_class "$failure_class" --argjson exit_status "$exit_status" '{status:"failed",source:$source,failure_class:$failure_class,exit_status:$exit_status}'
 }
 
+canonical_capture_command() {
+  local capture_input="" classification="" content="" due="" deadline="" existing_task_id=""
+  local dry_run=false technical_failure=false json_mode=false debug_mode=false verbose_mode=false
+
+  while (($#)); do
+    case "$1" in
+      --json)
+        json_mode=true
+        shift
+        ;;
+      --debug)
+        debug_mode=true
+        shift
+        ;;
+      --verbose)
+        verbose_mode=true
+        shift
+        ;;
+      --capture-input)
+        [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
+        capture_input="$2"
+        shift 2
+        ;;
+      --class|--classification)
+        [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
+        classification="$2"
+        shift 2
+        ;;
+      --content)
+        [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
+        content="$2"
+        shift 2
+        ;;
+      --due)
+        [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
+        due="$2"
+        shift 2
+        ;;
+      --deadline|--deadline-date)
+        [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
+        deadline="$2"
+        shift 2
+        ;;
+      --existing-task-id)
+        [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
+        existing_task_id="$2"
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=true
+        shift
+        ;;
+      --technical-failure)
+        technical_failure=true
+        shift
+        ;;
+      *)
+        emit_failed invalid_argument
+        ;;
+    esac
+  done
+
+  local capture_args=()
+  [[ "$json_mode" == true ]] && capture_args+=(--json)
+  [[ "$debug_mode" == true ]] && capture_args+=(--debug)
+  [[ "$verbose_mode" == true ]] && capture_args+=(--verbose)
+  [[ -n "$capture_input" ]] && capture_args+=(--input "$capture_input")
+  [[ -n "$classification" ]] && capture_args+=(--class "$classification")
+  [[ -n "$content" ]] && capture_args+=(--content "$content")
+  [[ -n "$due" ]] && capture_args+=(--due "$due")
+  [[ -n "$deadline" ]] && capture_args+=(--deadline "$deadline")
+  [[ -n "$existing_task_id" ]] && capture_args+=(--existing-task-id "$existing_task_id")
+  [[ "$dry_run" == true ]] && capture_args+=(--dry-run)
+  [[ "$technical_failure" == true ]] && capture_args+=(--technical-failure)
+
+  local capture_file capture_status capture_result checked_at visible_acknowledgment checkpoint_status complete write_action
+  local result failure_class jen_action operator_message handoff_id detail_json extra_json envelope_status
+  checked_at="$(now_utc)"
+  capture_file=$(mktemp)
+  capture_status=0
+  run_capture_json "$capture_file" "${capture_args[@]}" || capture_status=$?
+  capture_result="$(cat "$capture_file")"
+  checkpoint_status="$(jq -r '.status // "failed"' <<<"$capture_result")"
+  result="$(jq -r '.result // "failed"' <<<"$capture_result")"
+  failure_class="$(jq -r '.failure_class // "technical_failure"' <<<"$capture_result")"
+  jen_action="$(jq -r '.jen_action // "stop_and_handoff_to_moss"' <<<"$capture_result")"
+  operator_message="$(jq -r '.operator_message // "The Todoist wrapper path is not working correctly right now, so I am handing this to Moss."' <<<"$capture_result")"
+  handoff_id="$(jq -r '.handoff_id // empty' <<<"$capture_result")"
+  write_action="$(jq -r '.action // empty' <<<"$capture_result")"
+  complete=true
+
+  if [[ "$capture_status" != 0 || "$checkpoint_status" == "failed" || "$result" == "failed" || "$result" == "partial" ]]; then
+    visible_acknowledgment="I can't write Todoist right now; technical handoff needed."
+    write_action="technical-handoff"
+    complete=false
+    detail_json="$(jq -nc \
+      --arg wrapper_name jen-todoist-interaction-loop \
+      --arg checked_at "$checked_at" \
+      --argjson checkpoint "$capture_result" \
+      '{wrapper_name:$wrapper_name,checked_at:$checked_at,mode:"canonical_capture",checkpoint:$checkpoint,mutation_attempted:($checkpoint.detail.mutation_attempted // false),mutation_state:($checkpoint.result // "failed"),safe_summary:($checkpoint.operator_message // "Technical handoff required.")}')"
+    extra_json="$(jq -nc \
+      --arg checked_at "$checked_at" \
+      --arg visible_acknowledgment "$visible_acknowledgment" \
+      --arg write_action "$write_action" \
+      --argjson checkpoint "$capture_result" \
+      --argjson complete false \
+      --arg failure_class "$failure_class" \
+      '{checked_at:$checked_at,mode:"canonical_capture",visible_acknowledgment:$visible_acknowledgment,write_action:$write_action,checkpoint:$checkpoint,failures:[{source:"canonical_capture",failure_class:$failure_class}],complete:$complete}')"
+    json_out "$(jen_emit_envelope "$CONTRACT_VERSION" failed "$result" "$failure_class" "$jen_action" "$operator_message" "$handoff_id" "$detail_json" "$extra_json")"
+    rm -f "$capture_file"
+    exit 1
+  fi
+
+  case "$(jq -r '.outcome // empty' <<<"$capture_result")" in
+    no-write|keep_chat_local)
+      visible_acknowledgment="I'm keeping this chat-local because it is not a Todoist task."
+      write_action="chat-local"
+      ;;
+    ambiguous|clarify_or_not_written_yet)
+      visible_acknowledgment="I haven't written this yet because the task details are still ambiguous."
+      write_action="clarify-first"
+      ;;
+    would-update|would_update|updated)
+      visible_acknowledgment="I found the existing task and adjusted it: approved wrapper path only."
+      [[ -n "$write_action" ]] || write_action="update-existing"
+      ;;
+    would-create|would_create|created)
+      visible_acknowledgment="I updated Todoist: approved wrapper path only."
+      [[ -n "$write_action" ]] || write_action="capture-task"
+      ;;
+    *)
+      visible_acknowledgment="$operator_message"
+      ;;
+  esac
+
+  detail_json="$(jq -nc \
+    --arg wrapper_name jen-todoist-interaction-loop \
+    --arg checked_at "$checked_at" \
+    --argjson checkpoint "$capture_result" \
+    '{wrapper_name:$wrapper_name,checked_at:$checked_at,mode:"canonical_capture",checkpoint:$checkpoint,mutation_attempted:($checkpoint.detail.mutation_attempted // false),mutation_state:($checkpoint.result // "no_change"),safe_summary:($checkpoint.operator_message // null)}')"
+  extra_json="$(jq -nc \
+    --arg checked_at "$checked_at" \
+    --arg visible_acknowledgment "$visible_acknowledgment" \
+    --arg write_action "$write_action" \
+    --argjson checkpoint "$capture_result" \
+    --argjson complete true \
+    '{checked_at:$checked_at,mode:"canonical_capture",visible_acknowledgment:$visible_acknowledgment,write_action:$write_action,checkpoint:$checkpoint,complete:$complete}')"
+  envelope_status="ok"
+  [[ "$result" == "partial" ]] && envelope_status="partial"
+  json_out "$(jen_emit_envelope "$CONTRACT_VERSION" "$envelope_status" "$result" "$failure_class" "$jen_action" "$operator_message" "$handoff_id" "$detail_json" "$extra_json")"
+  rm -f "$capture_file"
+  [[ "$result" != "failed" ]]
+}
+
 from_date=""
 to_date=""
 include_due_window=true
+canonical_mode=false
+canonical_args=()
 
 while (($#)); do
   case "$1" in
+    --canonical-capture)
+      canonical_mode=true
+      shift
+      ;;
+    --json|--debug|--verbose)
+      canonical_args+=("$1")
+      shift
+      ;;
+    --capture-input|--class|--classification|--content|--due|--deadline|--deadline-date|--existing-task-id)
+      canonical_args+=("$1")
+      [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
+      canonical_args+=("$2")
+      shift 2
+      ;;
+    --dry-run|--technical-failure)
+      canonical_args+=("$1")
+      shift
+      ;;
     --from)
       [[ -n "${2:-}" && "${2:-}" != --* ]] || emit_failed invalid_argument
       from_date="$2"
@@ -101,8 +290,10 @@ while (($#)); do
     -h|--help)
       cat <<'EOF'
 Usage: jen-todoist-interaction-loop [--from YYYY-MM-DD --to YYYY-MM-DD] [--no-due-window]
+       jen-todoist-interaction-loop --canonical-capture [--capture-input fixture.json] [--class NOT_A_TASK|AMBIGUOUS|CANONICAL_TASK_UPDATE] [--content TEXT] [--due TEXT] [--deadline YYYY-MM-DD] [--existing-task-id TASK_ID] [--dry-run]
 
-Runs the bounded Todoist interaction observation loop and prints one JSON object.
+Default mode runs the bounded Todoist interaction observation loop and prints one JSON object.
+Canonical mode runs the approved Todoist canonical capture checkpoint and prints one JSON object.
 EOF
       exit 0
       ;;
@@ -111,6 +302,11 @@ EOF
       ;;
   esac
 done
+
+if [[ "$canonical_mode" == true ]]; then
+  canonical_capture_command "${canonical_args[@]}"
+  exit $?
+fi
 
 if [[ -z "$from_date" ]]; then
   from_date="$(date +%F)"
