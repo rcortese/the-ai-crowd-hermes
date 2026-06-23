@@ -1,0 +1,44 @@
+{
+  "schema_version": "the-ai-crowd-handoff.v1",
+  "message_id": "hac_20260621_01_invalidfixture",
+  "correlation_id": "corr_20260621_01_invalidfixture",
+  "idempotency_key": "missing-summary:2026-06-21T20",
+  "created_at": "2026-06-21T20:40:00Z",
+  "source": {
+    "persona": "jen"
+  },
+  "target": {
+    "persona": "moss",
+    "delivery_mode": "shared-file",
+    "path": "/mnt/hermes-shared/handoffs/moss/2026-06-21/hac_20260621_01_invalidfixture.json"
+  },
+  "owner_domain": "technical-ops",
+  "handoff_type": "incident",
+  "failure_class": "auth_failure",
+  "decision_owner": "jen",
+  "executor": "moss",
+  "return_to": "jen",
+  "privacy_class": "private-metadata-only",
+  "objective": "This fixture intentionally omits summary.",
+  "context": "No secrets.",
+  "artifact_refs": [],
+  "route": {
+    "matrix_owner": "moss",
+    "resolved_target": "moss",
+    "reason": "technical_failure",
+    "canonical_root": "/mnt/hermes-shared/handoffs",
+    "canonical_path": "/mnt/hermes-shared/handoffs/moss/2026-06-21/hac_20260621_01_invalidfixture.json"
+  },
+  "receipt": {
+    "requested": true,
+    "channel": "shared-file-watcher",
+    "states": ["written", "observed", "notified"]
+  },
+  "adapter": {
+    "delivery_mode": "shared-file",
+    "canonical_path": "/mnt/hermes-shared/handoffs/moss/2026-06-21/hac_20260621_01_invalidfixture.json",
+    "a2a_subject": "a2a.v1.handoff.moss.jen.incident",
+    "nats_subject": "a2a.v1.handoff.moss.jen.incident",
+    "nats_msg_id": "hac_20260621_01_invalidfixture"
+  }
+}

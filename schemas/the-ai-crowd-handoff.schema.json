@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/the-ai-crowd/schemas/the-ai-crowd-handoff.schema.json",
+  "title": "The AI Crowd Canonical Handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "message_id",
+    "correlation_id",
+    "idempotency_key",
+    "created_at",
+    "source",
+    "target",
+    "owner_domain",
+    "handoff_type",
+    "decision_owner",
+    "executor",
+    "return_to",
+    "privacy_class",
+    "summary",
+    "objective",
+    "context",
+    "artifact_refs",
+    "route",
+    "receipt",
+    "adapter"
+  ],
+  "properties": {
+    "schema_version": {"const": "the-ai-crowd-handoff.v1"},
+    "message_id": {"type": "string", "pattern": "^hac_[A-Za-z0-9_:-]{8,64}$"},
+    "correlation_id": {"type": "string", "pattern": "^corr_[A-Za-z0-9_:-]{8,64}$"},
+    "idempotency_key": {"type": "string", "minLength": 3, "maxLength": 200},
+    "created_at": {"type": "string", "format": "date-time"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["persona", "wrapper", "runtime", "host"],
+      "properties": {
+        "persona": {"type": "string", "enum": ["moss", "jen", "denholm", "roy", "richmond", "the-elders", "operator"]},
+        "wrapper": {"type": "string", "minLength": 3},
+        "runtime": {"type": "string", "minLength": 3},
+        "host": {"type": "string", "minLength": 3}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["persona", "delivery_mode", "path"],
+      "properties": {
+        "persona": {"type": "string", "enum": ["moss", "jen", "denholm", "roy", "richmond", "the-elders", "operator"]},
+        "delivery_mode": {"const": "shared-file"},
+        "path": {"type": "string", "pattern": "^/.+\\.json$"}
+      }
+    },
+    "owner_domain": {"type": "string", "enum": ["technical-ops", "product", "productivity", "intake", "archiveops", "prepared-answer"]},
+    "handoff_type": {"type": "string", "enum": ["incident", "execution_request", "consultation", "ownership_return", "ownership_transfer", "artifact_request", "artifact_delivery"]},
+    "failure_class": {"type": ["string", "null"], "enum": ["runtime_failure", "auth_failure", "integration_failure", "network_failure", "container_failure", "gateway_failure", "provider_failure", "policy_block", "root_drift", "delivery_failure", "unknown", null]},
+    "decision_owner": {"type": "string", "enum": ["moss", "jen", "denholm", "roy", "richmond", "the-elders", "operator"]},
+    "executor": {"type": "string", "enum": ["moss", "jen", "denholm", "roy", "richmond", "the-elders", "operator"]},
+    "return_to": {"type": "string", "enum": ["moss", "jen", "denholm", "roy", "richmond", "the-elders", "operator"]},
+    "privacy_class": {"type": "string", "enum": ["public", "internal", "private-metadata-only", "private-artifact-ref", "secret-forbidden"]},
+    "summary": {"type": "string", "minLength": 3, "maxLength": 500},
+    "objective": {"type": "string", "minLength": 3, "maxLength": 1000},
+    "context": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "ref", "privacy_class"],
+        "properties": {
+          "kind": {"type": "string", "minLength": 2},
+          "ref": {"type": "string", "pattern": "^(private-ref:|file:|sha256:|review:|summary:|test:|kanban:).+"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "privacy_class": {"type": "string", "enum": ["public", "internal", "private-metadata-only", "private-artifact-ref", "secret-forbidden"]},
+          "description": {"type": "string", "minLength": 3}
+        }
+      }
+    },
+    "constraints": {"type": "array", "items": {"type": "string", "minLength": 2}},
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matrix_owner", "resolved_target", "reason", "canonical_root", "canonical_path"],
+      "properties": {
+        "matrix_owner": {"type": "string", "enum": ["moss", "jen", "denholm", "roy", "richmond", "the-elders", "operator"]},
+        "resolved_target": {"type": "string", "enum": ["moss", "jen", "denholm", "roy", "richmond", "the-elders", "operator"]},
+        "reason": {"type": "string", "minLength": 3},
+        "canonical_root": {"type": "string", "pattern": "^/.+"},
+        "canonical_path": {"type": "string", "pattern": "^/.+\\.json$"}
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "channel", "states"],
+      "properties": {
+        "requested": {"type": "boolean"},
+        "channel": {"const": "shared-file-watcher"},
+        "states": {
+          "type": "array",
+          "prefixItems": [
+            {"const": "written"},
+            {"const": "observed"},
+            {"const": "notified"}
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delivery_mode", "canonical_path", "a2a_subject", "nats_subject", "nats_msg_id"],
+      "properties": {
+        "delivery_mode": {"const": "shared-file"},
+        "canonical_path": {"type": "string", "pattern": "^/.+\\.json$"},
+        "a2a_subject": {"type": "string", "pattern": "^a2a\\.v1\\.handoff\\.[a-z-]+\\.[a-z-]+\\.[a-z_]+$"},
+        "nats_subject": {"type": "string", "pattern": "^a2a\\.v1\\.handoff\\.[a-z-]+\\.[a-z-]+\\.[a-z_]+$"},
+        "nats_msg_id": {"type": "string", "pattern": "^hac_[A-Za-z0-9_:-]{8,64}$"}
+      }
+    }
+  }
+}
