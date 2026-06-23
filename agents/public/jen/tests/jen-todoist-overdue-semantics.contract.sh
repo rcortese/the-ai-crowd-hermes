@@ -94,10 +94,10 @@ fixture='[
 ]'
 
 classified="$(printf '%s\n' "$fixture" | "$helper" classify --today 2026-04-28)"
-assert_jq "$classified" '.contract_version == "jen-todoist-due-semantics.v1" and .status == "ok" and .source == "stdin" and .complete == true' 'helper classify output shape'
+assert_jq "$classified" '.contract_version == "jen-todoist-due-semantics.v2" and .status == "ok" and .source == "stdin" and .policy.version == 2 and .complete == true' 'helper classify output shape'
 assert_jq "$classified" '.summary.task_count == 5 and .summary.category_counts.recurring_maintenance == 1 and .summary.category_counts.recurring_hard_obligation == 1 and .summary.category_counts.hard_deadline == 1 and .summary.category_counts.soft_surface == 1 and .summary.category_counts.ambiguous == 1' 'helper category summary'
 assert_jq "$classified" '.tasks[] | select(.id == "recurring-1" and .classification.category == "recurring_maintenance" and .classification.confidence == "high" and .past_due_raw == true)' 'recurring due classified as maintenance'
-assert_jq "$classified" '.tasks[] | select(.id == "recurring-hard-1" and .classification.category == "recurring_hard_obligation" and .classification.confidence == "high" and .past_due_raw == true and .deadline.date == "2026-04-30" and (.classification.suggested_action | contains("current-cycle deadline")))' 'recurring hard obligation preserves due cadence and deadline cutoff semantics'
+assert_jq "$classified" '.tasks[] | select(.id == "recurring-hard-1" and .classification.category == "recurring_hard_obligation" and .classification.confidence == "high" and .past_due_raw == true and .deadline.date == "2026-04-30" and .decision_source == "explicit_deadline" and .skip_reason == "deadline_present" and .evidence.explicit_deadline == true)' 'recurring hard obligation preserves due cadence and deadline cutoff semantics'
 assert_jq "$classified" '.tasks[] | select(.id == "bill-1" and .classification.category == "hard_deadline" and .past_due_raw == true)' 'bill-like task classified as hard deadline'
 assert_jq "$classified" '.tasks[] | select(.id == "surface-1" and .past_due_raw == true and .classification.category != "hard_deadline")' 'generic past-date task is not hard deadline'
 assert_jq "$classified" '.tasks[] | select(.id == "ambiguous-1" and .classification.category == "ambiguous" and .classification.confidence == "low")' 'missing evidence is ambiguous'

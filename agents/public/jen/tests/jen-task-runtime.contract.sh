@@ -287,9 +287,10 @@ assert_eq "$invalid_description_status" "1" 'update-description without descript
 assert_jq "$invalid_description" '.command == "update-description" and .status == "failed" and .failure_class == "invalid_argument"' 'update-description invalid shape'
 
 capture_json=$(JEN_IDEMPOTENCY_DIR="$idem_dir/capture" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=dummy "$capture" --content "Test task" --due tomorrow)
-assert_jq "$capture_json" '.command == "capture-task" and .status == "ok" and .due_applied == true' 'capture wrapper delegates to runtime'
-assert_jq "$capture_json" '.operation == "add-task-and-update-due" and .task.due.string == "tomorrow"' 'capture due verification'
-assert_jq "$capture_json" '.mutation.gateway_plan.target_system == "todoist" and .mutation.gateway_plan.normalized_hash and .mutation.idempotency.check_status == "miss"' 'capture includes mutation gateway/idempotency metadata'
+capture_runtime_json=$(jq -c 'if .command == "capture-task" then . else .detail.runtime end' <<<"$capture_json")
+assert_jq "$capture_runtime_json" '.command == "capture-task" and .status == "ok" and .due_applied == true' 'capture wrapper delegates to runtime'
+assert_jq "$capture_runtime_json" '.operation == "add-task-and-update-due" and .task.due.string == "tomorrow"' 'capture due verification'
+assert_jq "$capture_runtime_json" '.mutation.gateway_plan.target_system == "todoist" and .mutation.gateway_plan.normalized_hash and .mutation.idempotency.check_status == "miss"' 'capture includes mutation gateway/idempotency metadata'
 
 recurring_update_log="$mock_dir/recurring-update-due.log"
 recurring_update=$(JEN_IDEMPOTENCY_DIR="$idem_dir/recurring-update-due" JEN_TASK_RUNTIME_TEST_LOG="$recurring_update_log" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=*** "$runtime" update-due --task-id rec-1 --due 'todo 7 dias')
@@ -297,7 +298,8 @@ assert_jq "$recurring_update" '.status == "ok" and .command == "update-due" and 
 assert_eq "$(grep -c '^update-due rec-1 todo 7 dias$' "$recurring_update_log")" "1" 'recurring due update reaches adapter once'
 
 capture_duplicate=$(JEN_IDEMPOTENCY_DIR="$idem_dir/capture" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=dummy "$capture" --content "Test task" --due tomorrow)
-assert_jq "$capture_duplicate" '.status == "ok" and .mutation.idempotency.check_status == "miss"' 'duplicate verified replay returns stored original output without re-mutating metadata shape'
+capture_duplicate_runtime=$(jq -c 'if .command == "capture-task" then . else .detail.runtime end' <<<"$capture_duplicate")
+assert_jq "$capture_duplicate_runtime" '.status == "ok" and .mutation.idempotency.check_status == "miss"' 'duplicate verified replay returns stored original output without re-mutating metadata shape'
 
 duplicate_due_log="$mock_dir/duplicate-due.log"
 set +e

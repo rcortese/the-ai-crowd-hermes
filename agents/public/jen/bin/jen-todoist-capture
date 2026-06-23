@@ -1,14 +1,188 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CONTRACT_VERSION="jen-todoist-capture.v2"
 workspace_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-runtime="$workspace_root/bin/jen-task-runtime"
+runtime="${JEN_TODOIST_CAPTURE_TASK_RUNTIME:-$workspace_root/bin/jen-task-runtime}"
+# shellcheck source=../lib/jen-envelope-emit.sh
+source "$workspace_root/lib/jen-envelope-emit.sh"
+
+json_out() {
+  jen_json_out "$1"
+}
+
+normalized_failure_class() {
+  case "$1" in
+    none|ambiguity|policy_blocked|technical_failure|privacy_redaction)
+      printf '%s\n' "$1"
+      ;;
+    invalid_argument)
+      printf 'policy_blocked\n'
+      ;;
+    *)
+      printf 'technical_failure\n'
+      ;;
+  esac
+}
+
+sanitize_text() {
+  sed -E 's/FAKE_[A-Z0-9_]+/[redacted]/g' <<<"${1:-}"
+}
+
+sanitize_json() {
+  jq -c 'walk(if type == "string" then gsub("FAKE_[A-Z0-9_]+";"[redacted]") else . end)' <<<"${1:-null}"
+}
+
+emit_failed() {
+  local raw_failure_class="$1"
+  local detail_text="${2:-}"
+  local failure_class handoff_id detail_json extra_json message
+  failure_class="$(normalized_failure_class "$raw_failure_class")"
+  message="I couldn't complete the Todoist action because of a technical issue. I'm handing this to Moss."
+  if [[ "$failure_class" == "policy_blocked" ]]; then
+    message="I didn't change Todoist because this request falls outside the approved wrapper contract."
+  fi
+  handoff_id=""
+  if [[ "$failure_class" == "technical_failure" ]]; then
+    handoff_id="$(jen_new_handoff_id "jen-todoist-capture")"
+  fi
+  detail_json="$(jq -nc \
+    --arg wrapper_name jen-todoist-capture \
+    --arg raw_failure_class "$raw_failure_class" \
+    --arg safe_summary "$message" \
+    --arg detail_text "$(sanitize_text "$detail_text")" \
+    --arg mutation_state unknown \
+    '{wrapper_name:$wrapper_name,mutation_attempted:false,mutation_state:$mutation_state,safe_summary:$safe_summary,detail:(if $detail_text != "" then $detail_text else null end),raw_failure_class:$raw_failure_class}')"
+  extra_json='{"handoff_required":true}'
+  json_out "$(jen_emit_envelope "$CONTRACT_VERSION" failed failed "$failure_class" "$( [[ "$failure_class" == "policy_blocked" ]] && printf explain_policy_boundary || printf stop_and_handoff_to_moss )" "$message" "$handoff_id" "$detail_json" "$extra_json")"
+  exit 1
+}
+
+valid_classification() {
+  case "$1" in
+    NOT_A_TASK|AMBIGUOUS|CANONICAL_TASK_UPDATE) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+run_live_runtime_json() {
+  local output_file="$1"
+  shift
+  set +e
+  "$runtime" "$@" >"$output_file" 2>/dev/null
+  local status=$?
+  set -e
+  return "$status"
+}
+
+build_success_envelope() {
+  local outcome="$1"
+  local action="$2"
+  local mode="$3"
+  local payload_json="$4"
+  local runtime_json="${5:-null}"
+  local result jen_action operator_message detail_json extra_json
+
+  result="changed"
+  jen_action="acknowledge_changed"
+  case "$action" in
+    update-deadline|update-due|reconcile-existing)
+      operator_message="I found the existing task and updated it."
+      ;;
+    *)
+      operator_message="I added that to Todoist."
+      ;;
+  esac
+
+  detail_json="$(jq -nc \
+    --arg wrapper_name jen-todoist-capture \
+    --arg mode "$mode" \
+    --arg outcome "$outcome" \
+    --arg action "$action" \
+    --arg result "$result" \
+    --argjson payload "$payload_json" \
+    --argjson runtime "$runtime_json" \
+    '{wrapper_name:$wrapper_name,mode:($mode|gsub("-";"_")),outcome:($outcome|gsub("-";"_")),action:$action,mutation_attempted:($mode == "live"),mutation_state:$result,payload:$payload,runtime:(if $runtime == null then null else $runtime end)}')"
+
+  extra_json="$(jq -nc \
+    --arg classification "$(jq -r '.classification // empty' <<<"$payload_json")" \
+    --arg outcome "$outcome" \
+    --arg action "$action" \
+    --arg mode "$mode" \
+    --argjson payload "$payload_json" \
+    '{classification:(if $classification != "" then $classification else null end),outcome:($outcome|gsub("-";"_")),action:$action,mode:($mode|gsub("-";"_")),would_write:($mode == "live"),existing_item_id:($payload.existing_task_id // null),payload:$payload}')"
+
+  jen_emit_envelope "$CONTRACT_VERSION" ok "$result" none "$jen_action" "$operator_message" "" "$detail_json" "$extra_json"
+}
+
+classification_json() {
+  local classification="$1"
+  local outcome="$2"
+  local rationale="$3"
+  local payload_json="$4"
+  local failure_class jen_action operator_message detail_json extra_json
+
+  case "$classification" in
+    NOT_A_TASK)
+      failure_class="none"
+      jen_action="acknowledge_no_change"
+      operator_message="I kept this chat-local and did not write anything to Todoist."
+      ;;
+    AMBIGUOUS)
+      failure_class="ambiguity"
+      jen_action="ask_user_clarification"
+      operator_message="I haven't written anything to Todoist yet because the task details are still ambiguous."
+      ;;
+    *)
+      failure_class="none"
+      jen_action="acknowledge_no_change"
+      operator_message="I didn't change Todoist."
+      ;;
+  esac
+
+  detail_json="$(jq -nc \
+    --arg wrapper_name jen-todoist-capture \
+    --arg classification "$classification" \
+    --arg rationale "$rationale" \
+    --argjson payload "$payload_json" \
+    '{wrapper_name:$wrapper_name,mode:"dry_run",classification:$classification,rationale:(if $rationale != "" then $rationale else null end),mutation_attempted:false,mutation_state:"no_change",payload:$payload}')"
+
+  extra_json="$(jq -nc \
+    --arg classification "$classification" \
+    --arg outcome "$outcome" \
+    --arg rationale "$rationale" \
+    --argjson payload "$payload_json" \
+    '{classification:$classification,outcome:$outcome,rationale:(if $rationale != "" then $rationale else null end),would_write:false,payload:$payload,mode:"dry_run"}')"
+
+  jen_emit_envelope "$CONTRACT_VERSION" ok no_change "$failure_class" "$jen_action" "$operator_message" "" "$detail_json" "$extra_json"
+}
 
 content=""
 due=""
+deadline=""
+classification=""
+existing_task_id=""
+input_file=""
+dry_run=false
+technical_failure=false
+json_mode=false
+debug_mode=false
+verbose_mode=false
 
 while (($#)); do
   case "$1" in
+    --json)
+      json_mode=true
+      shift
+      ;;
+    --debug)
+      debug_mode=true
+      shift
+      ;;
+    --verbose)
+      verbose_mode=true
+      shift
+      ;;
     --content)
       content="${2:-}"
       shift 2
@@ -17,10 +191,37 @@ while (($#)); do
       due="${2:-}"
       shift 2
       ;;
+    --deadline|--deadline-date)
+      deadline="${2:-}"
+      shift 2
+      ;;
+    --class|--classification)
+      classification="${2:-}"
+      shift 2
+      ;;
+    --existing-task-id)
+      existing_task_id="${2:-}"
+      shift 2
+      ;;
+    --input)
+      input_file="${2:-}"
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    --technical-failure)
+      technical_failure=true
+      shift
+      ;;
     --help|-h)
       cat <<'USAGE'
 Usage:
   jen-todoist-capture --content "task text" [--due "tomorrow"]
+  jen-todoist-capture --dry-run --input fixture.json
+  jen-todoist-capture --class CANONICAL_TASK_UPDATE --content "task text" [--due "tomorrow"]
+  jen-todoist-capture --class CANONICAL_TASK_UPDATE --existing-task-id task-123 [--due "tomorrow" | --deadline 2026-06-20]
 USAGE
       exit 0
       ;;
@@ -29,19 +230,105 @@ USAGE
         content="$1"
         shift
       else
-        printf 'unexpected argument: %s\n' "$1" >&2
-        exit 2
+        emit_failed invalid_argument "unexpected argument: $1"
       fi
       ;;
   esac
 done
 
-if [[ -z "$content" ]]; then
-  "$runtime" capture-task
-else
-  if [[ -n "$due" ]]; then
-    "$runtime" capture-task --content "$content" --due "$due"
-  else
-    "$runtime" capture-task --content "$content"
+if [[ -n "$input_file" ]]; then
+  [[ -f "$input_file" ]] || emit_failed invalid_argument "missing input file"
+  jq empty "$input_file" >/dev/null 2>&1 || emit_failed invalid_argument "input file is not valid JSON"
+  [[ -n "$classification" ]] || classification="$(jq -r '.classification // .class // empty' "$input_file")"
+  [[ -n "$content" ]] || content="$(jq -r '.content // empty' "$input_file")"
+  [[ -n "$due" ]] || due="$(jq -r '.due // .due_string // empty' "$input_file")"
+  [[ -n "$deadline" ]] || deadline="$(jq -r '.deadline // .deadline_date // empty' "$input_file")"
+  [[ -n "$existing_task_id" ]] || existing_task_id="$(jq -r '.existing_task_id // .existing_item_id // .task_id // empty' "$input_file")"
+  if [[ "$technical_failure" == false ]]; then
+    technical_failure="$(jq -r '(.technical_failure // .simulate_failure // false) | if . then "true" else "false" end' "$input_file")"
   fi
 fi
+
+if [[ "$dry_run" == true && -z "$input_file" && -z "$classification" && -z "$content" && -z "$existing_task_id" ]]; then
+  emit_failed invalid_argument "input required for dry-run"
+fi
+
+payload_json="$(jq -nc \
+  --arg content "$content" \
+  --arg due "$due" \
+  --arg deadline "$deadline" \
+  --arg classification "$classification" \
+  --arg existing_task_id "$existing_task_id" \
+  '{content:(if $content != "" then $content else null end),due:(if $due != "" then $due else null end),deadline:(if $deadline != "" then $deadline else null end),classification:(if $classification != "" then $classification else null end),existing_task_id:(if $existing_task_id != "" then $existing_task_id else null end)}')"
+emitted_payload_json="$(sanitize_json "$payload_json")"
+
+if [[ -n "$classification" ]]; then
+  valid_classification "$classification" || emit_failed invalid_argument "invalid classification"
+  case "$classification" in
+    NOT_A_TASK)
+      json_out "$(classification_json "$classification" keep_chat_local "chat-local exchange" "$emitted_payload_json")"
+      exit 0
+      ;;
+    AMBIGUOUS)
+      json_out "$(classification_json "$classification" clarify_or_not_written_yet "bounded clarification required" "$emitted_payload_json")"
+      exit 0
+      ;;
+    CANONICAL_TASK_UPDATE)
+      ;;
+  esac
+fi
+
+if [[ "$technical_failure" == true ]]; then
+  emit_failed wrapper_unavailable "fixture requested technical failure"
+fi
+
+if [[ "$dry_run" == true ]]; then
+  if [[ -n "$existing_task_id" && -n "$deadline" ]]; then
+    json_out "$(build_success_envelope would-update update-deadline dry-run "$emitted_payload_json")"
+  elif [[ -n "$existing_task_id" && -n "$due" ]]; then
+    json_out "$(build_success_envelope would-update update-due dry-run "$emitted_payload_json")"
+  elif [[ -n "$existing_task_id" ]]; then
+    json_out "$(build_success_envelope would-update reconcile-existing dry-run "$emitted_payload_json")"
+  else
+    [[ -n "$content" ]] || emit_failed invalid_argument "content required for create dry-run"
+    json_out "$(build_success_envelope would-create capture-task dry-run "$emitted_payload_json")"
+  fi
+  exit 0
+fi
+
+runtime_file=$(mktemp)
+trap 'rm -f "$runtime_file"' EXIT
+
+if [[ -n "$existing_task_id" && -n "$deadline" ]]; then
+  runtime_status=0
+  run_live_runtime_json "$runtime_file" update-deadline --task-id "$existing_task_id" --deadline "$deadline" || runtime_status=$?
+elif [[ -n "$existing_task_id" && -n "$due" ]]; then
+  runtime_status=0
+  run_live_runtime_json "$runtime_file" update-due --task-id "$existing_task_id" --due "$due" || runtime_status=$?
+else
+  [[ -n "$content" ]] || emit_failed invalid_argument "content required for capture"
+  runtime_status=0
+  if [[ -n "$due" ]]; then
+    run_live_runtime_json "$runtime_file" capture-task --content "$content" --due "$due" || runtime_status=$?
+  else
+    run_live_runtime_json "$runtime_file" capture-task --content "$content" || runtime_status=$?
+  fi
+fi
+
+if [[ "$runtime_status" != "0" ]]; then
+  runtime_failure_class="$(jq -r '.failure_class // empty' "$runtime_file" 2>/dev/null || true)"
+  [[ -n "$runtime_failure_class" ]] || runtime_failure_class="runtime_failure"
+  emit_failed "$runtime_failure_class" "runtime wrapper failed"
+fi
+runtime_output="$(cat "$runtime_file")"
+runtime_output="$(sanitize_json "$runtime_output")"
+
+if [[ -n "$existing_task_id" && -n "$deadline" ]]; then
+  json_out "$(build_success_envelope updated update-deadline live "$emitted_payload_json" "$runtime_output")"
+  exit 0
+elif [[ -n "$existing_task_id" && -n "$due" ]]; then
+  json_out "$(build_success_envelope updated update-due live "$emitted_payload_json" "$runtime_output")"
+  exit 0
+fi
+
+json_out "$(build_success_envelope created capture-task live "$emitted_payload_json" "$runtime_output")"
