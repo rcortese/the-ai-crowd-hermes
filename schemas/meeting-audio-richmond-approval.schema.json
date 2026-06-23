@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Richmond meeting corpus approval",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "case_ref",
+    "corpus_ref",
+    "approval_status",
+    "allowed_consumers",
+    "forbidden_modes",
+    "raw_transcript_shared",
+    "private_path_shared"
+  ],
+  "properties": {
+    "schema_version": {
+      "enum": [
+        "richmond-meeting-corpus-approval/v0.1",
+        "richmond-meeting-corpus-approval/v0.2"
+      ]
+    },
+    "case_ref": {"type": "string"},
+    "corpus_ref": {"type": "string"},
+    "approval_status": {"enum": ["approved", "rejected", "needs_remediation"]},
+    "approved_packet_level": {"type": "string"},
+    "allowed_answer_modes": {"type": "array", "items": {"type": "string"}},
+    "allowed_consumers": {"type": "array", "items": {"type": "string"}},
+    "speaker_identity_status": {"enum": ["mapped", "partial_mapping", "unmapped_clusters_or_unknown"]},
+    "speaker_name_claims_allowed": {"type": "boolean"},
+    "forbidden_modes": {"type": "array", "items": {"type": "string"}},
+    "raw_transcript_shared": {"const": false},
+    "private_path_shared": {"const": false},
+    "speaker_names_shared": {"const": false}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"schema_version": {"const": "richmond-meeting-corpus-approval/v0.2"}}},
+      "then": {
+        "required": ["speaker_identity_status", "speaker_name_claims_allowed", "allowed_answer_modes", "speaker_names_shared"]
+      }
+    }
+  ]
+}

@@ -15,3 +15,8 @@ Richmond intentionally has a different runtime from Moss:
 ## Work posture
 
 Use prepared docs, source captures, and packet contracts. Keep ArchiveOps stewardship distinct from Moss technical execution.
+
+
+## Meeting-audio corpus approval
+
+For Roy meeting-audio cases, Richmond reviews corpus manifests/provenance/checksum refs and emits an approval/rejection/remediation artifact before The Elders may query the private full corpus. Richmond does not authorize raw transcript sharing, source deletion/move/archive, or external task creation by default.

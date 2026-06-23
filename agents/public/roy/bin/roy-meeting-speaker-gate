@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Roy speaker-awareness gate for meeting-audio corpora.
+
+Reads private corpus metadata and emits a status-only shared gate result. When
+speaker mapping is incomplete it also writes a private minimal human question
+packet. Shared output never includes transcript text, private paths, or speaker
+labels.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+
+def fail(message: str, code: int = 2) -> None:
+    print(json.dumps({"status": "error", "error": message}, sort_keys=True))
+    raise SystemExit(code)
+
+
+def write_json(path: Path, obj: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        fail(f"{path.name} is not a JSON object")
+    return data
+
+
+def cluster_ids(applied_map: dict[str, Any]) -> list[str]:
+    clusters = applied_map.get("clusters")
+    if isinstance(clusters, dict):
+        return sorted(str(k) for k in clusters)
+    mappings = applied_map.get("mappings")
+    if isinstance(mappings, list):
+        return sorted(str(m.get("speaker_cluster")) for m in mappings if isinstance(m, dict) and m.get("speaker_cluster"))
+    return []
+
+
+def write_private_question(path: Path, case_ref: str, audio_ref: str, clusters: list[str], identity_status: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Speaker mapping question — private",
+        "",
+        f"case_ref: `{case_ref}`",
+        f"audio_ref: `{audio_ref}`",
+        f"current_status: `{identity_status}`",
+        "",
+        "Please map the observed speaker clusters to meeting participants, or answer `unknown` for any cluster you cannot identify.",
+        "Do not infer identities from topic/order alone; use human recognition or explicit operator knowledge.",
+        "",
+        "Required response shape:",
+        "",
+        "```json",
+        "{",
+        "  \"mappings\": [",
+        "    {\"speaker_cluster\": \"SPEAKER_00\", \"speaker_label\": \"<participant or unknown>\", \"confidence\": \"human_confirmed|operator_asserted|low_confidence\"}",
+        "  ]",
+        "}",
+        "```",
+        "",
+        "Observed clusters:",
+    ]
+    if clusters:
+        lines.extend(f"- `{cluster}`" for cluster in clusters)
+    else:
+        lines.append("- No named clusters found; diarization may need remediation.")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Gate speaker-aware meeting-audio corpus use")
+    ap.add_argument("--corpus-dir", required=True)
+    ap.add_argument("--case-ref", required=True)
+    ap.add_argument("--audio-ref", required=True)
+    ap.add_argument("--private-output-dir", required=True)
+    ap.add_argument("--sanitized-status", required=True)
+    args = ap.parse_args()
+
+    corpus_dir = Path(args.corpus_dir).resolve()
+    manifest = load_json(corpus_dir / "corpus-manifest.json")
+    if manifest.get("case_ref") != args.case_ref:
+        fail("case_ref mismatch")
+    if manifest.get("audio_ref") != args.audio_ref:
+        fail("audio_ref mismatch")
+    applied_map_path = corpus_dir / "speaker-map.applied.private.json"
+    applied_map = load_json(applied_map_path) if applied_map_path.exists() else {}
+
+    speaker_identity_status = str(manifest.get("speaker_identity_status") or "unmapped_clusters_or_unknown")
+    speaker_names_mapped = bool(manifest.get("speaker_names_mapped"))
+    mapped_count = int(manifest.get("mapped_speaker_cluster_count") or 0)
+    unmapped_count = int(manifest.get("unmapped_speaker_cluster_count") or 0)
+    unknown_count = int(manifest.get("unknown_speaker_segment_count") or 0)
+    cluster_count = int(manifest.get("speaker_cluster_count") or 0)
+    claims_allowed_pre_richmond = bool(speaker_names_mapped and speaker_identity_status == "mapped" and unmapped_count == 0 and unknown_count == 0)
+
+    private_output_dir = Path(args.private_output_dir).resolve()
+    question_ref = None
+    if not claims_allowed_pre_richmond:
+        question_path = private_output_dir / "speaker-map-question.private.md"
+        write_private_question(question_path, args.case_ref, args.audio_ref, cluster_ids(applied_map), speaker_identity_status)
+        question_ref = "speaker_map_question_private"
+
+    status = {
+        "schema_version": "roy-meeting-speaker-gate-status/v0.1",
+        "status": "ok",
+        "case_ref": args.case_ref,
+        "audio_ref": args.audio_ref,
+        "corpus_ref": manifest.get("corpus_ref"),
+        "speaker_cluster_count": cluster_count,
+        "mapped_speaker_cluster_count": mapped_count,
+        "unmapped_speaker_cluster_count": unmapped_count,
+        "unknown_speaker_segment_count": unknown_count,
+        "speaker_identity_status": speaker_identity_status,
+        "speaker_names_mapped": speaker_names_mapped,
+        "speaker_name_claims_allowed_pre_richmond": claims_allowed_pre_richmond,
+        "requires_human_speaker_mapping": not claims_allowed_pre_richmond,
+        "private_question_ref": question_ref,
+        "raw_transcript_shared": False,
+        "private_path_shared": False,
+        "speaker_names_shared": False,
+        "created_at_epoch": int(time.time()),
+    }
+    write_json(Path(args.sanitized_status), status)
+    print(json.dumps(status, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

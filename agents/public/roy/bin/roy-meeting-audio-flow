@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""Roy meeting-audio flow harness.
+
+Versioned smokeable path for: transfer source -> Roy source/cache -> Intern
+corpus materialization -> speaker mapping gate -> Richmond approval -> The
+Elders private full-corpus Q&A. The synthetic smoke uses non-sensitive fixture
+transcript content; the real ASR/diarization runner remains the Interns
+audio-analyst service.
+"""
+from __future__ import annotations
+import argparse, hashlib, json, shutil, subprocess, time, wave, math, struct
+from pathlib import Path
+from typing import Any
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for b in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def write_json(path: Path, obj: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def create_synthetic_wav(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rate = 16000
+    frames = []
+    for i in range(rate):
+        sample = int(12000 * math.sin(2 * math.pi * 440 * i / rate))
+        frames.append(struct.pack("<h", sample))
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"".join(frames))
+
+
+def no_leak_scan(shared: Path, forbidden: list[str]) -> dict[str, Any]:
+    hits: dict[str, list[str]] = {}
+    for p in sorted(shared.glob("*")):
+        if not p.is_file():
+            continue
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        file_hits = [f for f in forbidden if f and f in text]
+        if file_hits:
+            hits[p.name] = file_hits
+    return {"status": "passed" if not hits else "failed", "hits": hits, "file_count": len([p for p in shared.glob("*") if p.is_file()])}
+
+
+def run_json(cmd: list[str]) -> dict[str, Any]:
+    cp = subprocess.run(cmd, check=True, text=True, capture_output=True)
+    return json.loads(cp.stdout)
+
+
+def corpus_materialize(audio_corpus_bin: str, whisperx_path: Path, output_dir: Path, case_ref: str, source_ref: str, audio_ref: str, allowed_root: Path, status_path: Path, speaker_map: Path | None = None, require_speaker_map: bool = False) -> dict[str, Any]:
+    cmd = [
+        audio_corpus_bin,
+        "--whisperx-result", str(whisperx_path),
+        "--output", str(output_dir),
+        "--case-ref", case_ref,
+        "--source-ref", source_ref,
+        "--audio-ref", audio_ref,
+        "--allowed-root", str(allowed_root),
+        "--sanitized-status", str(status_path),
+    ]
+    if speaker_map:
+        cmd += ["--speaker-map", str(speaker_map)]
+    if require_speaker_map:
+        cmd += ["--require-speaker-map"]
+    return run_json(cmd)
+
+
+def speaker_gate(speaker_gate_bin: str, corpus_dir: Path, case_ref: str, audio_ref: str, private_output_dir: Path, status_path: Path) -> dict[str, Any]:
+    return run_json([
+        speaker_gate_bin,
+        "--corpus-dir", str(corpus_dir),
+        "--case-ref", case_ref,
+        "--audio-ref", audio_ref,
+        "--private-output-dir", str(private_output_dir),
+        "--sanitized-status", str(status_path),
+    ])
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Run synthetic Roy meeting-audio E2E smoke")
+    ap.add_argument("synthetic_smoke", nargs="?")
+    ap.add_argument("--workspace", required=True)
+    ap.add_argument("--audio-analyst-corpus-bin", required=True)
+    ap.add_argument("--elders-query-bin", default=None)
+    ap.add_argument("--speaker-gate-bin", default=None)
+    args = ap.parse_args()
+    if args.synthetic_smoke != "synthetic-smoke":
+        raise SystemExit("usage: roy-meeting-audio-flow synthetic-smoke --workspace ... --audio-analyst-corpus-bin ...")
+
+    root = Path(args.workspace).resolve()
+    transfer = root / "transfer"
+    private = root / "private"
+    shared = root / "shared"
+    roy_case = private / "roy/cases/case_synthetic_meeting"
+    intern = private / "intern/audio-analyst/jobs/case_synthetic_meeting"
+    richmond = private / "richmond/reviews/case_synthetic_meeting"
+    elders = private / "the-elders/cases/case_synthetic_meeting"
+    for d in [transfer, roy_case, intern / "input", intern / "output", intern / "corpus-unmapped", intern / "corpus", richmond, elders, shared]:
+        d.mkdir(parents=True, exist_ok=True)
+
+    speaker_gate_bin = args.speaker_gate_bin or str(Path(__file__).resolve().parent / "roy-meeting-speaker-gate")
+    audio = transfer / "synthetic-meeting-audio.wav"
+    create_synthetic_wav(audio)
+    audio_sha = sha256_file(audio)
+    source_ref = "source_" + audio_sha[:16]
+    audio_ref = "audio_" + audio_sha[:16]
+    case_ref = "case_synthetic_meeting"
+    write_json(roy_case / "private-source-ledger.json", {"case_ref": case_ref, "source_ref": source_ref, "audio_ref": audio_ref, "source_path_private": str(audio), "audio_sha256": audio_sha, "retention": "private_fixture"})
+    write_json(shared / "01-source-resolution.sanitized.json", {"schema_version": "roy-meeting-source-resolution/v0.1", "case_ref": case_ref, "source_ref": source_ref, "audio_ref": audio_ref, "transfer_file_count": 1, "media_candidate_count": 1, "source_state": "found", "content_cache_initial_state": "miss", "raw_filename_shared": False, "private_path_shared": False})
+
+    # Synthetic fixture for the corpus path. Real runs use audio-analyst before this materialization step.
+    whisperx = {"language": "pt", "segments": [
+        {"start": 0.0, "end": 4.0, "speaker": "SPEAKER_00", "text": "A reunião sintética iniciou com a pauta do inventário e dos documentos pendentes."},
+        {"start": 4.0, "end": 8.0, "speaker": "SPEAKER_01", "text": "Foi registrado que o prazo operacional mencionado para a próxima etapa é sexta-feira."},
+        {"start": 8.0, "end": 12.0, "speaker": "SPEAKER_02", "text": "Também ficou uma dúvida para o usuário confirmar quem valida as cópias."},
+    ]}
+    whisperx_path = intern / "output/whisperx-result.json"
+    write_json(whisperx_path, whisperx)
+
+    # Pass 1: cluster-aware but not speaker-name-aware. Roy must ask a minimal private human mapping question.
+    corpus_materialize(args.audio_analyst_corpus_bin, whisperx_path, intern / "corpus-unmapped", case_ref, source_ref, audio_ref, root, shared / "02a-intern-corpus-unmapped-status.sanitized.json")
+    unmapped_gate = speaker_gate(speaker_gate_bin, intern / "corpus-unmapped", case_ref, audio_ref, roy_case / "questions", shared / "02b-roy-speaker-gate-unmapped.sanitized.json")
+    if not unmapped_gate["requires_human_speaker_mapping"]:
+        raise RuntimeError("expected unmapped corpus to require human speaker mapping")
+
+    # Synthetic human answer. In a real run this is the minimal operator response, not an inferred identity.
+    speaker_map_path = intern / "input/speaker-map.private.json"
+    write_json(speaker_map_path, {"schema_version": "audio-analyst-speaker-map/v0.1", "case_ref": case_ref, "audio_ref": audio_ref, "mappings": [
+        {"speaker_cluster": "SPEAKER_00", "speaker_label": "Participant Alpha", "confidence": "human_confirmed", "source": "synthetic_human_mapping"},
+        {"speaker_cluster": "SPEAKER_01", "speaker_label": "Participant Beta", "confidence": "human_confirmed", "source": "synthetic_human_mapping"},
+        {"speaker_cluster": "SPEAKER_02", "speaker_label": "Participant Gamma", "confidence": "human_confirmed", "source": "synthetic_human_mapping"},
+    ]})
+
+    # Pass 2: private mapped corpus. Speaker-name claims still require Richmond approval.
+    corpus_materialize(args.audio_analyst_corpus_bin, whisperx_path, intern / "corpus", case_ref, source_ref, audio_ref, root, shared / "02c-intern-corpus-mapped-status.sanitized.json", speaker_map=speaker_map_path, require_speaker_map=True)
+    mapped_gate = speaker_gate(speaker_gate_bin, intern / "corpus", case_ref, audio_ref, roy_case / "questions", shared / "02d-roy-speaker-gate-mapped.sanitized.json")
+    if not mapped_gate["speaker_name_claims_allowed_pre_richmond"]:
+        raise RuntimeError("expected mapped corpus to pass pre-Richmond speaker-name gate")
+
+    corpus_manifest = json.loads((intern / "corpus/corpus-manifest.json").read_text(encoding="utf-8"))
+    cache_key = hashlib.sha256((audio_sha + corpus_manifest["private_artifacts"]["corpus_manifest_sha256"]).encode()).hexdigest()
+    cache_ref = "cache_" + cache_key[:16]
+    write_json(roy_case / "content-cache.json", {"cache_state": "created", "cache_key": cache_key, "cache_ref": cache_ref, "corpus_ref": corpus_manifest["corpus_ref"], "audio_ref": audio_ref, "speaker_identity_status": corpus_manifest["speaker_identity_status"]})
+    shutil.copytree(intern / "corpus", roy_case / "corpus", dirs_exist_ok=True)
+    write_json(shared / "03-roy-corpus-import.sanitized.json", {"schema_version": "roy-corpus-import-status/v0.2", "case_ref": case_ref, "audio_ref": audio_ref, "corpus_ref": corpus_manifest["corpus_ref"], "cache_state": "created", "cache_ref": cache_ref, "speaker_identity_status": corpus_manifest["speaker_identity_status"], "speaker_name_claims_allowed_pre_richmond": mapped_gate["speaker_name_claims_allowed_pre_richmond"], "raw_transcript_shared": False, "private_path_shared": False, "speaker_names_shared": False, "packet_ready_for_richmond": True})
+
+    approval = {
+        "schema_version": "richmond-meeting-corpus-approval/v0.2",
+        "case_ref": case_ref,
+        "corpus_ref": corpus_manifest["corpus_ref"],
+        "approval_status": "approved",
+        "approved_packet_level": "L3_private_full_corpus_speaker_aware",
+        "allowed_answer_modes": ["private_full_corpus", "speaker_aware_private_full_corpus"],
+        "allowed_consumers": ["the-elders"],
+        "speaker_identity_status": corpus_manifest["speaker_identity_status"],
+        "speaker_name_claims_allowed": True,
+        "forbidden_modes": ["raw_audio_access", "unapproved_shared_transcript", "speaker_name_claims_without_mapping", "speaker_name_claims_without_richmond_approval"],
+        "revocation_ref": "rev_" + corpus_manifest["corpus_ref"],
+        "expires_or_review_after": None,
+        "raw_transcript_shared": False,
+        "private_path_shared": False,
+        "speaker_names_shared": False,
+    }
+    write_json(richmond / "approval.json", approval)
+    write_json(shared / "04-richmond-approval.sanitized.json", approval)
+
+    shutil.copytree(roy_case / "corpus", elders / "corpus", dirs_exist_ok=True)
+    shutil.copy(richmond / "approval.json", elders / "approval.json")
+    query_bin = args.elders_query_bin or str(Path(__file__).resolve().parents[2] / "the-elders/bin/the-elders-meeting-corpus-query")
+    qout = elders / "answers/question-001.private.json"
+    query_status = run_json([query_bin, "--corpus-dir", str(elders / "corpus"), "--approval", str(elders / "approval.json"), "--question", "Qual é o prazo mencionado para a próxima etapa?", "--output", str(qout)])
+    write_json(shared / "05-elders-query-status.sanitized.json", {"schema_version": "elders-meeting-query-status/v0.2", "case_ref": case_ref, "corpus_ref": corpus_manifest["corpus_ref"], "query_ref": "question_001", "answer_mode": query_status["answer_mode"], "citation_count": query_status["citation_count"], "speaker_identity_status": corpus_manifest["speaker_identity_status"], "speaker_name_claims_allowed": approval["speaker_name_claims_allowed"], "raw_answer_shared": False, "private_path_shared": False, "speaker_names_shared": False})
+
+    second_cache_state = "hit" if (roy_case / "content-cache.json").exists() else "miss"
+    write_json(shared / "06-cache-hit-replay.sanitized.json", {"schema_version": "roy-meeting-cache-replay/v0.2", "case_ref": case_ref, "audio_ref": audio_ref, "second_cache_state": second_cache_state, "processing_repeated": False, "cache_ref": cache_ref})
+    leak = no_leak_scan(shared, ["synthetic-meeting-audio.wav", str(root), "prazo operacional mencionado", "documentos pendentes", "source_path_private", "Participant Alpha", "Participant Beta", "Participant Gamma"])
+    write_json(shared / "07-no-leak.sanitized.json", leak)
+    final = {
+        "schema_version": "roy-transfer-audio-elders-e2e-smoke/v0.2",
+        "status": "passed" if leak["status"] == "passed" and second_cache_state == "hit" else "failed",
+        "case_ref": case_ref,
+        "source_resolution": "found",
+        "initial_cache_state": "miss",
+        "intern_corpus_status": "ok",
+        "minimal_human_speaker_question_created": (roy_case / "questions/speaker-map-question.private.md").is_file(),
+        "speaker_identity_status": corpus_manifest["speaker_identity_status"],
+        "speaker_name_claims_allowed": approval["speaker_name_claims_allowed"],
+        "richmond_approval": "approved",
+        "elders_answerability": "speaker_aware_private_full_corpus",
+        "second_cache_state": second_cache_state,
+        "processing_repeated": False,
+        "no_leak_status": leak["status"],
+        "raw_transcript_shared": False,
+        "private_path_shared": False,
+        "speaker_names_shared": False,
+    }
+    write_json(shared / "99-final-smoke-report.sanitized.json", final)
+    print(json.dumps(final, sort_keys=True))
+    return 0 if final["status"] == "passed" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -14,3 +14,8 @@ This runtime is intentionally narrow.
 - No writes by default.
 - No messaging.
 - No shell/host operations beyond local packet inspection if explicitly enabled later.
+
+
+## Meeting-audio private corpus Q&A
+
+The Elders may answer meeting-content questions only from a Richmond-approved private corpus. Use `the-elders-meeting-corpus-query` or the equivalent local packet/corpus inspection path; do not browse transfer, raw audio, unapproved transcripts, sidecar workspaces, or shared logs.
