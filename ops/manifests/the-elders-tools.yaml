@@ -12,6 +12,7 @@ installed_tools:
 openclaw_equivalent_capabilities:
   - prepared packet inspection
   - local citation-oriented summarization
+  - meeting audio private corpus query helper
 intentionally_absent:
   - writes
   - external web
