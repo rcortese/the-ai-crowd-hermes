@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+LIB_DIR = Path(__file__).resolve().parents[1] / "lib"
+if str(LIB_DIR) not in sys.path:
+    sys.path.insert(0, str(LIB_DIR))
+
+from the_ai_crowd_handoff import ValidationError, build_envelope, emit  # noqa: E402
+
+
+def parse_artifact_ref(raw: str) -> dict[str, str]:
+    item: dict[str, str] = {}
+    for pair in raw.split(","):
+        if "=" not in pair:
+            raise ValidationError(f"artifact-ref must use key=value pairs: {raw!r}")
+        key, value = pair.split("=", 1)
+        item[key.strip()] = value.strip()
+    return item
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="the-ai-crowd-handoff")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    emit_parser = subparsers.add_parser("emit", help="build and optionally write a canonical handoff envelope")
+    emit_parser.add_argument("--source", required=True)
+    emit_parser.add_argument("--owner-domain", required=True)
+    emit_parser.add_argument("--handoff-type", required=True)
+    emit_parser.add_argument("--summary", required=True)
+    emit_parser.add_argument("--objective", required=True)
+    emit_parser.add_argument("--context", required=True)
+    emit_parser.add_argument("--idempotency-key", required=True)
+    emit_parser.add_argument("--failure-class")
+    emit_parser.add_argument("--target")
+    emit_parser.add_argument("--decision-owner")
+    emit_parser.add_argument("--executor")
+    emit_parser.add_argument("--return-to")
+    emit_parser.add_argument("--privacy-class", default="private-metadata-only")
+    emit_parser.add_argument("--message-id")
+    emit_parser.add_argument("--correlation-id")
+    emit_parser.add_argument("--created-at")
+    emit_parser.add_argument("--source-wrapper")
+    emit_parser.add_argument("--source-runtime")
+    emit_parser.add_argument("--source-host")
+    emit_parser.add_argument("--root", default="/mnt/hermes-shared/handoffs")
+    emit_parser.add_argument("--allow-test-root", action="store_true")
+    emit_parser.add_argument("--constraint", action="append", default=[])
+    emit_parser.add_argument("--artifact-ref", action="append", default=[])
+    emit_parser.add_argument("--receipt-requested", action=argparse.BooleanOptionalAction, default=True)
+    emit_parser.add_argument("--dry-run", action="store_true")
+    emit_parser.add_argument("--write", action="store_true")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        artifact_refs = [parse_artifact_ref(raw) for raw in args.artifact_ref]
+        envelope = build_envelope(
+            source_persona=args.source,
+            owner_domain=args.owner_domain,
+            handoff_type=args.handoff_type,
+            summary=args.summary,
+            objective=args.objective,
+            context=args.context,
+            idempotency_key=args.idempotency_key,
+            root=args.root,
+            allow_test_root=args.allow_test_root,
+            failure_class=args.failure_class,
+            target_persona=args.target,
+            decision_owner=args.decision_owner,
+            executor=args.executor,
+            return_to=args.return_to,
+            privacy_class=args.privacy_class,
+            message_id=args.message_id,
+            correlation_id=args.correlation_id,
+            created_at=args.created_at,
+            source_wrapper=args.source_wrapper,
+            source_runtime=args.source_runtime,
+            source_host=args.source_host,
+            artifact_refs=artifact_refs,
+            constraints=args.constraint or None,
+            receipt_requested=args.receipt_requested,
+        )
+        write = args.write and not args.dry_run
+        print(json.dumps(emit(envelope, write=write), indent=2))
+        return 0
+    except ValidationError as exc:
+        print(f"validation error: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

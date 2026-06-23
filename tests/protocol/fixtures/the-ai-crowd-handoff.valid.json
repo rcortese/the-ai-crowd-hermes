@@ -1,0 +1,61 @@
+{
+  "schema_version": "the-ai-crowd-handoff.v1",
+  "message_id": "hac_20260621_01_validfixture",
+  "correlation_id": "corr_20260621_01_validfixture",
+  "idempotency_key": "jen-calendar-auth-failure:2026-06-21T20",
+  "created_at": "2026-06-21T20:40:00Z",
+  "source": {
+    "persona": "jen",
+    "wrapper": "jen-handoff",
+    "runtime": "persona",
+    "host": "the-ai-crowd-jen-1"
+  },
+  "target": {
+    "persona": "moss",
+    "delivery_mode": "shared-file",
+    "path": "/mnt/hermes-shared/handoffs/moss/2026-06-21/hac_20260621_01_validfixture.json"
+  },
+  "owner_domain": "technical-ops",
+  "handoff_type": "incident",
+  "failure_class": "auth_failure",
+  "decision_owner": "jen",
+  "executor": "moss",
+  "return_to": "jen",
+  "privacy_class": "private-metadata-only",
+  "summary": "Jen Calendar runtime degraded; OAuth re-consent likely required.",
+  "objective": "Create a Moss-owned technical incident with enough sanitized metadata to diagnose the failure.",
+  "context": "No raw OAuth material included. See artifact refs for redacted health snapshot.",
+  "artifact_refs": [
+    {
+      "kind": "json",
+      "ref": "private-ref:jen-calendar-health-20260621T2040Z",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "privacy_class": "private-artifact-ref",
+      "description": "Redacted health snapshot reference."
+    }
+  ],
+  "constraints": [
+    "no secrets",
+    "no raw chat ids",
+    "no external account mutation"
+  ],
+  "route": {
+    "matrix_owner": "moss",
+    "resolved_target": "moss",
+    "reason": "technical_failure",
+    "canonical_root": "/mnt/hermes-shared/handoffs",
+    "canonical_path": "/mnt/hermes-shared/handoffs/moss/2026-06-21/hac_20260621_01_validfixture.json"
+  },
+  "receipt": {
+    "requested": true,
+    "channel": "shared-file-watcher",
+    "states": ["written", "observed", "notified"]
+  },
+  "adapter": {
+    "delivery_mode": "shared-file",
+    "canonical_path": "/mnt/hermes-shared/handoffs/moss/2026-06-21/hac_20260621_01_validfixture.json",
+    "a2a_subject": "a2a.v1.handoff.moss.jen.incident",
+    "nats_subject": "a2a.v1.handoff.moss.jen.incident",
+    "nats_msg_id": "hac_20260621_01_validfixture"
+  }
+}
