@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+LIB_DIRS = [
+    # Source checkout layout: <repo>/agents/public/<persona>/bin/<wrapper>
+    Path(__file__).resolve().parents[4] / "shared/protocol/lib",
+    # Live container layout: persona public dirs are mounted under /agents/<persona>,
+    # while the reviewed shared runtime protocol is mounted under /mnt/hermes-shared.
+    Path("/mnt/hermes-shared/protocol/lib"),
+]
+for lib_dir in LIB_DIRS:
+    if (lib_dir / "persona_handoff_wrapper.py").exists() and str(lib_dir) not in sys.path:
+        sys.path.insert(0, str(lib_dir))
+        break
+
+from persona_handoff_wrapper import emit_for_persona
+
+
+if __name__ == "__main__":
+    raise SystemExit(
+        emit_for_persona(
+            persona="richmond",
+            wrapper_name="richmond-handoff",
+            description="Emit a canonical handoff envelope from richmond.",
+            wrapper_path=__file__,
+            require_proxy_for_write=False,
+        )
+    )
