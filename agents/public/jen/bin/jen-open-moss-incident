@@ -1,52 +1,56 @@
 #!/usr/bin/env python3
-"""Open a Moss-owned Kanban incident for Jen environment/runtime failures."""
+"""Compatibility shim for Jen technical incidents using the canonical handoff wrapper."""
 from __future__ import annotations
+
 import argparse
 import json
-import os
-import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from pathlib import Path
 
-DEFAULT_KANBAN_HOME = "/mnt/hermes-shared/kanban/the-ai-crowd"
-BOARD = "incidents"
-ASSIGNEE = "incidents"
-
-
-def hermes_bin() -> str:
-    for candidate in ("/opt/hermes/.venv/bin/hermes", shutil.which("hermes")):
-        if candidate and os.path.exists(candidate):
-            return candidate
-    raise SystemExit("ERROR: hermes CLI not found")
+WRAPPER_PATH = Path(__file__).resolve().with_name("jen-handoff")
+SEVERITY_TO_FAILURE_CLASS = {
+    "low": "runtime_failure",
+    "medium": "runtime_failure",
+    "high": "integration_failure",
+    "critical": "container_failure",
+}
 
 
-def run(cmd: list[str], env: dict[str, str], check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, text=True, capture_output=True, env=env, check=check)
-
-
-def ensure_board(hermes: str, env: dict[str, str]) -> None:
-    listed = run([hermes, "kanban", "boards", "list", "--json"], env, check=True)
-    boards = json.loads(listed.stdout or "[]")
-    if not any(b.get("slug") == BOARD for b in boards):
-        run([
-            hermes, "kanban", "boards", "create", BOARD,
-            "--name", "Incidents",
-            "--description", "Cross-agent technical incidents owned by Moss",
-        ], env, check=True)
-    run([hermes, "kanban", "--board", BOARD, "init"], env, check=True)
+def build_context(*, severity: str, requested_outcome: str, evidence: list[str], details: str) -> str:
+    lines = [
+        "Jen runtime/environment technical incident.",
+        f"severity: {severity}",
+        "requested_outcome:",
+        requested_outcome,
+        "evidence:",
+    ]
+    if evidence:
+        lines.extend(f"- {item}" for item in evidence)
+    else:
+        lines.append("- no additional evidence supplied")
+    if details:
+        lines.extend(["details:", details])
+    return "\n".join(lines)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Open a Moss-owned Kanban incident when Jen has a technical environment/runtime failure."
+        description="Open a canonical Moss-bound incident handoff when Jen has a technical environment/runtime failure."
     )
     parser.add_argument("summary", help="Short incident summary")
     parser.add_argument("--severity", default="medium", choices=["low", "medium", "high", "critical"], help="Incident severity")
+    parser.add_argument("--failure-class", choices=["runtime_failure", "auth_failure", "integration_failure", "network_failure", "container_failure", "gateway_failure", "provider_failure", "policy_block", "root_drift", "delivery_failure", "unknown"], help="Explicit canonical failure class override")
     parser.add_argument("--evidence", action="append", default=[], help="Evidence reference or brief observation; repeatable")
-    parser.add_argument("--requested-outcome", default="Moss diagnoses, remediates or blocks with the next required operator decision, then reports the result back to Jen/Rodolfo.")
-    parser.add_argument("--idempotency-key", default="", help="Optional Kanban idempotency key")
-    parser.add_argument("--dry-run", action="store_true", help="Print planned Kanban payload without creating a card")
+    parser.add_argument("--artifact-ref", action="append", default=[], help="Canonical artifact-ref key=value payload; repeatable")
+    parser.add_argument("--requested-outcome", default="Moss diagnoses the technical failure, remediates or blocks with the next required operator decision, then returns status to Jen/Rodolfo.")
+    parser.add_argument("--idempotency-key", default="", help="Optional canonical idempotency key")
+    parser.add_argument("--root", default="/mnt/hermes-shared/handoffs", help="Canonical handoff root")
+    parser.add_argument("--allow-test-root", action="store_true", help="Allow tmp roots for tests")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="Print the canonical handoff payload without writing it")
+    mode.add_argument("--write", action="store_true", help="Write the canonical handoff to the validated root")
+    mode.add_argument("--emit", action="store_true", help="Alias for --write")
     args = parser.parse_args()
 
     summary = args.summary.strip()
@@ -58,75 +62,64 @@ def main() -> int:
     if not sys.stdin.isatty():
         details = sys.stdin.read().strip()
 
-    now = datetime.now(timezone.utc).isoformat()
-    env = os.environ.copy()
-    env.setdefault("HERMES_KANBAN_HOME", DEFAULT_KANBAN_HOME)
+    failure_class = args.failure_class or SEVERITY_TO_FAILURE_CLASS[args.severity]
+    idempotency_key = args.idempotency_key or f"jen-open-moss-incident:{summary.lower().replace(' ', '-')}:{failure_class}"
+    context = build_context(
+        severity=args.severity,
+        requested_outcome=args.requested_outcome,
+        evidence=args.evidence,
+        details=details,
+    )
 
-    title = f"incident: Jen environment - {summary}"
-    evidence_lines = [f"- {item}" for item in (args.evidence or [])]
-    if details:
-        evidence_lines.append(details)
-    if not evidence_lines:
-        evidence_lines.append("- no additional evidence supplied")
-
-    body = "\n".join([
-        "# Jen environment incident",
-        "",
-        f"opened_at: {now}",
-        "reporter: jen",
-        "affected_agent: jen",
-        "owner: moss",
-        "decision_owner: moss",
-        "executor: moss",
-        "private_data_level: private",
-        f"severity: {args.severity}",
-        "category: technical-environment",
-        "",
-        "## Boundary",
-        "Jen is not responsible for diagnosing or repairing her own runtime, container, credentials, integrations, gateway, or host environment. This card is a Moss-owned technical incident.",
-        "",
-        "## Summary",
+    cmd = [
+        sys.executable,
+        str(WRAPPER_PATH),
+        "emit",
+        "--target",
+        "moss",
+        "--owner-domain",
+        "technical-ops",
+        "--handoff-type",
+        "incident",
+        "--failure-class",
+        failure_class,
+        "--summary",
         summary,
-        "",
-        "## Evidence",
-        *evidence_lines,
-        "",
-        "## Requested outcome",
-        args.requested_outcome,
-        "",
-        "## Return path",
-        "Moss updates/blocks/completes this Kanban card and reports the incident id plus current status back to Jen/Rodolfo. Productivity decisions remain Jen-owned; technical repair remains Moss-owned.",
-    ])
-
-    payload = {
-        "kanban_home": env["HERMES_KANBAN_HOME"],
-        "board": BOARD,
-        "title": title,
-        "assignee": ASSIGNEE,
-        "created_by": "jen",
-        "severity": args.severity,
-        "body": body,
-        "idempotency_key": args.idempotency_key or None,
-    }
+        "--objective",
+        "Create a sanitized Moss-owned technical incident handoff and preserve Jen as the return path.",
+        "--context",
+        context,
+        "--idempotency-key",
+        idempotency_key,
+        "--root",
+        args.root,
+        "--source-runtime",
+        "jen-compatibility-shim",
+        "--source-host",
+        "the-ai-crowd-jen-1",
+    ]
+    if args.allow_test_root:
+        cmd.append("--allow-test-root")
+    for item in args.artifact_ref:
+        cmd.extend(["--artifact-ref", item])
 
     if args.dry_run:
-        print(json.dumps({"dry_run": True, "payload": payload}, indent=2, ensure_ascii=False))
-        return 0
+        cmd.append("--dry-run")
+    elif args.write or args.emit:
+        cmd.append("--write")
+    else:
+        cmd.append("--write")
 
-    hermes = hermes_bin()
-    ensure_board(hermes, env)
-    cmd = [
-        hermes, "kanban", "--board", BOARD, "create", title,
-        "--body", body,
-        "--assignee", ASSIGNEE,
-        "--created-by", "jen",
-        "--priority", {"low": "10", "medium": "30", "high": "60", "critical": "90"}[args.severity],
-        "--json",
-    ]
-    if args.idempotency_key:
-        cmd.extend(["--idempotency-key", args.idempotency_key])
-    result = run(cmd, env, check=True)
-    print(result.stdout.strip())
+    result = subprocess.run(cmd, text=True, capture_output=True)
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        if result.stdout:
+            sys.stdout.write(result.stdout)
+        return result.returncode
+
+    payload = json.loads(result.stdout)
+    payload["source"]["wrapper"] = "jen-open-moss-incident"
+    print(json.dumps(payload, indent=2))
     return 0
 
 
