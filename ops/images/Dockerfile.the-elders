@@ -45,6 +45,10 @@ LABEL the-ai-crowd.agent="the-elders" \
 RUN usermod -u 99 -g 100 hermes \
     && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
 
+COPY ops/hermes-agent-overrides/apply-codex-shared-home.py /tmp/hermes-agent-overrides/
+RUN /opt/hermes/.venv/bin/python3 /tmp/hermes-agent-overrides/apply-codex-shared-home.py \
+    && rm -rf /tmp/hermes-agent-overrides
+
 WORKDIR /workspace
 
 USER 99:100
