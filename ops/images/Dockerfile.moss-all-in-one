@@ -15,6 +15,10 @@ RUN apt-get update \
         supervisor \
     && rm -rf /var/lib/apt/lists/*
 
+COPY ops/hermes-agent-overrides/apply-codex-shared-home.py /tmp/hermes-agent-overrides/
+RUN /opt/hermes/.venv/bin/python3 /tmp/hermes-agent-overrides/apply-codex-shared-home.py \
+    && rm -rf /tmp/hermes-agent-overrides
+
 # Clash Royale scheduled screening uses Playwright from Moss cron.
 # Keep the Node package and browser in the image, not in ephemeral runtime state.
 COPY agents/private/moss/projects/clash-royale-war-bot/package.json \
@@ -32,6 +36,7 @@ RUN cd /opt/hermes \
     && test -x /opt/hermes/.venv/bin/hermes \
     && /opt/hermes/.venv/bin/hermes --version \
     && /opt/hermes/.venv/bin/python3 -m py_compile \
+        hermes_cli/auth.py \
         hermes_cli/config.py \
         hermes_cli/kanban_db.py \
         hermes_cli/kanban.py \

@@ -17,6 +17,8 @@ x-hermes-common: &hermes-common
     <<: *hermes-env
   networks:
     - internal
+x-openai-codex-shared-auth-home: &openai-codex-shared-auth-home /mnt/hermes-auth-shared
+x-openai-codex-shared-auth-volume: &openai-codex-shared-auth-volume ./state/shared/openai-codex-shared-fleet:/mnt/hermes-auth-shared
 
 services:
   moss:
@@ -81,6 +83,7 @@ services:
       - ./agents/public/moss:/agents/moss/public:ro
       - ./agents/private/moss:/agents/moss/private:rw
       - ./state/shared:/mnt/hermes-shared
+      - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
       - /mnt/user/backups/the-ai-crowd:/mnt/user/backups/the-ai-crowd:rw
     networks:
       internal:
@@ -122,6 +125,7 @@ services:
       AGENT_PRIVATE: /agents/jen/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
       TERMINAL_CWD: /agents/jen/private
       HERMES_KANBAN_HOME: /mnt/hermes-shared
       API_SERVER_ENABLED: "true"
@@ -136,6 +140,8 @@ services:
       - ./agents/public/jen:/agents/jen/public:ro
       - ./agents/private/jen:/agents/jen/private:rw
       - ./state/shared:/mnt/hermes-shared
+      - *openai-codex-shared-auth-volume
+      - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9121"
       - "8642"
@@ -167,6 +173,7 @@ services:
       AGENT_PRIVATE: /agents/denholm/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
       TERMINAL_CWD: /agents/denholm/private
       HERMES_KANBAN_HOME: /mnt/hermes-shared
       API_SERVER_ENABLED: "true"
@@ -177,6 +184,8 @@ services:
       - ./agents/public/denholm:/agents/denholm/public:ro
       - ./agents/private/denholm:/agents/denholm/private:rw
       - ./state/shared:/mnt/hermes-shared
+      - *openai-codex-shared-auth-volume
+      - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9122"
       - "8643"
@@ -203,6 +212,7 @@ services:
     environment:
       <<: *hermes-env
       HERMES_HOME: /opt/data
+      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
       HERMES_KANBAN_DISPATCH_OWNER: roy
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
       AGENT_NAME: roy
@@ -223,6 +233,8 @@ services:
       - ./agents/public/roy:/agents/roy/public:ro
       - ./agents/private/roy:/agents/roy/private:rw
       - ./state/shared:/mnt/hermes-shared
+      - *openai-codex-shared-auth-volume
+      - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9123"
       - "8644"
@@ -255,6 +267,7 @@ services:
       AGENT_PRIVATE: /agents/richmond/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
       TERMINAL_CWD: /agents/richmond/private
       HERMES_KANBAN_HOME: /mnt/hermes-shared
       HERMES_KANBAN_DISPATCH_OWNER: richmond
@@ -262,11 +275,16 @@ services:
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8646"
+      RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
+      RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
+      RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
     volumes:
       - ./runtime/richmond-home:/opt/data
       - ./agents/public/richmond:/agents/richmond/public:ro
       - ./agents/private/richmond:/agents/richmond/private:rw
       - ./state/shared:/mnt/hermes-shared
+      - *openai-codex-shared-auth-volume
+      - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9120"
       - "8646"
@@ -298,12 +316,16 @@ services:
       AGENT_PRIVATE: /agents/the-elders/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
       TERMINAL_CWD: /agents/the-elders/private
       HERMES_KANBAN_DISPATCH_OWNER: the-elders
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8647"
+      RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
+      RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
+      RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
     read_only: true
     tmpfs:
       - /tmp
@@ -313,6 +335,8 @@ services:
       - ./agents/public/the-elders:/agents/the-elders/public:ro
       - ./agents/private/the-elders:/agents/the-elders/private:rw
       - ./state/shared:/mnt/hermes-shared:ro
+      - *openai-codex-shared-auth-volume
+      - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9130"
       - "8647"
