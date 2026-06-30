@@ -37,11 +37,18 @@ RUN apt-get update \
 
 # Runtime processes run as UID/GID 99:100 and cannot mutate the root-owned
 # Hermes venv. Bake lazy dependencies used by Moss's enabled providers so a
-# rebuilt image does not lose Honcho memory or TTS availability.
+# rebuilt image does not lose Honcho memory, web search/extract, or TTS availability.
 RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install \
         honcho-ai==2.0.1 \
+        firecrawl-py==4.17.0 \
         edge-tts==7.2.7 \
-        elevenlabs==1.59.0
+        elevenlabs==1.59.0 \
+    && /opt/hermes/.venv/bin/python3 - <<'PYSMOKE'
+import importlib
+for module_name in ("honcho", "firecrawl", "edge_tts", "elevenlabs"):
+    importlib.import_module(module_name)
+print("moss_lazy_deps_import_smoke_ok")
+PYSMOKE
 
 
 
