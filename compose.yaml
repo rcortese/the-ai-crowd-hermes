@@ -128,6 +128,7 @@ services:
       HERMES_AUTH_HOME: *openai-codex-shared-auth-home
       TERMINAL_CWD: /agents/jen/private
       HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: "0"
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8642"
@@ -176,6 +177,7 @@ services:
       HERMES_AUTH_HOME: *openai-codex-shared-auth-home
       TERMINAL_CWD: /agents/denholm/private
       HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: "0"
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8643"
@@ -215,6 +217,7 @@ services:
       HERMES_AUTH_HOME: *openai-codex-shared-auth-home
       HERMES_KANBAN_DISPATCH_OWNER: roy
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: "0"
       AGENT_NAME: roy
       AGENT_ROOT: /agents/roy
       AGENT_PUBLIC: /agents/roy/public
@@ -272,6 +275,7 @@ services:
       HERMES_KANBAN_HOME: /mnt/hermes-shared
       HERMES_KANBAN_DISPATCH_OWNER: richmond
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: "0"
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8646"
