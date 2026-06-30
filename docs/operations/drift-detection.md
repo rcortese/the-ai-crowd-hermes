@@ -32,7 +32,7 @@ or the full validation entrypoint:
 Private deployment notes should add environment-specific checks without publishing private values:
 
 - deployed public commit equals intended `origin/main` commit;
-- base image digest equals `ops/manifests/base-images.lock.json` or an approved override;
+- base image tag/source SHA equals `ops/manifests/base-images.lock.json` or an approved override;
 - private Compose override has no unexpected host ports;
 - private routing still enforces authentication and intended network boundaries;
 - private agent homes are backed up according to the backup policy;

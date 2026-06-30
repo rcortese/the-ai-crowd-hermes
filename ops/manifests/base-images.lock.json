@@ -1,18 +1,25 @@
 {
-  "schema": "the-ai-crowd-hermes.base-images-lock.v1",
-  "status": "pinned-for-public-scaffold",
-  "updated_at": "2026-05-22T13:00:00Z",
+  "schema": "the-ai-crowd-hermes.base-images-lock.v2",
+  "status": "pinned-fork-source",
+  "updated_at": "2026-06-30T04:47:52Z",
   "images": [
     {
       "name": "hermes-agent",
-      "image": "nousresearch/hermes-agent@sha256:b6e41c155d6bfce5ad83c5d0fec670086db8a43250e4511c9474134be5482d33",
-      "source_tag_checked": "nousresearch/hermes-agent:latest",
+      "image": "the-ai-crowd/hermes-agent:release-v2026.6.19-fork-8ed5ada5763e",
+      "source_repo": "https://github.com/rcortese/hermes-agent",
+      "source_rev": "8ed5ada5763e1bfe26118bf7b54d67d3a10d926c",
+      "release_base": "v2026.6.19",
+      "upstream_release_rev": "2bd1977d8fad185c9b4be47884f7e87f1add0ce3",
+      "patch_commits": 3,
       "used_by": [
         "ops/images/Dockerfile.moss",
+        "ops/images/Dockerfile.jen",
+        "ops/images/Dockerfile.denholm",
+        "ops/images/Dockerfile.roy",
         "ops/images/Dockerfile.richmond",
         "ops/images/Dockerfile.the-elders"
       ],
-      "update_policy": "Change only through the release process with validation, review, and rollback notes. Record deployed digest in private deployment evidence."
+      "update_policy": "Build from the pinned fork SHA after validating release ancestry, patch commits, image labels, and candidate smokes. Do not retag an official upstream image as this local tag."
     }
   ]
 }

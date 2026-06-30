@@ -3,8 +3,8 @@ FROM ${MOSS_BASE_IMAGE}
 
 USER root
 
-ARG HERMES_WEBUI_REPO=https://github.com/nesquena/hermes-webui.git
-ARG HERMES_WEBUI_REV=f7e144d59fbf2e4feca8e31cb05d98a05401467f
+ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
+ARG HERMES_WEBUI_REV=aa600b25ef1778746445c926bfd5dc6f07c8e51e
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -14,10 +14,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         supervisor \
     && rm -rf /var/lib/apt/lists/*
-
-COPY ops/hermes-agent-overrides/apply-codex-shared-home.py /tmp/hermes-agent-overrides/
-RUN /opt/hermes/.venv/bin/python3 /tmp/hermes-agent-overrides/apply-codex-shared-home.py \
-    && rm -rf /tmp/hermes-agent-overrides
 
 # Clash Royale scheduled screening uses Playwright from Moss cron.
 # Keep the Node package and browser in the image, not in ephemeral runtime state.
@@ -59,35 +55,19 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
         /opt/hermes/.venv/bin/python3 -c 'import importlib; [importlib.import_module(m) for m in ("hermes_cli.auth", "hermes_cli.config", "agent.credential_pool", "gateway.run")]; print("agent_import_smoke_ok")'; \
        fi \
     && cd /opt/hermes-webui \
-    && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py \
-    && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q tests/test_kanban_bridge.py \
+    && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py \
+    && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
+        tests/test_kanban_bridge.py \
+        tests/test_profile_proxy_jen.py \
+        tests/test_remote_cron_proxy_guard.py \
+        tests/test_webui_gateway_chat_backend.py \
+        tests/test_stage364_opus_live_sse_event_id.py \
+        tests/test_session_channel_option_x.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
-    && rm -rf /opt/hermes-webui/.git
-
-COPY ops/webui-overrides/ /tmp/hermes-webui-overrides/
-RUN cp -a /tmp/hermes-webui-overrides/. /opt/hermes-webui/ \
-    && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
-       HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-jen-proxy-tests \
-       HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/moss/private \
-       /opt/hermes/.venv/bin/python3 -m py_compile \
-        /opt/hermes-webui/api/gateway_chat.py \
-        /opt/hermes-webui/api/profiles.py \
-        /opt/hermes-webui/api/routes.py \
-    && cd /opt/hermes-webui \
-    && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
-       HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-jen-proxy-tests \
-       HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/moss/private \
-       /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
-        tests/test_profile_proxy_jen.py \
-        tests/test_webui_gateway_chat_backend.py \
-        tests/test_remote_cron_proxy_guard.py \
-        tests/test_stage364_opus_live_sse_event_id.py \
-        tests/test_session_channel_option_x.py \
-    && rm -rf /tmp/hermes-webui-overrides \
+    && rm -rf /opt/hermes-webui/.git \
     && chown -R 99:100 /opt/hermes-webui
-
 
 # Build guard: the all-in-one image must use one Python runtime only.
 RUN test ! -e /opt/hermes-webui/venv \
