@@ -96,6 +96,7 @@ RUN usermod -u 99 -g 100 hermes \
 COPY ops/hermes-agent-overrides/ /tmp/hermes-agent-overrides/
 RUN /opt/hermes/.venv/bin/python3 /tmp/hermes-agent-overrides/apply-codex-shared-home.py \
     && /opt/hermes/.venv/bin/python3 /tmp/hermes-agent-overrides/apply-web-search-fallback.py \
+    && /opt/hermes/.venv/bin/python3 /tmp/hermes-agent-overrides/apply-lazy-install-policy-status.py \
     && rm -rf /tmp/hermes-agent-overrides
 
 
