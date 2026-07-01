@@ -292,10 +292,65 @@ assert_jq "$capture_runtime_json" '.command == "capture-task" and .status == "ok
 assert_jq "$capture_runtime_json" '.operation == "add-task-and-update-due" and .task.due.string == "tomorrow"' 'capture due verification'
 assert_jq "$capture_runtime_json" '.mutation.gateway_plan.target_system == "todoist" and .mutation.gateway_plan.normalized_hash and .mutation.idempotency.check_status == "miss"' 'capture includes mutation gateway/idempotency metadata'
 
+capture_pt_json=$(JEN_TASK_RUNTIME_NOW_UTC=2026-04-24T16:03:00Z JEN_IDEMPOTENCY_DIR="$idem_dir/capture-pt" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=dummy "$capture" --content "Preparar mochila" --due amanhã)
+capture_pt_runtime_json=$(jq -c 'if .command == "capture-task" then . else .detail.runtime end' <<<"$capture_pt_json")
+assert_jq "$capture_pt_runtime_json" '.command == "capture-task" and .status == "ok" and .due_applied == true and .task.due.string == "tomorrow"' 'capture wrapper normalizes Portuguese relative due without extra context'
+
+capture_pt_next_weekday_json=$(JEN_TASK_RUNTIME_NOW_UTC=2026-04-24T16:03:00Z JEN_IDEMPOTENCY_DIR="$idem_dir/capture-pt-next-weekday" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=dummy "$capture" --content "Preparar resumo semanal" --due 'próxima sexta')
+capture_pt_next_weekday_runtime_json=$(jq -c 'if .command == "capture-task" then . else .detail.runtime end' <<<"$capture_pt_next_weekday_json")
+assert_jq "$capture_pt_next_weekday_runtime_json" '.command == "capture-task" and .status == "ok" and .due_applied == true and .task.due.string == "2026-05-01"' 'capture wrapper normalizes Portuguese next-weekday phrasing without extra context'
+
+capture_pt_short_prefix_json=$(JEN_TASK_RUNTIME_NOW_UTC=2026-04-24T16:03:00Z JEN_IDEMPOTENCY_DIR="$idem_dir/capture-pt-short-prefix" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=dummy "$capture" --content "Separar roupa da viagem" --due 'prox. sexta')
+capture_pt_short_prefix_runtime_json=$(jq -c 'if .command == "capture-task" then . else .detail.runtime end' <<<"$capture_pt_short_prefix_json")
+assert_jq "$capture_pt_short_prefix_runtime_json" '.command == "capture-task" and .status == "ok" and .due_applied == true and .task.due.string == "2026-05-01"' 'capture wrapper normalizes Portuguese abbreviated next-weekday phrasing without extra context'
+
 recurring_update_log="$mock_dir/recurring-update-due.log"
 recurring_update=$(JEN_IDEMPOTENCY_DIR="$idem_dir/recurring-update-due" JEN_TASK_RUNTIME_TEST_LOG="$recurring_update_log" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=*** "$runtime" update-due --task-id rec-1 --due 'todo 7 dias')
 assert_jq "$recurring_update" '.status == "ok" and .command == "update-due" and .mutation.gateway_plan.canonical_object_type == "task" and .mutation.gateway_plan.risk_level == "medium" and .mutation.gateway_plan.requires_confirmation == false and (.mutation.gateway_plan.safety_overrides | index("safe_recurring_todoist_due_reanchor"))' 'recurring due update is recurrence-sensitive but allowed when preserving recurrence text'
 assert_eq "$(grep -c '^update-due rec-1 todo 7 dias$' "$recurring_update_log")" "1" 'recurring due update reaches adapter once'
+
+recurring_update_short_alias_log="$mock_dir/recurring-update-short-alias-due.log"
+recurring_update_short_alias=$(JEN_IDEMPOTENCY_DIR="$idem_dir/recurring-update-short-alias-due" JEN_TASK_RUNTIME_TEST_LOG="$recurring_update_short_alias_log" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=*** "$runtime" update-due --task-id rec-1 --due 'todo seg')
+assert_jq "$recurring_update_short_alias" '.status == "ok" and .command == "update-due" and .task.due.string == "todo seg"' 'recurring due update preserves short weekday alias text instead of silently normalizing it'
+assert_eq "$(grep -c '^update-due rec-1 todo seg$' "$recurring_update_short_alias_log")" "1" 'recurring short weekday alias reaches adapter unchanged'
+
+recurring_update_ordinal_log="$mock_dir/recurring-update-ordinal-due.log"
+recurring_update_ordinal=$(JEN_IDEMPOTENCY_DIR="$idem_dir/recurring-update-ordinal-due" JEN_TASK_RUNTIME_TEST_LOG="$recurring_update_ordinal_log" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=*** "$runtime" update-due --task-id rec-1 --due 'todo 3ª feira')
+assert_jq "$recurring_update_ordinal" '.status == "ok" and .command == "update-due" and .task.due.string == "todo 3ª feira"' 'recurring due update preserves ordinal weekday recurrence text instead of coercing it to a single date'
+assert_eq "$(grep -c '^update-due rec-1 todo 3ª feira$' "$recurring_update_ordinal_log")" "1" 'recurring ordinal weekday phrase reaches adapter unchanged'
+
+weekday_update_log="$mock_dir/weekday-update-due.log"
+weekday_update=$(JEN_TASK_RUNTIME_NOW_UTC=2026-04-24T16:03:00Z JEN_IDEMPOTENCY_DIR="$idem_dir/weekday-update-due" JEN_TASK_RUNTIME_TEST_LOG="$weekday_update_log" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=*** "$runtime" update-due --task-id meta-3 --due 'segunda-feira')
+assert_jq "$weekday_update" '.status == "ok" and .command == "update-due" and .task.due.string == "2026-04-27"' 'update-due normalizes Portuguese weekday to deterministic ISO date'
+assert_eq "$(grep -c '^update-due meta-3 2026-04-27$' "$weekday_update_log")" "1" 'update-due passes normalized weekday date to adapter'
+
+weekday_update_accented_log="$mock_dir/weekday-update-accented-due.log"
+weekday_update_accented=$(JEN_TASK_RUNTIME_NOW_UTC=2026-04-24T16:03:00Z JEN_IDEMPOTENCY_DIR="$idem_dir/weekday-update-accented-due" JEN_TASK_RUNTIME_TEST_LOG="$weekday_update_accented_log" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=*** "$runtime" update-due --task-id meta-3 --due 'terça-feira')
+assert_jq "$weekday_update_accented" '.status == "ok" and .command == "update-due" and .task.due.string == "2026-04-28"' 'update-due normalizes accented Portuguese weekday to deterministic ISO date'
+assert_eq "$(grep -c '^update-due meta-3 2026-04-28$' "$weekday_update_accented_log")" "1" 'update-due passes accented Portuguese weekday date to adapter'
+
+weekday_update_ordinal_log="$mock_dir/weekday-update-ordinal-due.log"
+weekday_update_ordinal=$(JEN_TASK_RUNTIME_NOW_UTC=2026-04-24T16:03:00Z JEN_IDEMPOTENCY_DIR="$idem_dir/weekday-update-ordinal-due" JEN_TASK_RUNTIME_TEST_LOG="$weekday_update_ordinal_log" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=*** "$runtime" update-due --task-id meta-3 --due '3ª feira')
+assert_jq "$weekday_update_ordinal" '.status == "ok" and .command == "update-due" and .task.due.string == "2026-04-28"' 'update-due normalizes ordinal Portuguese weekday alias to deterministic ISO date'
+assert_eq "$(grep -c '^update-due meta-3 2026-04-28$' "$weekday_update_ordinal_log")" "1" 'update-due passes ordinal Portuguese weekday alias to adapter'
+
+capture_ordinal_fragment_log="$mock_dir/capture-ordinal-fragment.log"
+set +e
+capture_ordinal_fragment=$(JEN_TASK_RUNTIME_NOW_UTC=2026-04-24T16:03:00Z JEN_IDEMPOTENCY_DIR="$idem_dir/capture-ordinal-fragment" JEN_TASK_RUNTIME_TEST_LOG="$capture_ordinal_fragment_log" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=dummy "$runtime" capture-task --content "Comprar pão" --due '3ª')
+capture_ordinal_fragment_status=$?
+set -e
+assert_eq "$capture_ordinal_fragment_status" "1" 'capture runtime standalone ordinal weekday fragment exits as handled failure'
+assert_jq "$capture_ordinal_fragment" '.status == "failed" and .command == "capture-task" and .failure_class == "unable_to_verify_duplicates" and .preflight.reason == "due_resolution_failed"' 'capture runtime fails closed on standalone ordinal weekday fragment'
+[[ ! -s "$capture_ordinal_fragment_log" ]] || { echo 'assertion failed: standalone ordinal capture fragment called provider mutation' >&2; cat "$capture_ordinal_fragment_log" >&2; exit 1; }
+
+weekday_update_ordinal_fragment_log="$mock_dir/weekday-update-ordinal-fragment-due.log"
+set +e
+weekday_update_ordinal_fragment=$(JEN_TASK_RUNTIME_NOW_UTC=2026-04-24T16:03:00Z JEN_IDEMPOTENCY_DIR="$idem_dir/weekday-update-ordinal-fragment-due" JEN_TASK_RUNTIME_TEST_LOG="$weekday_update_ordinal_fragment_log" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=*** "$runtime" update-due --task-id meta-3 --due '3ª')
+weekday_update_ordinal_fragment_status=$?
+set -e
+assert_eq "$weekday_update_ordinal_fragment_status" "1" 'update-due standalone ordinal weekday fragment exits as handled failure'
+assert_jq "$weekday_update_ordinal_fragment" '.status == "failed" and .command == "update-due" and .failure_class == "invalid_argument"' 'update-due fails closed on standalone ordinal weekday fragment'
+[[ ! -s "$weekday_update_ordinal_fragment_log" ]] || { echo 'assertion failed: standalone ordinal weekday fragment called provider mutation' >&2; cat "$weekday_update_ordinal_fragment_log" >&2; exit 1; }
 
 capture_duplicate=$(JEN_IDEMPOTENCY_DIR="$idem_dir/capture" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=dummy "$capture" --content "Test task" --due tomorrow)
 capture_duplicate_runtime=$(jq -c 'if .command == "capture-task" then . else .detail.runtime end' <<<"$capture_duplicate")
