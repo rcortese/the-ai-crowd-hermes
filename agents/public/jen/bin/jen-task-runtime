@@ -577,6 +577,7 @@ mutation_draft_task_completion_change() {
   local action="$2"
   local pre_state_json="$3"
   local idempotency_hint="${4:-}"
+  local confirmed_by_user="${5:-false}"
   local operation_type completed human_summary expected_effect
   case "$action" in
     complete)
@@ -602,6 +603,7 @@ mutation_draft_task_completion_change() {
     --arg operation_type "$operation_type" \
     --arg human_summary "$human_summary" \
     --arg expected_effect "$expected_effect" \
+    --argjson confirmed_by_user "$confirmed_by_user" \
     --argjson completed "$completed" \
     --argjson pre_state "$pre_state_json" '
     {
@@ -611,7 +613,8 @@ mutation_draft_task_completion_change() {
       canonical_object_type: "task",
       external_object_id: $task_id,
       pre_state: $pre_state,
-      mutation_payload: {completed:$completed, scope:"single"},
+      requires_confirmation: ($confirmed_by_user | not),
+      mutation_payload: {completed:$completed, scope:"single", confirmed_by_user:$confirmed_by_user},
       preview: {
         human_summary: $human_summary,
         fields_changed: ["completed"],
@@ -1309,7 +1312,7 @@ capture_task_command() {
 task_completion_command() {
   local command="$1" adapter_command="$2"
   shift 2
-  local task_id="" idempotency_hint=""
+  local task_id="" idempotency_hint="" confirmed_by_user=false
   while (($#)); do
     case "$1" in
       --task-id|--task-hint)
@@ -1321,6 +1324,10 @@ task_completion_command() {
         require_option_value "$command" "${2:-}"
         idempotency_hint="$2"
         shift 2
+        ;;
+      --confirmed-by-user|--user-confirmed)
+        confirmed_by_user=true
+        shift
         ;;
       *)
         emit_failed "$command" invalid_argument
@@ -1346,7 +1353,7 @@ task_completion_command() {
   fi
   pre_state="$(cat "$pre_stdout")"
 
-  draft_json="$(mutation_draft_task_completion_change "$task_id" "$action" "$pre_state" "$idempotency_hint")"
+  draft_json="$(mutation_draft_task_completion_change "$task_id" "$action" "$pre_state" "$idempotency_hint" "$confirmed_by_user")"
   if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
     cleanup_files "$pre_stdout" "$pre_stderr"
     emit_failed "$command" request_failure
