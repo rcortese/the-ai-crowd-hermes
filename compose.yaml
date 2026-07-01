@@ -17,8 +17,8 @@ x-hermes-common: &hermes-common
     <<: *hermes-env
   networks:
     - internal
-x-openai-codex-shared-auth-home: &openai-codex-shared-auth-home /mnt/hermes-auth-shared
-x-openai-codex-shared-auth-volume: &openai-codex-shared-auth-volume ./state/shared/openai-codex-shared-fleet:/mnt/hermes-auth-shared
+x-openai-codex-auth-home: &openai-codex-auth-home /mnt/hermes-auth-shared
+x-openai-codex-auth-volume: &openai-codex-auth-volume ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
 
 services:
   moss:
@@ -125,7 +125,7 @@ services:
       AGENT_PRIVATE: /agents/jen/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
-      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
+      HERMES_AUTH_HOME: *openai-codex-auth-home
       TERMINAL_CWD: /agents/jen/private
       HERMES_KANBAN_HOME: /mnt/hermes-shared
       HERMES_KANBAN_DISPATCH_IN_GATEWAY: "0"
@@ -141,7 +141,7 @@ services:
       - ./agents/public/jen:/agents/jen/public:ro
       - ./agents/private/jen:/agents/jen/private:rw
       - ./state/shared:/mnt/hermes-shared
-      - *openai-codex-shared-auth-volume
+      - *openai-codex-auth-volume
       - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9121"
@@ -174,7 +174,7 @@ services:
       AGENT_PRIVATE: /agents/denholm/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
-      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
+      HERMES_AUTH_HOME: *openai-codex-auth-home
       TERMINAL_CWD: /agents/denholm/private
       HERMES_KANBAN_HOME: /mnt/hermes-shared
       HERMES_KANBAN_DISPATCH_IN_GATEWAY: "0"
@@ -186,7 +186,7 @@ services:
       - ./agents/public/denholm:/agents/denholm/public:ro
       - ./agents/private/denholm:/agents/denholm/private:rw
       - ./state/shared:/mnt/hermes-shared
-      - *openai-codex-shared-auth-volume
+      - *openai-codex-auth-volume
       - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9122"
@@ -214,7 +214,7 @@ services:
     environment:
       <<: *hermes-env
       HERMES_HOME: /opt/data
-      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
+      HERMES_AUTH_HOME: *openai-codex-auth-home
       HERMES_KANBAN_DISPATCH_OWNER: roy
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
       HERMES_KANBAN_DISPATCH_IN_GATEWAY: "0"
@@ -236,7 +236,7 @@ services:
       - ./agents/public/roy:/agents/roy/public:ro
       - ./agents/private/roy:/agents/roy/private:rw
       - ./state/shared:/mnt/hermes-shared
-      - *openai-codex-shared-auth-volume
+      - *openai-codex-auth-volume
       - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9123"
@@ -270,7 +270,7 @@ services:
       AGENT_PRIVATE: /agents/richmond/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
-      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
+      HERMES_AUTH_HOME: *openai-codex-auth-home
       TERMINAL_CWD: /agents/richmond/private
       HERMES_KANBAN_HOME: /mnt/hermes-shared
       HERMES_KANBAN_DISPATCH_OWNER: richmond
@@ -287,7 +287,7 @@ services:
       - ./agents/public/richmond:/agents/richmond/public:ro
       - ./agents/private/richmond:/agents/richmond/private:rw
       - ./state/shared:/mnt/hermes-shared
-      - *openai-codex-shared-auth-volume
+      - *openai-codex-auth-volume
       - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9120"
@@ -320,7 +320,7 @@ services:
       AGENT_PRIVATE: /agents/the-elders/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
-      HERMES_AUTH_HOME: *openai-codex-shared-auth-home
+      HERMES_AUTH_HOME: *openai-codex-auth-home
       TERMINAL_CWD: /agents/the-elders/private
       HERMES_KANBAN_DISPATCH_OWNER: the-elders
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
@@ -340,7 +340,7 @@ services:
       - ./agents/public/the-elders:/agents/the-elders/public:ro
       - ./agents/private/the-elders:/agents/the-elders/private:rw
       - ./state/shared:/mnt/hermes-shared:ro
-      - *openai-codex-shared-auth-volume
+      - *openai-codex-auth-volume
       - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
       - "9130"
