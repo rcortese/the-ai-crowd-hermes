@@ -146,12 +146,21 @@ def compatible_result(record: dict[str, Any] | None) -> bool:
     return isinstance(schema, str) and schema.startswith("jen-")
 
 
+def plan_has_user_confirmation(plan: dict[str, Any]) -> bool:
+    payload = plan.get("mutation_payload")
+    return isinstance(payload, dict) and payload.get("confirmed_by_user") is True
+
+
 def decide(plan: dict[str, Any], check: dict[str, Any], *, persist: bool) -> tuple[str, dict[str, Any] | None]:
     if plan.get("status") == "blocked" or plan.get("risk_level") == "blocked":
         if persist:
             store_put(plan, plan["normalized_hash"], "blocked", {"gateway_plan": plan})
         return "blocked", None
-    if plan.get("status") == "awaiting_confirmation" or plan.get("risk_level") == "high" or plan.get("requires_confirmation"):
+    if (
+        plan.get("status") == "awaiting_confirmation"
+        or plan.get("risk_level") == "high"
+        or plan.get("requires_confirmation")
+    ) and not plan_has_user_confirmation(plan):
         if persist:
             store_put(plan, plan["normalized_hash"], "awaiting_confirmation", {"gateway_plan": plan})
         return "awaiting_confirmation", None
