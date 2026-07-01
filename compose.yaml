@@ -136,6 +136,9 @@ services:
       GOG_KEYRING_BACKEND: file
       GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
       GOG_ACCOUNT: ${JEN_GOOGLE_ACCOUNT:-}
+      JEN_DOCUMENT_TASK_ALLOWED_ROOTS: /opt/data/cache/documents
+      JEN_DOCUMENT_TASK_CANDIDATES_BACKEND: /agents/jen/private/bin/jen-document-task-candidates-backend
+      JEN_DOCUMENT_TASK_ANALYSIS_QUEUE: /mnt/hermes-shared/jen-document-task-candidates/content-analysis-queue
     volumes:
       - ./runtime/jen-home:/opt/data
       - ./agents/public/jen:/agents/jen/public:ro
