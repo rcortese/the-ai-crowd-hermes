@@ -98,7 +98,7 @@ services:
     ports:
       - "0.0.0.0:8644:8644"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:9119/api/status >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS http://127.0.0.1:8648/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 10
