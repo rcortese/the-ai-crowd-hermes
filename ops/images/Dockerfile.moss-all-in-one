@@ -4,7 +4,7 @@ FROM ${MOSS_BASE_IMAGE}
 USER root
 
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=aa600b25ef1778746445c926bfd5dc6f07c8e51e
+ARG HERMES_WEBUI_REV=f9fe4b829e0ccf8a4408df982474ae4a4f823ae4
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"

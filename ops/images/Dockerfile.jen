@@ -1,4 +1,4 @@
-ARG HERMES_AGENT_IMAGE=the-ai-crowd/hermes-agent:release-v2026.6.19-fork-8ed5ada5763e
+ARG HERMES_AGENT_IMAGE=the-ai-crowd/hermes-agent:release-v2026.7.1-fork-d46119a7b448
 FROM ${HERMES_AGENT_IMAGE}
 
 ARG GOG_VERSION=v0.30.0
@@ -79,7 +79,7 @@ USER 99:100
 # The AI Crowd image owns the Hermes process topology for Jen:
 # gateway in the foreground, dashboard as the entrypoint-managed side process.
 ENV HERMES_DASHBOARD=1 \
-    HERMES_DASHBOARD_HOST=0.0.0.0 \
+    HERMES_DASHBOARD_HOST=127.0.0.1 \
     HERMES_DASHBOARD_PORT=9121 \
     HERMES_DASHBOARD_INSECURE=true \
     HERMES_DASHBOARD_TUI=1
