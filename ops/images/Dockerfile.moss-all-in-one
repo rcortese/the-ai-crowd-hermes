@@ -4,7 +4,7 @@ FROM ${MOSS_BASE_IMAGE}
 USER root
 
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=1e8c6d230f7602a1bd06fced2a6cdbee2a41b073
+ARG HERMES_WEBUI_REV=9099d8e72c844cc6cd2acb80e6fbddd2e305aa03
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -28,10 +28,13 @@ RUN cd /opt/clash-royale-war-bot-node \
        node -e "const { chromium } = require('/opt/clash-royale-war-bot-node/node_modules/playwright'); (async()=>{ const b=await chromium.launch({headless:true}); await b.close(); })();" \
     && chown -R 99:100 /opt/clash-royale-war-bot-node /opt/playwright-browsers
 
+COPY ops/hermes-agent-overrides/agent/agent_init.py /opt/hermes/agent/agent_init.py
+
 RUN cd /opt/hermes \
     && test -x /opt/hermes/.venv/bin/hermes \
     && /opt/hermes/.venv/bin/hermes --version \
     && /opt/hermes/.venv/bin/python3 -m py_compile \
+        agent/agent_init.py \
         hermes_cli/auth.py \
         hermes_cli/config.py \
         hermes_cli/kanban_db.py \
@@ -39,6 +42,8 @@ RUN cd /opt/hermes \
         gateway/run.py \
         plugins/kanban/dashboard/plugin_api.py
 
+
+COPY ops/hermes-webui-overrides /tmp/hermes-webui-overrides
 
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
@@ -55,14 +60,16 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
         /opt/hermes/.venv/bin/python3 -c 'import importlib; [importlib.import_module(m) for m in ("hermes_cli.auth", "hermes_cli.config", "agent.credential_pool", "gateway.run")]; print("agent_import_smoke_ok")'; \
        fi \
     && cd /opt/hermes-webui \
-    && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py \
-    && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
+    && install -D -m 0644 /tmp/hermes-webui-overrides/tests/test_memory_surface_policy.py /opt/hermes-webui/tests/test_memory_surface_policy.py \
+    && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py tests/test_memory_surface_policy.py \
+    && HERMES_WEBUI_TEST_STATE_ROOT=/tmp/hermes-webui-build-tests /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
         tests/test_kanban_bridge.py \
         tests/test_profile_proxy_jen.py \
         tests/test_remote_cron_proxy_guard.py \
         tests/test_webui_gateway_chat_backend.py \
         tests/test_stage364_opus_live_sse_event_id.py \
         tests/test_session_channel_option_x.py \
+        tests/test_memory_surface_policy.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
