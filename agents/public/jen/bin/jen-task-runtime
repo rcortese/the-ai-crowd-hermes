@@ -219,6 +219,125 @@ valid_date_ymd() {
   [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "$(date -u -d "$1" +%F 2>/dev/null || true)" == "$1" ]]
 }
 
+normalize_due_phrase_json() {
+  local raw_due="$1" base_date="${2:-}"
+  [[ -n "$base_date" ]] || base_date="$(date -u -d "$(now_utc)" +%F 2>/dev/null || true)"
+  [[ -n "$base_date" ]] || return 1
+  python3 - "$raw_due" "$base_date" <<'PY'
+import datetime as dt
+import json
+import re
+import sys
+import unicodedata
+
+raw_due = sys.argv[1].strip()
+base_date_raw = sys.argv[2]
+
+def canonical(text: str) -> str:
+    text = unicodedata.normalize('NFKD', text or '').encode('ascii', 'ignore').decode('ascii')
+    text = text.lower().strip().replace('_', ' ')
+    text = re.sub(r'[-]+', ' ', text)
+    text = re.sub(r'[^\w\s]+', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+def valid_date(text: str) -> bool:
+    try:
+        return dt.date.fromisoformat(text).isoformat() == text
+    except ValueError:
+        return False
+
+def next_weekday(base: dt.date, weekday: int) -> str:
+    offset = (weekday - base.weekday()) % 7
+    if offset == 0:
+        offset = 7
+    return (base + dt.timedelta(days=offset)).isoformat()
+
+try:
+    base_date = dt.date.fromisoformat(base_date_raw)
+except ValueError:
+    raise SystemExit(1)
+
+canon = canonical(raw_due)
+weekday_aliases = {
+    0: {'monday', 'mon', 'segunda', 'segunda feira', 'seg', '2a feira'},
+    1: {'tuesday', 'tue', 'tues', 'terca', 'terca feira', 'ter', '3a feira'},
+    2: {'wednesday', 'wed', 'quarta', 'quarta feira', 'qua', '4a feira'},
+    3: {'thursday', 'thu', 'thur', 'thurs', 'quinta', 'quinta feira', 'qui', '5a feira'},
+    4: {'friday', 'fri', 'sexta', 'sexta feira', 'sex', '6a feira'},
+    5: {'saturday', 'sat', 'sabado', 'sab'},
+    6: {'sunday', 'sun', 'domingo', 'dom'},
+}
+ambiguous_standalone_ordinals = {'2a', '3a', '4a', '5a', '6a'}
+weekday_map = {
+    alias: weekday
+    for weekday, aliases in weekday_aliases.items()
+    for alias in aliases
+}
+relative_prefixes = ('next ', 'proxima ', 'proximo ', 'prox ')
+
+recognized = False
+ambiguous = False
+normalized_due = raw_due
+target_date = None
+
+if valid_date(raw_due):
+    recognized = True
+    normalized_due = raw_due
+    target_date = raw_due
+elif canon in {'today', 'hoje'}:
+    recognized = True
+    normalized_due = 'today'
+    target_date = base_date.isoformat()
+elif canon in {'tomorrow', 'amanha'}:
+    recognized = True
+    normalized_due = 'tomorrow'
+    target_date = (base_date + dt.timedelta(days=1)).isoformat()
+elif canon in {'day after tomorrow', 'depois de amanha'}:
+    recognized = True
+    normalized_due = (base_date + dt.timedelta(days=2)).isoformat()
+    target_date = normalized_due
+else:
+    lookup = canon
+    for prefix in relative_prefixes:
+        if lookup.startswith(prefix):
+            lookup = lookup[len(prefix):].strip()
+            break
+    if lookup in ambiguous_standalone_ordinals:
+        ambiguous = True
+    else:
+        weekday = weekday_map.get(lookup)
+        if weekday is not None:
+            recognized = True
+            normalized_due = next_weekday(base_date, weekday)
+            target_date = normalized_due
+
+print(json.dumps({
+    'recognized': recognized,
+    'ambiguous': ambiguous,
+    'raw_due': raw_due,
+    'canonical': canon,
+    'normalized_due': normalized_due,
+    'target_date': target_date,
+}, ensure_ascii=False))
+PY
+}
+
+normalize_due_string_if_supported() {
+  local due_string="$1" base_date="${2:-}" due_json normalized_due ambiguous
+  due_json="$(normalize_due_phrase_json "$due_string" "$base_date")" || return 1
+  ambiguous="$(jq -r '.ambiguous // false' <<<"$due_json")"
+  if [[ "$ambiguous" == "true" ]]; then
+    return 2
+  fi
+  normalized_due="$(jq -r '.normalized_due // empty' <<<"$due_json")"
+  if [[ -n "$normalized_due" ]]; then
+    printf '%s\n' "$normalized_due"
+  else
+    printf '%s\n' "$due_string"
+  fi
+}
+
 valid_rfc3339_utc() {
   [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] && date -u -d "$1" +%Y-%m-%dT%H:%M:%SZ >/dev/null 2>&1
 }
@@ -458,6 +577,7 @@ mutation_draft_task_completion_change() {
   local action="$2"
   local pre_state_json="$3"
   local idempotency_hint="${4:-}"
+  local confirmed_by_user="${5:-false}"
   local operation_type completed human_summary expected_effect
   case "$action" in
     complete)
@@ -483,6 +603,7 @@ mutation_draft_task_completion_change() {
     --arg operation_type "$operation_type" \
     --arg human_summary "$human_summary" \
     --arg expected_effect "$expected_effect" \
+    --argjson confirmed_by_user "$confirmed_by_user" \
     --argjson completed "$completed" \
     --argjson pre_state "$pre_state_json" '
     {
@@ -492,7 +613,8 @@ mutation_draft_task_completion_change() {
       canonical_object_type: "task",
       external_object_id: $task_id,
       pre_state: $pre_state,
-      mutation_payload: {completed:$completed, scope:"single"},
+      requires_confirmation: ($confirmed_by_user | not),
+      mutation_payload: {completed:$completed, scope:"single", confirmed_by_user:$confirmed_by_user},
       preview: {
         human_summary: $human_summary,
         fields_changed: ["completed"],
@@ -786,28 +908,18 @@ read_active_degraded_response() {
 }
 
 resolve_due_date_for_preflight() {
-  local due_string="$1" base_date
-  base_date="$(date -u -d "$(now_utc)" +%F 2>/dev/null || true)"
+  local due_string="$1" base_date="${2:-}" due_json target_date
+  [[ -n "$base_date" ]] || base_date="$(date -u -d "$(now_utc)" +%F 2>/dev/null || true)"
   [[ -n "$base_date" ]] || return 1
-  case "${due_string,,}" in
-    today)
-      printf '%s\n' "$base_date"
-      ;;
-    tomorrow)
-      date -u -d "$base_date + 1 day" +%F
-      ;;
-    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
-      valid_date_ymd "$due_string" || return 1
-      printf '%s\n' "$due_string"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  due_json="$(normalize_due_phrase_json "$due_string" "$base_date")" || return 1
+  target_date="$(jq -r '.target_date // empty' <<<"$due_json")"
+  [[ -n "$target_date" ]] || return 1
+  valid_date_ymd "$target_date" || return 1
+  printf '%s\n' "$target_date"
 }
 
 semantic_duplicate_preflight() {
-  local content="$1" due_string="$2" active_stdout active_stderr active_tasks due_tasks="[]" target_date="" to_date=""
+  local content="$1" due_string="$2" base_date="${3:-}" active_stdout active_stderr active_tasks due_tasks="[]" target_date="" to_date=""
   active_stdout=$(mktemp)
   active_stderr=$(mktemp)
 
@@ -829,7 +941,7 @@ semantic_duplicate_preflight() {
   cleanup_files "$active_stdout" "$active_stderr"
 
   if [[ -n "$due_string" ]]; then
-    if ! target_date="$(resolve_due_date_for_preflight "$due_string")"; then
+    if ! target_date="$(resolve_due_date_for_preflight "$due_string" "$base_date")"; then
       jq -nc --arg status unable_to_verify_duplicates --arg reason due_resolution_failed --arg due_string "$due_string" '{status:$status,reason:$reason,due_string:$due_string}'
       return 0
     fi
@@ -1037,8 +1149,18 @@ capture_task_command() {
     emit_failed capture-task invalid_argument
   fi
 
-  local ts draft_json prepare_json decision gateway_plan mutation_extra
+  local ts draft_json prepare_json decision gateway_plan mutation_extra command_base_date="" normalized_due_status=0 normalized_due=""
   ts="$(now_utc)"
+  if [[ -n "$due_string" ]]; then
+    command_base_date="$(date -u -d "$ts" +%F 2>/dev/null || true)"
+    [[ -n "$command_base_date" ]] || emit_failed capture-task request_failure
+    normalized_due="$(normalize_due_string_if_supported "$due_string" "$command_base_date")" || normalized_due_status=$?
+    case "$normalized_due_status" in
+      0) due_string="$normalized_due" ;;
+      2) ;;
+      *) emit_failed capture-task request_failure ;;
+    esac
+  fi
   draft_json="$(mutation_draft_task_create "$content" "$due_string")"
   if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
     emit_failed capture-task request_failure
@@ -1090,7 +1212,7 @@ capture_task_command() {
   else
     local adapter_status failure_class
     local preflight_json preflight_status preflight_extra
-    preflight_json="$(semantic_duplicate_preflight "$content" "$due_string")"
+    preflight_json="$(semantic_duplicate_preflight "$content" "$due_string" "$command_base_date")"
     preflight_status="$(jq -r '.status // "unable_to_verify_duplicates"' <<<"$preflight_json")"
     case "$preflight_status" in
       safe_to_create)
@@ -1190,7 +1312,7 @@ capture_task_command() {
 task_completion_command() {
   local command="$1" adapter_command="$2"
   shift 2
-  local task_id="" idempotency_hint=""
+  local task_id="" idempotency_hint="" confirmed_by_user=false
   while (($#)); do
     case "$1" in
       --task-id|--task-hint)
@@ -1202,6 +1324,10 @@ task_completion_command() {
         require_option_value "$command" "${2:-}"
         idempotency_hint="$2"
         shift 2
+        ;;
+      --confirmed-by-user|--user-confirmed)
+        confirmed_by_user=true
+        shift
         ;;
       *)
         emit_failed "$command" invalid_argument
@@ -1227,7 +1353,7 @@ task_completion_command() {
   fi
   pre_state="$(cat "$pre_stdout")"
 
-  draft_json="$(mutation_draft_task_completion_change "$task_id" "$action" "$pre_state" "$idempotency_hint")"
+  draft_json="$(mutation_draft_task_completion_change "$task_id" "$action" "$pre_state" "$idempotency_hint" "$confirmed_by_user")"
   if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
     cleanup_files "$pre_stdout" "$pre_stderr"
     emit_failed "$command" request_failure
@@ -1326,8 +1452,16 @@ update_due_command() {
     emit_failed update-due invalid_argument
   fi
 
-  local ts pre_stdout pre_stderr pre_status pre_state draft_json prepare_json decision gateway_plan mutation_extra
+  local ts pre_stdout pre_stderr pre_status pre_state draft_json prepare_json decision gateway_plan mutation_extra command_base_date="" normalized_due_status=0 normalized_due=""
   ts="$(now_utc)"
+  command_base_date="$(date -u -d "$ts" +%F 2>/dev/null || true)"
+  [[ -n "$command_base_date" ]] || emit_failed update-due request_failure
+  normalized_due="$(normalize_due_string_if_supported "$due_string" "$command_base_date")" || normalized_due_status=$?
+  case "$normalized_due_status" in
+    0) due_string="$normalized_due" ;;
+    2) emit_failed update-due invalid_argument ;;
+    *) emit_failed update-due request_failure ;;
+  esac
   pre_stdout=$(mktemp)
   pre_stderr=$(mktemp)
   pre_status=0

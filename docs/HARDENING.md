@@ -20,7 +20,7 @@ This is the minimum hardening backlog before expanding Hermes beyond the Moss MV
 
 ## Reproducibility
 
-- `nousresearch/hermes-agent` is pinned by digest through `ops/manifests/base-images.lock.json` and Dockerfile `ARG HERMES_AGENT_IMAGE` defaults.
+- `the-ai-crowd/hermes-agent` is built from the pinned `rcortese/hermes-agent` fork SHA recorded in `ops/manifests/base-images.lock.json`; Dockerfile `ARG HERMES_AGENT_IMAGE` defaults must match that local fork tag.
 - Record the digest used for each production build in private deployment notes.
 - Keep `tests/image-pin.sh`, `tests/health-check.sh`, and `tests/drift-detection.sh` in the release gate.
 - Run `tests/smoke-deploy.sh` only where Docker access is authorized before any production declaration.

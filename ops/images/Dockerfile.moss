@@ -1,4 +1,4 @@
-ARG HERMES_AGENT_IMAGE=the-ai-crowd/hermes-agent:release-v2026.6.19-fork-35bb891f0b90
+ARG HERMES_AGENT_IMAGE=the-ai-crowd/hermes-agent:release-v2026.7.1-fork-d46119a7b448
 FROM ${HERMES_AGENT_IMAGE}
 
 USER root
@@ -37,11 +37,18 @@ RUN apt-get update \
 
 # Runtime processes run as UID/GID 99:100 and cannot mutate the root-owned
 # Hermes venv. Bake lazy dependencies used by Moss's enabled providers so a
-# rebuilt image does not lose Honcho memory or TTS availability.
+# rebuilt image does not lose Honcho memory, web search/extract, or TTS availability.
 RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install \
         honcho-ai==2.0.1 \
+        firecrawl-py==4.17.0 \
         edge-tts==7.2.7 \
-        elevenlabs==1.59.0
+        elevenlabs==1.59.0 \
+    && /opt/hermes/.venv/bin/python3 - <<'PYSMOKE'
+import importlib
+for module_name in ("honcho", "firecrawl", "edge_tts", "elevenlabs"):
+    importlib.import_module(module_name)
+print("moss_lazy_deps_import_smoke_ok")
+PYSMOKE
 
 
 
@@ -85,7 +92,6 @@ ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 # the whole container without a root privilege-drop phase.
 RUN usermod -u 99 -g 100 hermes \
     && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
-
 
 WORKDIR /workspace
 
