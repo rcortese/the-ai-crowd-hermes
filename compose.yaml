@@ -36,6 +36,7 @@ services:
       HOME: /opt/data
       PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
       HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/moss/private:/tmp/hermes-results
       HERMES_KANBAN_DISPATCH_OWNER: moss
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       AGENT_NAME: moss
