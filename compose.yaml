@@ -325,6 +325,7 @@ services:
       HOME: /opt/data
       PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
       HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/richmond/private:/mnt/hermes-shared/richmond
       HERMES_KANBAN_DISPATCH_OWNER: richmond
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       AGENT_NAME: richmond
