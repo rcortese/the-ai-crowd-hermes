@@ -62,6 +62,9 @@ RUN usermod -u 99 -g 100 hermes \
 # regress to the prior runtime-only hotfix state.
 RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install honcho-ai==2.0.1
 
+ARG GOG_VERSION=v0.30.0
+RUN set -eux;     arch="$(uname -m)";     case "$arch" in       x86_64) gog_arch="amd64" ;;       aarch64|arm64) gog_arch="arm64" ;;       *) echo "unsupported architecture for gogcli: $arch" >&2; exit 1 ;;     esac;     version_no_v="${GOG_VERSION#v}";     tmpdir="$(mktemp -d)";     curl -fsSL "https://github.com/openclaw/gogcli/releases/download/${GOG_VERSION}/gogcli_${version_no_v}_linux_${gog_arch}.tar.gz" -o "$tmpdir/gogcli_${version_no_v}_linux_${gog_arch}.tar.gz";     curl -fsSL "https://github.com/openclaw/gogcli/releases/download/${GOG_VERSION}/checksums.txt" -o "$tmpdir/checksums.txt";     (cd "$tmpdir" && grep "gogcli_${version_no_v}_linux_${gog_arch}.tar.gz" checksums.txt | sha256sum -c -);     tar -xzf "$tmpdir/gogcli_${version_no_v}_linux_${gog_arch}.tar.gz" -C "$tmpdir" gog;     install -m 0755 "$tmpdir/gog" /usr/local/bin/gog;     rm -rf "$tmpdir";     gog --version
+
 
 WORKDIR /agents/roy/private
 

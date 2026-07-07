@@ -266,6 +266,11 @@ services:
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       HERMES_HOME: /opt/data
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      GOG_HOME: /opt/data/gog
+      GOG_KEYRING_BACKEND: file
+      GOG_CLIENT: roy-google
+      GOG_ACCOUNT: ${ROY_GOG_ACCOUNT:-rbmccortese@gmail.com}
+      ROY_VIVIANE_GOOGLE_BACKEND: gog
       HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
       AGENT_NAME: roy
       AGENT_ROOT: /agents/roy
@@ -288,6 +293,7 @@ services:
     networks: *id001
     env_file:
     - ./env/fleet.env
+    - ./env/roy.env
     build:
       context: .
       dockerfile: ops/images/Dockerfile.roy
