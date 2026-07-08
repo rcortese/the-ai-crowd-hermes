@@ -22,7 +22,7 @@ Este repositório guarda a parte pública e reproduzível desse sistema: contrat
 | Moss | Operações técnicas, infraestrutura, runtime, incidentes e execução técnica. |
 | Jen | Produtividade, tarefas, agenda e fluxos pessoais. |
 | Denholm | Produto, coerência entre agentes, decisões e direcionamento. |
-| Roy | Entrada, triagem e encaminhamento de sinais externos. |
+| Roy | Assistência pessoal direta para um usuário configurado, com recebimento, organização e encaminhamento prático de pedidos do dia a dia. |
 | Richmond | Stewardship de arquivo e organização de materiais. |
 | The Elders | Respostas preparadas a partir de pacotes aprovados e escopo restrito. |
 
