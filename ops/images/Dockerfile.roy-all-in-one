@@ -1,0 +1,79 @@
+ARG ROY_BASE_IMAGE=the-ai-crowd/roy:local
+FROM ${ROY_BASE_IMAGE}
+
+USER root
+
+ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
+ARG HERMES_WEBUI_REV=9099d8e72c844cc6cd2acb80e6fbddd2e305aa03
+
+RUN test "$(id -u hermes)" = "99" \
+    && test "$(id -g hermes)" = "100"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN cd /opt/hermes \
+    && test -x /opt/hermes/.venv/bin/hermes \
+    && /opt/hermes/.venv/bin/hermes --version \
+    && /opt/hermes/.venv/bin/python3 -m py_compile \
+        hermes_cli/auth.py \
+        hermes_cli/config.py \
+        gateway/run.py
+
+RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
+    && cd /opt/hermes-webui \
+    && git checkout --detach "${HERMES_WEBUI_REV}" \
+    && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
+    && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
+    && /opt/hermes/.venv/bin/python3 -m py_compile api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py \
+    && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
+        tests/test_webui_gateway_chat_backend.py \
+        tests/test_session_channel_option_x.py \
+    && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
+    && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
+    && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
+    && rm -rf /opt/hermes-webui/.git \
+    && chown -R 99:100 /opt/hermes-webui
+
+RUN test ! -e /opt/hermes-webui/venv \
+    && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
+       HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-build-check \
+       HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/roy/private \
+       /opt/hermes/.venv/bin/python3 - <<'PY'
+from pathlib import Path
+import importlib
+import sys
+
+if not sys.executable.startswith('/opt/hermes/.venv/'):
+    raise SystemExit(f'wrong Python executable for WebUI import: {sys.executable}')
+if Path('/opt/hermes-webui/venv').exists():
+    raise SystemExit('/opt/hermes-webui/venv must not exist in Roy all-in-one image')
+
+sys.path.insert(0, '/opt/hermes-webui')
+for module_name in ('server', 'api.config', 'api.providers'):
+    importlib.import_module(module_name)
+PY
+
+RUN git config --system --add safe.directory /opt/hermes \
+    && chown -R 99:100 /opt/hermes
+
+COPY ops/supervisor/roy-all-in-one-supervisord.conf /etc/supervisor/conf.d/roy-all-in-one.conf
+
+ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}" \
+    HOME=/opt/data \
+    HERMES_HOME=/opt/data \
+    HERMES_WEBUI_AGENT_DIR=/opt/hermes \
+    HERMES_WEBUI_HOST=0.0.0.0 \
+    HERMES_WEBUI_PORT=8787 \
+    HERMES_WEBUI_STATE_DIR=/opt/data/webui \
+    HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/roy/private \
+    HERMES_DASHBOARD=1 \
+    HERMES_DASHBOARD_HOST=0.0.0.0 \
+    HERMES_DASHBOARD_PORT=9123 \
+    HERMES_DASHBOARD_TUI=1
+
+WORKDIR /agents/roy/private
+
+ENTRYPOINT ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/roy-all-in-one.conf", "-n"]
+CMD []
