@@ -4,7 +4,7 @@ FROM ${ROY_BASE_IMAGE}
 USER root
 
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=9099d8e72c844cc6cd2acb80e6fbddd2e305aa03
+ARG HERMES_WEBUI_REV=0bcfe3a079def0d2d9185183570049bd12bf8622
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -30,6 +30,7 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
         tests/test_webui_gateway_chat_backend.py \
         tests/test_session_channel_option_x.py \
+        tests/test_updates.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
