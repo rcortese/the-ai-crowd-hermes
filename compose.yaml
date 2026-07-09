@@ -266,6 +266,7 @@ services:
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       HERMES_HOME: /opt/data
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/roy/private:/mnt/user/transfer
       GOG_HOME: /opt/data/gog
       GOG_KEYRING_BACKEND: file
       GOG_CLIENT: roy-google
