@@ -292,6 +292,8 @@ services:
       HERMES_WEBUI_PORT: '8787'
       HERMES_WEBUI_STATE_DIR: /opt/data/webui
       HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/roy/private
+      ROY_DELIVERY_TRANSFER_DIR: /mnt/user/transfer
+      ROY_DELIVERY_WORKSPACE_ROOT: /agents/roy/private
       HERMES_WEBUI_CHAT_BACKEND: api_server
       HERMES_WEBUI_GATEWAY_BASE_URL: http://roy:8645
       TELEGRAM_BOT_TOKEN: ${ROY_TELEGRAM_BOT_TOKEN:-}
@@ -318,6 +320,7 @@ services:
     - ./agents/public/roy:/agents/roy/public:ro
     - ./agents/private/roy:/agents/roy/private:rw
     - ./state/shared:/mnt/hermes-shared
+    - /mnt/user/transfer:/mnt/user/transfer:rw
     - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
     - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
