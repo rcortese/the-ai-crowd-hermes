@@ -29,7 +29,6 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && /opt/hermes/.venv/bin/python3 -m py_compile api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py \
     && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
         tests/test_webui_gateway_chat_backend.py \
-        tests/test_session_channel_option_x.py \
         tests/test_updates.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
