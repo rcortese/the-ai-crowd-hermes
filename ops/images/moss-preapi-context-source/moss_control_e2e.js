@@ -11,6 +11,7 @@ const {chromium}=require('playwright-core');
   await page.evaluate(async()=>{await newSession();});
   await page.waitForFunction(()=>S.session&&S.session.session_id,null,{timeout:30000});
   const sid=await page.evaluate(()=>S.session.session_id);
+  console.log(JSON.stringify({checkpoint:'session_created',sid}));
   await page.locator('#msg').fill('Write the integers from 1 through 3000, one per line, with no omissions. This is a streaming control test.');
   await page.evaluate(()=>send());
   await page.waitForFunction(()=>S.busy&&S.activeStreamId,null,{timeout:60000});
@@ -38,24 +39,29 @@ const {chromium}=require('playwright-core');
   }
   const stateAfter=await page.evaluate(sid=>({busy:S.busy,stream:S.activeStreamId,queue:_getSessionQueue(sid).map(x=>x.text)}),sid);
   const accepted=steerResponses.some(x=>x.status===200&&x.body&&x.body.accepted===true);
-  const controlPass=qBefore.includes('QUEUE_MOSS_MARKER')&&accepted&&stateAfter.stream===stream1&&stateAfter.queue.includes('QUEUE_MOSS_MARKER')&&runsCalls===0&&errors.length===0;
+  const controlPass=stateAfter.busy&&qBefore.includes('QUEUE_MOSS_MARKER')&&accepted&&stateAfter.stream===stream1&&stateAfter.queue.includes('QUEUE_MOSS_MARKER')&&runsCalls===0&&errors.length===0;
   console.log(JSON.stringify({checkpoint:'control_complete',sid,stream1,qBefore,steerResponses,stateAfter,runsCalls,errors,controlPass}));
   if(!controlPass){await browser.close();process.exit(2);}
   await page.evaluate(sid=>{const q=_getSessionQueue(sid);q.splice(0,q.length);_persistSessionQueueStorage(sid,q);},sid);
-  if(stateAfter.busy){
-    await page.evaluate(async()=>{
-      if(typeof cancelStream!=='function') throw new Error('cancelStream unavailable');
-      await cancelStream();
-    });
-  }
+  await page.evaluate(async()=>{
+    if(typeof cancelStream!=='function') throw new Error('cancelStream unavailable');
+    await cancelStream();
+  });
   await page.waitForFunction(()=>!S.busy,null,{timeout:30000});
+  await page.waitForTimeout(500);
+  const cancelSession=await (await page.request.get(`http://127.0.0.1:8787/api/session?session_id=${encodeURIComponent(sid)}`)).json();
+  const backendActiveStream=cancelSession?.session?.active_stream_id??cancelSession?.active_stream_id??null;
+  const cancelled=await page.evaluate(()=>!S.busy)&&!backendActiveStream;
+  if(!cancelled) throw new Error(`cancel did not clear backend stream state: ${backendActiveStream}`);
   await page.reload({waitUntil:'domcontentloaded'});
   await page.waitForTimeout(2000);
   await page.locator('#msg').fill('/compact');
   await page.evaluate(()=>send());
-  await page.waitForFunction(()=>S.busy,null,{timeout:10000}).catch(()=>{});
+  await page.waitForFunction(()=>S.busy,null,{timeout:10000});
   await page.waitForFunction(()=>!S.busy,null,{timeout:60000});
   const persisted=await (await page.request.get(`http://127.0.0.1:8787/api/session?session_id=${encodeURIComponent(sid)}`)).json();
-  console.log(JSON.stringify({checkpoint:'lifecycle_complete',sid,compactCompleted:true,persistedMessages:persisted?.session?.messages?.length??persisted?.messages?.length??null}));
+  const persistedMessages=persisted?.session?.messages?.length??persisted?.messages?.length??null;
+  if(!Number.isInteger(persistedMessages)||persistedMessages<2) throw new Error(`unexpected persisted message count: ${persistedMessages}`);
+  console.log(JSON.stringify({checkpoint:'lifecycle_complete',sid,cancelled,compactCompleted:true,persistedMessages}));
   await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});

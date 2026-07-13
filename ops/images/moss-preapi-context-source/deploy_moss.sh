@@ -11,6 +11,7 @@ log=$run_dir/deploy.log
 mkdir -p "$run_dir"
 exec > >(tee -a "$log") 2>&1
 printf 'STATE=preflight\n' >"$status"
+mutation_started=0
 old=$(docker inspect -f '{{.Image}}' "$container")
 [ "$old" = "$expected_old" ]
 [ "$(docker image inspect -f '{{.Id}}' "$candidate")" = "$candidate" ]
@@ -28,6 +29,15 @@ rollback(){
   done
   if [ "$state" = "running|healthy|0|$old" ]; then printf 'STATE=rolled_back\nIMAGE=%s\n' "$old" >"$status"; else printf 'STATE=rollback_failed\nOBSERVED=%s\n' "$state" >"$status"; fi
 }
+on_exit(){
+  local rc=$?
+  trap - EXIT
+  if [ "$rc" -ne 0 ] && [ "$mutation_started" -eq 1 ]; then
+    rollback || true
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
 cleanup_sid(){
   local sid=$1
   [ -n "$sid" ]||return 0
@@ -48,7 +58,6 @@ fail(){
   [ -z "$sid" ]||docker exec "$container" curl -fsS "http://127.0.0.1:8787/api/session?session_id=$sid" >"$run_dir/session.json"||true
   cleanup_sid "$sid"||true
   printf 'FAIL_REASON=%s\n' "$reason" >>"$status"
-  rollback
   exit 1
 }
 # Wait for no active runs/streams for a continuous 60 seconds, max 30 minutes.
@@ -61,6 +70,12 @@ while [ $SECONDS -lt $deadline ]; do
   sleep 5
 done
 [ "$idle_since" -ne 0 ]&&[ $((SECONDS-idle_since)) -ge 60 ]||{ printf 'STATE=idle_timeout\n' >"$status"; exit 2; }
+# Recheck immediately, then stop the old container as the acceptance fence.
+# Once stopped, no new work can enter the instance being replaced.
+final_preflight=$(docker exec "$container" curl -fsS http://127.0.0.1:8787/health)
+[ "$(printf '%s' "$final_preflight"|jq '(.active_runs//0)+(.active_streams//0)')" -eq 0 ]||{ printf 'STATE=idle_race_detected\n' >"$status"; exit 3; }
+mutation_started=1
+docker stop --time 30 "$container" >/dev/null
 printf 'STATE=deploying\n' >"$status"
 docker image tag "$candidate" the-ai-crowd/moss-all-in-one:local
 docker compose -f "$compose" up -d --no-deps --force-recreate moss
@@ -83,17 +98,18 @@ set +e
 control=$(timeout 180 docker exec -e CHROME="$chrome" "$container" sh -lc 'cd /tmp/e2e && node control.js' 2>&1); crc=$?
 set -e
 printf '%s\n' "$control" >"$run_dir/control.jsonl"
-control_sid=$(printf '%s\n' "$control"|jq -rR 'fromjson?|.sid//empty'|tail -n1)
+control_sid=$(printf '%s\n' "$control"|jq -rR 'fromjson? | .sid // empty'|head -n1)
 [ $crc -eq 0 ]||fail "control_rc_$crc" "$control_sid"
 cleanup_sid "$control_sid"||fail control_cleanup "$control_sid"
 set +e
 identity=$(timeout 150 docker exec -e CHROME="$chrome" "$container" sh -lc 'cd /tmp/e2e && node identity.js' 2>&1); irc=$?
 set -e
 printf '%s\n' "$identity" >"$run_dir/identity.jsonl"
-identity_sid=$(printf '%s\n' "$identity"|jq -rR 'fromjson?|.sid//empty'|tail -n1)
+identity_sid=$(printf '%s\n' "$identity"|jq -rR 'fromjson? | .sid // empty'|head -n1)
 [ $irc -eq 0 ]||fail "identity_rc_$irc" "$identity_sid"
 cleanup_sid "$identity_sid"||fail identity_cleanup "$identity_sid"
 final=$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.RestartCount}}|{{.Image}}' "$container")
 [ "$final" = "running|healthy|0|$candidate" ]||fail final_health
 printf 'STATE=success\nIMAGE=%s\nCONTROL_SID_CLEANED=%s\nIDENTITY_SID_CLEANED=%s\n' "$candidate" "$control_sid" "$identity_sid" >"$status"
+mutation_started=0
 echo "MOSS_PREAPI_CONTEXT_DEPLOY=SUCCESS $final"

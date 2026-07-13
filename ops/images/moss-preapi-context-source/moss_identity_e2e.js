@@ -8,6 +8,7 @@ const {chromium}=require('playwright-core');
   await page.evaluate(async()=>await newSession());
   await page.waitForFunction(()=>S.session&&S.session.session_id,null,{timeout:30000});
   const sid=await page.evaluate(()=>S.session.session_id);
+  console.log(JSON.stringify({checkpoint:'session_created',sid}));
   await page.locator('#msg').fill('What is your identity? Reply with exactly one word: Moss');
   await page.evaluate(()=>send());
   await page.waitForFunction(()=>S.busy,null,{timeout:30000});
