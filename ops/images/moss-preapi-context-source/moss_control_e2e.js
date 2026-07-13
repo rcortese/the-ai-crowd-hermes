@@ -31,14 +31,14 @@ const {chromium}=require('playwright-core');
     if(probe.ended) break;
     steerResponses.push({status:probe.status,body:probe.body});
     if(steerResponses.length>20) steerResponses.shift();
-    if(probe.status===200&&probe.body&&probe.body.accepted===true){
+    if(probe.status===200&&probe.body&&probe.body.accepted===true&&probe.body.stream_id===stream1){
       console.log(JSON.stringify({checkpoint:'steer_accepted',sid,stream1,qBefore,probe,runsCalls,errors}));
       break;
     }
     await page.waitForTimeout(200);
   }
   const stateAfter=await page.evaluate(sid=>({busy:S.busy,stream:S.activeStreamId,queue:_getSessionQueue(sid).map(x=>x.text)}),sid);
-  const accepted=steerResponses.some(x=>x.status===200&&x.body&&x.body.accepted===true);
+  const accepted=steerResponses.some(x=>x.status===200&&x.body&&x.body.accepted===true&&x.body.stream_id===stream1);
   const controlPass=stateAfter.busy&&qBefore.includes('QUEUE_MOSS_MARKER')&&accepted&&stateAfter.stream===stream1&&stateAfter.queue.includes('QUEUE_MOSS_MARKER')&&runsCalls===0&&errors.length===0;
   console.log(JSON.stringify({checkpoint:'control_complete',sid,stream1,qBefore,steerResponses,stateAfter,runsCalls,errors,controlPass}));
   if(!controlPass){await browser.close();process.exit(2);}
@@ -50,8 +50,10 @@ const {chromium}=require('playwright-core');
   await page.waitForFunction(()=>!S.busy,null,{timeout:30000});
   await page.waitForTimeout(500);
   const cancelSession=await (await page.request.get(`http://127.0.0.1:8787/api/session?session_id=${encodeURIComponent(sid)}`)).json();
-  const backendActiveStream=cancelSession?.session?.active_stream_id??cancelSession?.active_stream_id??null;
-  const cancelled=await page.evaluate(()=>!S.busy)&&!backendActiveStream;
+  const cancelRecord=cancelSession?.session??cancelSession;
+  const hasActiveStreamField=!!cancelRecord&&Object.prototype.hasOwnProperty.call(cancelRecord,'active_stream_id');
+  const backendActiveStream=hasActiveStreamField?cancelRecord.active_stream_id:undefined;
+  const cancelled=await page.evaluate(()=>!S.busy)&&hasActiveStreamField&&!backendActiveStream;
   if(!cancelled) throw new Error(`cancel did not clear backend stream state: ${backendActiveStream}`);
   await page.reload({waitUntil:'domcontentloaded'});
   await page.waitForTimeout(2000);

@@ -70,11 +70,21 @@ while [ $SECONDS -lt $deadline ]; do
   sleep 5
 done
 [ "$idle_since" -ne 0 ]&&[ $((SECONDS-idle_since)) -ge 60 ]||{ printf 'STATE=idle_timeout\n' >"$status"; exit 2; }
-# Recheck immediately, then stop the old container as the acceptance fence.
-# Once stopped, no new work can enter the instance being replaced.
-final_preflight=$(docker exec "$container" curl -fsS http://127.0.0.1:8787/health)
-[ "$(printf '%s' "$final_preflight"|jq '(.active_runs//0)+(.active_streams//0)')" -eq 0 ]||{ printf 'STATE=idle_race_detected\n' >"$status"; exit 3; }
+# Establish admission fence before the authoritative zero-work assertion:
+# stop platform ingress and disconnect only Caddy's ingress network. Internal
+# egress stays connected so an already-admitted WebUI run can finish draining.
 mutation_started=1
+docker exec "$container" supervisorctl -c /etc/supervisor/conf.d/moss-all-in-one.conf stop moss-gateway
+docker network disconnect network_default "$container"
+printf 'STATE=fenced_draining\n' >"$status"
+fence_deadline=$((SECONDS+300)); fenced_idle_since=0
+while [ $SECONDS -lt $fence_deadline ]; do
+  fenced_health=$(docker exec "$container" curl -fsS http://127.0.0.1:8787/health)
+  fenced_active=$(printf '%s' "$fenced_health"|jq '(.active_runs//0)+(.active_streams//0)')
+  if [ "$fenced_active" -eq 0 ]; then [ "$fenced_idle_since" -ne 0 ]||fenced_idle_since=$SECONDS; [ $((SECONDS-fenced_idle_since)) -ge 10 ]&&break; else fenced_idle_since=0; fi
+  sleep 2
+done
+[ "$fenced_idle_since" -ne 0 ]&&[ $((SECONDS-fenced_idle_since)) -ge 10 ]||fail fenced_drain_timeout
 docker stop --time 30 "$container" >/dev/null
 printf 'STATE=deploying\n' >"$status"
 docker image tag "$candidate" the-ai-crowd/moss-all-in-one:local
