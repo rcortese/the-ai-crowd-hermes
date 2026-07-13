@@ -1,0 +1,22 @@
+const {chromium}=require('playwright-core');
+(async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME,args:['--no-sandbox']});
+  const page=await browser.newPage();
+  await page.goto('http://127.0.0.1:8787/',{waitUntil:'domcontentloaded'});
+  await page.waitForFunction(()=>typeof newSession==='function'&&typeof send==='function',null,{timeout:30000});
+  await page.waitForTimeout(1500);
+  await page.evaluate(async()=>await newSession());
+  await page.waitForFunction(()=>S.session&&S.session.session_id,null,{timeout:30000});
+  const sid=await page.evaluate(()=>S.session.session_id);
+  await page.locator('#msg').fill('What is your identity? Reply with exactly one word: Moss');
+  await page.evaluate(()=>send());
+  await page.waitForFunction(()=>S.busy,null,{timeout:30000});
+  await page.waitForFunction(()=>!S.busy,null,{timeout:120000});
+  const data=await (await page.request.get(`http://127.0.0.1:8787/api/session?session_id=${encodeURIComponent(sid)}`)).json();
+  const messages=data?.session?.messages||data?.messages||[];
+  const assistant=[...messages].reverse().find(m=>m.role==='assistant');
+  const content=String(assistant?.content||'').trim();
+  console.log(JSON.stringify({sid,identity:content}));
+  await browser.close();
+  if(content!=='Moss') process.exit(2);
+})().catch(e=>{console.error(e);process.exit(1)});
