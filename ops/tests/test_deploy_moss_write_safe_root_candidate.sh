@@ -11,7 +11,10 @@ candidate_image_id=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 CALL_LOG="$tmp/calls"
 
 make_fakes() {
-  mkdir -p "$tmp/fakebin"
+  mkdir -p "$tmp/fakebin" "$tmp/archive/ops/images" "$tmp/buildtmp"
+  printf 'tracked archive fixture\n' >"$tmp/archive/README.md"
+  printf 'base Dockerfile fixture\n' >"$tmp/archive/ops/images/Dockerfile.moss"
+  printf 'all-in-one Dockerfile fixture\n' >"$tmp/archive/ops/images/Dockerfile.moss-all-in-one"
   cat >"$tmp/fakebin/git" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -20,6 +23,12 @@ if [[ $* == *'rev-parse HEAD' ]]; then printf '%s\n' "$FAKE_HEAD"; exit 0; fi
 if [[ $* == *'rev-parse --verify '* ]]; then
   value=${@: -1}; printf '%s\n' "${value/\^\{commit\}/}"; exit 0
 fi
+if [[ $* == *'ls-tree -r --name-only '* ]]; then
+  printf '%s\n' README.md ops/images/Dockerfile.moss ops/images/Dockerfile.moss-all-in-one; exit 0
+fi
+if [[ $* == *'archive --format=tar '* ]]; then
+  /usr/bin/tar -cf - -C "$TEST_TMP/archive" README.md ops; exit 0
+fi
 exit 1
 EOF
   cat >"$tmp/fakebin/docker" <<'EOF'
@@ -27,6 +36,15 @@ EOF
 set -euo pipefail
 printf 'docker %s\n' "$*" >>"$CALL_LOG"
 args="$*"
+if [[ $args == build* ]]; then
+  count_file="$TEST_TMP/build-count"; count=$(cat "$count_file" 2>/dev/null || printf 0); count=$((count + 1)); printf '%s' "$count" >"$count_file"
+  context=${@: -1}
+  test -d "$context"
+  test ! -e "$context/.candidate-dirty"
+  test ! -e "$context/env/.candidate-ignored.env"
+  [[ ${SCENARIO:-} == second_build_failure && $count -eq 2 ]] && exit 1
+  exit 0
+fi
 if [[ $args == *'image inspect '* && $args == *'{{.Id}}'* ]]; then
   if [[ ${SCENARIO:-} == candidate_id_changed ]]; then
     printf '%s\n' sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
@@ -50,7 +68,13 @@ if [[ $args == *'compose '* && $args == *' up -d --no-deps --force-recreate moss
 fi
 exit 0
 EOF
-  chmod +x "$tmp/fakebin/git" "$tmp/fakebin/docker"
+  cat >"$tmp/fakebin/tar" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'tar %s\n' "$*" >>"$CALL_LOG"
+exec /usr/bin/tar "$@"
+EOF
+  chmod +x "$tmp/fakebin/git" "$tmp/fakebin/docker" "$tmp/fakebin/tar"
 }
 
 assert_no_recreate() { ! grep -q -- '--force-recreate moss' "$CALL_LOG"; }
@@ -60,7 +84,7 @@ assert_rollback_exact() {
   test "$(grep -c -- 'up -d --no-deps --force-recreate moss' "$CALL_LOG")" -eq 2
 }
 run() {
-  CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" CANDIDATE_IMAGE_ID="$candidate_image_id" PATH="$tmp/fakebin:$PATH" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
+  CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" CANDIDATE_IMAGE_ID="$candidate_image_id" PATH="$tmp/fakebin:$PATH" TMPDIR="$tmp/buildtmp" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
 }
 
 make_fakes
@@ -89,6 +113,13 @@ test ! -e "$tmp/state"
 assert_no_recreate
 test ! -s "$tmp/calls" || ! grep -q '^docker ' "$tmp/calls"
 
+# These source-only fixtures simulate dirty and ignored inputs. The fake Docker
+# command rejects either if a candidate build context receives them.
+printf 'dirty source fixture\n' >"$repo/.candidate-dirty"
+mkdir -p "$repo/env"; printf 'ignored env fixture\n' >"$repo/env/.candidate-ignored.env"
+chmod 000 "$repo/.candidate-dirty" "$repo/env/.candidate-ignored.env"
+trap 'chmod 600 "$repo/.candidate-dirty" "$repo/env/.candidate-ignored.env" 2>/dev/null || true; rm -f "$repo/.candidate-dirty" "$repo/env/.candidate-ignored.env"; rm -rf "$tmp"' EXIT
+
 # Execute read-only phases against fakes and retain CAS-bound evidence.
 : >"$tmp/calls"
 run --commit "$commit" --phase preflight --execute
@@ -97,6 +128,26 @@ run --commit "$commit" --phase validate --execute
 grep -Fxq "$commit" "$tmp/state/write-safe-root-$commit/commit"
 grep -Fxq 'phase=validate' "$tmp/state/write-safe-root-$commit/validate"
 assert_no_recreate
+
+# Candidate builds use only a git archive context: dirty/ignored source and env
+# fixtures must not reach either Docker build, compose is forbidden here, and
+# the commit-bound base tag/context are cleaned on success and failure.
+base="the-ai-crowd/moss:write-safe-root-base-$commit"
+test "$(grep -c '^docker build ' "$CALL_LOG")" -eq 2
+grep -F -- "docker build --tag $base -f " "$CALL_LOG" | grep -Fq 'ops/images/Dockerfile.moss '
+grep -F -- "docker build --tag $candidate --build-arg MOSS_BASE_IMAGE=$base -f " "$CALL_LOG" | grep -Fq 'ops/images/Dockerfile.moss-all-in-one '
+grep -Fq "docker image rm -f $base" "$CALL_LOG"
+grep -Fq "archive --format=tar $commit" "$CALL_LOG"
+grep -Fq "ls-tree -r --name-only $commit" "$CALL_LOG"
+test "$(grep -c '^tar ' "$CALL_LOG")" -eq 2
+! grep -q 'compose\|env/' "$CALL_LOG"
+test -z "$(find "$tmp/buildtmp" -mindepth 1 -print -quit)"
+
+: >"$tmp/calls"; rm -f "$tmp/build-count"
+if SCENARIO=second_build_failure run --commit "$commit" --phase build --execute >"$tmp/second-build" 2>&1; then echo 'second build failure unexpectedly succeeded' >&2; exit 1; fi
+grep -Fq "docker image rm -f $base" "$CALL_LOG"
+test -z "$(find "$tmp/buildtmp" -mindepth 1 -print -quit)"
+! grep -q 'compose\|env/' "$CALL_LOG"
 
 # A moved candidate tag must fail validation before any promotion mutation.
 : >"$tmp/calls"

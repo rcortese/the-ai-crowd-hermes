@@ -29,15 +29,20 @@ resolve exactly to the checkout `HEAD` before the runner creates that state or
 touches Docker.
 
 `preflight`, `build`, and `validate` are ordered read/build/inspect phases;
-none can stop or recreate a service. `promote` requires the same-commit
-`validate` evidence and is the only phase which can recreate `moss`. It first
-records the running Moss image ID, tags the candidate into the compose image
-reference, stops only `moss`, recreates only `moss`, and validates a healthy
-container using the candidate image. Any failure after the stop (including
-signals) retags and recreates from that exact recorded image, then validates
-the rollback image before reporting the original failure. A successful
-promotion keeps durable phase evidence but removes the temporary rollback-image
-marker.
+none can stop or recreate a service. Candidate build makes a temporary Docker
+context exclusively with `git archive` of the resolved full commit, verifies its
+file tree against that commit, then directly builds `Dockerfile.moss` to a
+commit-scoped temporary base tag and `Dockerfile.moss-all-in-one` with
+`MOSS_BASE_IMAGE` bound to that tag. The temporary context and base tag are
+removed on both success and failure. These three phases never invoke Compose or
+read an environment file. `promote` requires the same-commit `validate`
+evidence and is the only phase which can recreate `moss`. It first records the
+running Moss image ID, tags the candidate into the compose image reference,
+stops only `moss`, recreates only `moss`, and validates a healthy container
+using the candidate image. Any failure after the stop (including signals)
+retags and recreates from that exact recorded image, then validates the rollback
+image before reporting the original failure. A successful promotion keeps
+durable phase evidence but removes the temporary rollback-image marker.
 
 K3/K4/K5 must not execute a build, candidate, or promotion. K6 owns isolated
 candidate build/validation. K7 approval plus an external guarded invocation is
