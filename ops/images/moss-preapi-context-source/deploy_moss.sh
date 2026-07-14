@@ -85,15 +85,22 @@ on_exit(){
 }
 trap on_exit EXIT
 cleanup_sid(){
-  local sid=$1
+  local sid=$1 consecutive_absent=0 left
   [ -n "$sid" ]||return 0
   printf '{"session_id":"%s"}\n' "$sid" >"$run_dir/delete.json"
   docker cp "$run_dir/delete.json" "$container:/tmp/delete.json" >/dev/null
   docker exec "$container" curl -fsS -X POST -H 'Content-Type: application/json' --data-binary @/tmp/delete.json http://127.0.0.1:8787/api/session/delete >/dev/null
-  for _ in $(seq 1 15); do
-    local left
+  # A completed browser may flush a final session write after the delete ACK.
+  # Require five consecutive absent samples and re-delete any late reappearance.
+  for _ in $(seq 1 30); do
     left=$(docker exec "$container" curl -fsS http://127.0.0.1:8787/api/sessions | jq --arg sid "$sid" '[.sessions[]? | select(.session_id==$sid)]|length')
-    [ "$left" -eq 0 ]&&return 0
+    if [ "$left" -eq 0 ]; then
+      consecutive_absent=$((consecutive_absent+1))
+      [ "$consecutive_absent" -ge 5 ]&&return 0
+    else
+      consecutive_absent=0
+      docker exec "$container" curl -fsS -X POST -H 'Content-Type: application/json' --data-binary @/tmp/delete.json http://127.0.0.1:8787/api/session/delete >/dev/null
+    fi
     sleep 2
   done
   return 1
