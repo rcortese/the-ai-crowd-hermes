@@ -42,3 +42,8 @@ venv/
 /ops/candidates/
 /build-contexts/
 /compose.yaml.bak-*
+
+# Generated self-replacing deployment state (host-local; may contain private trial state)
+/ops/dev/
+/ops/deploy-runs/
+/ops/runtime-assets/
