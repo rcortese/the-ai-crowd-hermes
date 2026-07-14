@@ -43,7 +43,7 @@ verify_compose_snapshot(){
   [ "$(docker compose "${compose_args[@]}" config --format json | jq -r '.services.moss.image')" = "$production_tag" ]
 }
 verify_e2e_snapshot(){
-  [ "$(jq -r '.dependencies[\"playwright-core\"]' "$e2e_dir/package.json")" = "1.57.0" ] &&
+  [ "$(jq -r '.dependencies."playwright-core"' "$e2e_dir/package.json")" = "1.57.0" ] &&
   [ "$(jq -r '.version' "$e2e_dir/node_modules/playwright-core/package.json")" = "1.57.0" ] &&
   [ "$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=a-w -C "$e2e_dir" -cf - package.json package-lock.json node_modules | sha256sum | cut -d' ' -f1)" = "$expected_browser_bundle_sha" ] &&
   [ "$(sha256sum "$e2e_dir/control.js" | cut -d' ' -f1)" = "$expected_control_sha" ] &&
