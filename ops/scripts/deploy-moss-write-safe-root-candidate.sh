@@ -68,8 +68,15 @@ build_candidate() (
   expected="$archive_root/expected-files"
   actual="$archive_root/archive-files"
   cleanup_candidate_build() {
-    docker image rm -f "$base_image" >/dev/null 2>&1 || true
-    rm -rf "$archive_root"
+    local build_rc=$? cleanup_rc=0
+    trap - EXIT INT TERM
+    docker image rm -f "$base_image" >/dev/null 2>&1 || cleanup_rc=1
+    rm -rf "$archive_root" || cleanup_rc=1
+    if (( build_rc != 0 )); then
+      exit "$build_rc"
+    fi
+    (( cleanup_rc == 0 )) || exit "$cleanup_rc"
+    exit 0
   }
   trap cleanup_candidate_build EXIT
   trap 'exit 130' INT

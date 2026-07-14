@@ -42,7 +42,7 @@ if [[ $args == build* ]]; then
   test -d "$context"
   test ! -e "$context/.candidate-dirty"
   test ! -e "$context/env/.candidate-ignored.env"
-  [[ ${SCENARIO:-} == second_build_failure && $count -eq 2 ]] && exit 1
+  [[ ${SCENARIO:-} == second_build_failure && $count -eq 2 ]] && exit 23
   exit 0
 fi
 if [[ $args == *'image inspect '* && $args == *'{{.Id}}'* ]]; then
@@ -51,6 +51,10 @@ if [[ $args == *'image inspect '* && $args == *'{{.Id}}'* ]]; then
   else
     printf '%s\n' "$CANDIDATE_IMAGE_ID"
   fi
+  exit 0
+fi
+if [[ $args == *'image rm -f '* ]]; then
+  [[ ${SCENARIO:-} == base_cleanup_failure ]] && exit 1
   exit 0
 fi
 if [[ $args == *'{{.Image}}'* && $args != *'.State.Status'* && $args == *' moss' ]]; then
@@ -74,7 +78,18 @@ set -euo pipefail
 printf 'tar %s\n' "$*" >>"$CALL_LOG"
 exec /usr/bin/tar "$@"
 EOF
-  chmod +x "$tmp/fakebin/git" "$tmp/fakebin/docker" "$tmp/fakebin/tar"
+  cat >"$tmp/fakebin/rm" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'rm %s\n' "$*" >>"$CALL_LOG"
+if [[ $* == *moss-write-safe-root-context.* ]]; then
+  case "${SCENARIO:-}" in
+    context_cleanup_failure) exit 1 ;;
+  esac
+fi
+exec /usr/bin/rm "$@"
+EOF
+  chmod +x "$tmp/fakebin/git" "$tmp/fakebin/docker" "$tmp/fakebin/tar" "$tmp/fakebin/rm"
 }
 
 assert_no_recreate() { ! grep -q -- '--force-recreate moss' "$CALL_LOG"; }
@@ -144,10 +159,35 @@ test "$(grep -c '^tar ' "$CALL_LOG")" -eq 2
 test -z "$(find "$tmp/buildtmp" -mindepth 1 -print -quit)"
 
 : >"$tmp/calls"; rm -f "$tmp/build-count"
-if SCENARIO=second_build_failure run --commit "$commit" --phase build --execute >"$tmp/second-build" 2>&1; then echo 'second build failure unexpectedly succeeded' >&2; exit 1; fi
+set +e
+SCENARIO=second_build_failure run --commit "$commit" --phase build --execute >"$tmp/second-build" 2>&1
+build_rc=$?
+set -e
+[[ $build_rc -eq 23 ]] || { echo "build failure code was not preserved: $build_rc" >&2; exit 1; }
 grep -Fq "docker image rm -f $base" "$CALL_LOG"
 test -z "$(find "$tmp/buildtmp" -mindepth 1 -print -quit)"
 ! grep -q 'compose\|env/' "$CALL_LOG"
+
+# Cleanup failures after a successful build fail closed. Both cleanup actions
+# must still be attempted and no successful build evidence may be recorded.
+for cleanup_scenario in base_cleanup_failure context_cleanup_failure; do
+  : >"$tmp/calls"; rm -f "$tmp/build-count"
+  rm -f "$tmp/state/write-safe-root-$commit/build" "$tmp/state/write-safe-root-$commit/candidate-image-id" "$tmp/state/write-safe-root-$commit/status"
+  if SCENARIO="$cleanup_scenario" run --commit "$commit" --phase build --execute >"$tmp/$cleanup_scenario" 2>&1; then
+    echo "$cleanup_scenario unexpectedly succeeded" >&2; exit 1
+  fi
+  grep -Fq "docker image rm -f $base" "$CALL_LOG"
+  grep -Fq "rm -rf $tmp/buildtmp/moss-write-safe-root-context." "$CALL_LOG"
+  ! test -e "$tmp/state/write-safe-root-$commit/build"
+  ! test -e "$tmp/state/write-safe-root-$commit/candidate-image-id"
+  ! test -e "$tmp/state/write-safe-root-$commit/status"
+  ! grep -q 'compose\|env/' "$CALL_LOG"
+done
+
+# Restore successful evidence for validation and promotion coverage below.
+: >"$tmp/calls"; rm -f "$tmp/build-count"
+run --commit "$commit" --phase build --execute
+run --commit "$commit" --phase validate --execute
 
 # A moved candidate tag must fail validation before any promotion mutation.
 : >"$tmp/calls"
