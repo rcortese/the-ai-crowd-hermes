@@ -4,7 +4,9 @@
 set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 exec python3 - "$repo_root" <<'PY'
+import hashlib
 import json
+import posixpath
 import re
 import shlex
 import subprocess
@@ -40,6 +42,72 @@ required_base_persona_dockerfiles = {
     "ops/images/Dockerfile.the-elders",
 }
 interpreter = "/opt/hermes/.venv/bin/python3"
+
+
+moss_build_manifests = {
+    "ops/images/moss-clash-royale-war-bot/package.json": "c94203f97cc6977afea4f5248f0f337f3dd1642ab7b4333b8307858435cff1db",
+    "ops/images/moss-clash-royale-war-bot/package-lock.json": "00619e87bd755ebccd3b93f7c1e73a470d90ddf98827b8681210706b27935d01",
+}
+expected_playwright = {"range": "^1.59.1", "version": "1.59.1", "integrity": "sha512-C8oWjPR3F81yljW9o5OxcWzfh6avkVwDD2VYdwIGqTkl+OGFISgypqzfu7dOe4QNLL2aqcWBmI3PMtLIK233lw=="}
+secret_pattern = re.compile(r"AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----")
+
+def docker_copy_sources(source):
+    sources = []
+    folded = re.sub(r"\\[ \t]*\r?\n", " ", source)
+    for line in folded.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        match = re.match(r"(?i)^\s*(COPY|ADD)\s+(.+)$", line)
+        if not match:
+            continue
+        arguments = match.group(2).strip()
+        payload = re.sub(r"^(?:(?:--[A-Za-z0-9][A-Za-z0-9_-]*(?:=[^\s]*)?)\s+)+", "", arguments)
+        try:
+            tokens = json.loads(payload) if payload.startswith("[") else shlex.split(payload, comments=False)
+        except (ValueError, json.JSONDecodeError):
+            raise ValueError(f"unparseable {match.group(1).upper()} instruction: {line}")
+        if not isinstance(tokens, list) or not all(isinstance(token, str) for token in tokens):
+            raise ValueError(f"invalid operands in {match.group(1).upper()} instruction: {line}")
+        if len(tokens) < 2:
+            raise ValueError(f"missing source or destination in {match.group(1).upper()} instruction: {line}")
+        sources.extend(posixpath.normpath(token) for token in tokens[:-1])
+    return sources
+
+def verify_no_private_overlay_copy(source):
+    private_sources = [path for path in docker_copy_sources(source) if path.lstrip("/") == "agents/private" or path.lstrip("/").startswith("agents/private/")]
+    if private_sources:
+        raise ValueError(f"Dockerfile COPY/ADD must not source ignored agents/private: {private_sources}")
+
+def assert_private_overlay_copy_rejected(name, source):
+    try:
+        verify_no_private_overlay_copy(source)
+    except ValueError:
+        return
+    raise SystemExit(f"private-overlay mutation fixture unexpectedly passed: {name}")
+
+def verify_moss_build_manifests(repo):
+    if not all((repo / path).is_file() for path in moss_build_manifests):
+        raise ValueError("missing tracked Moss Playwright build manifest")
+    tracked = subprocess.run(["git", "ls-files", "--error-unmatch", *moss_build_manifests], cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if tracked.returncode:
+        raise ValueError(f"Moss Playwright build manifest is not tracked: {tracked.stderr.strip()}")
+    for relative_path, expected_hash in moss_build_manifests.items():
+        payload = (repo / relative_path).read_bytes()
+        if hashlib.sha256(payload).hexdigest() != expected_hash:
+            raise ValueError(f"unexpected build manifest hash: {relative_path}")
+        decoded = payload.decode("utf-8")
+        if secret_pattern.search(decoded) or re.search(r"https?://[^/@\s]+:[^/@\s]+@", decoded):
+            raise ValueError(f"secret-like content in tracked build manifest: {relative_path}")
+    package = json.loads((repo / "ops/images/moss-clash-royale-war-bot/package.json").read_text())
+    lock = json.loads((repo / "ops/images/moss-clash-royale-war-bot/package-lock.json").read_text())
+    if package.get("dependencies", {}).get("playwright") != expected_playwright["range"] or lock.get("lockfileVersion") != 3:
+        raise ValueError("unexpected Moss Playwright manifest dependency or lockfile version")
+    root_dependencies = lock.get("packages", {}).get("", {}).get("dependencies", {})
+    playwright = lock.get("packages", {}).get("node_modules/playwright", {})
+    if root_dependencies.get("playwright") != expected_playwright["range"]:
+        raise ValueError("package-lock root Playwright dependency does not match package.json")
+    if playwright.get("version") != expected_playwright["version"] or playwright.get("integrity") != expected_playwright["integrity"]:
+        raise ValueError("unexpected locked Playwright package integrity")
 
 
 def persona_services(services):
@@ -142,6 +210,12 @@ def assert_patch_prerequisite_rejected(name, dockerfile_sources, required_docker
     raise SystemExit(f"mutation fixture unexpectedly passed: {name}")
 
 
+# Mutation coverage keeps the private-overlay source guard honest.
+assert_private_overlay_copy_rejected("continued COPY from ignored private overlay", "COPY ./agents/private/moss/projects/clash-royale-war-bot/package.json \\\n agents/private/moss/projects/clash-royale-war-bot/package-lock.json \\\n /opt/clash-royale-war-bot-node/\\n")
+assert_private_overlay_copy_rejected("ADD from ignored private overlay", "ADD agents/private/moss/projects/clash-royale-war-bot/package.json /opt/clash-royale-war-bot-node/\\n")
+assert_private_overlay_copy_rejected("flagged JSON COPY from ignored private overlay", "COPY --link=true [\"agents/private/x\", \"/dst\"]\n")
+assert_private_overlay_copy_rejected("flagged JSON ADD from ignored private overlay", "ADD --chmod=0644 [\"./agents/private/x\", \"/dst\"]\n")
+
 # Mutation coverage keeps the checker honest before it is applied to the fleet.
 fixture_map = {"known": "ops/images/Dockerfile.known"}
 known_service = {
@@ -238,6 +312,10 @@ for dockerfile in all_persona_dockerfiles:
     if not path.is_file():
         raise SystemExit(f"missing persona Dockerfile: {dockerfile}")
     dockerfile_sources[dockerfile] = path.read_text()
+
+verify_moss_build_manifests(repo)
+for dockerfile, source in dockerfile_sources.items():
+    verify_no_private_overlay_copy(source)
 
 verify_patch_prerequisites(dockerfile_sources, required_base_persona_dockerfiles)
 for dockerfile in sorted(required_base_persona_dockerfiles):
