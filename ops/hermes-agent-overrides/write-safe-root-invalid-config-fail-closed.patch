@@ -1,0 +1,141 @@
+--- a/agent/file_safety.py
++++ b/agent/file_safety.py
+@@ -81,3 +81,6 @@
+-    """Return resolved HERMES_WRITE_SAFE_ROOT paths. Supports multiple directories
+-    separated by ``os.pathsep`` (``:`` on Unix, ``;`` on Windows).
+-    E.g., ``/opt/data:/var/www/html`` on Unix, ``C:\\data;D:\\www`` on Windows."""
++    """Return valid, normalized roots from ``HERMES_WRITE_SAFE_ROOT``.
++
++    Empty/unset configuration disables only the additional allowlist. A nonempty
++    configuration with no valid entries is deliberately distinguishable so the
++    caller can fail closed rather than silently treating it as unset.
++    """
+@@ -88,7 +91,7 @@
+-    for path in env.split(os.pathsep):
+-        if path:
+-            try:
+-                resolved = os.path.realpath(os.path.expanduser(path))
+-                roots.add(resolved)
+-            except (OSError, ValueError):
+-                continue
++    for entry in env.split(os.pathsep):
++        if not entry:
++            continue
++        try:
++            roots.add(os.path.realpath(os.path.expanduser(entry)))
++        except (OSError, ValueError):
++            continue
+@@ -98,4 +101,7 @@
+-def is_write_denied(path: str) -> bool:
+-    """Return True if path is blocked by the write denylist or safe root."""
+-    home = os.path.realpath(os.path.expanduser("~"))
+-    resolved = os.path.realpath(os.path.expanduser(str(path)))
++def _classify_write_denial(path: str) -> Optional[str]:
++    """Return a stable denial reason, preserving hard-deny precedence."""
++    try:
++        home = os.path.realpath(os.path.expanduser("~"))
++        resolved = os.path.realpath(os.path.expanduser(str(path)))
++    except (OSError, ValueError):
++        return "protected system/credential file"
+@@ -104 +110 @@
+-        return True
++        return "protected system/credential file"
+@@ -107,5 +113,3 @@
+-            return True
+-
+-    mcp_tokens_dir_name = "mcp-tokens"
+-
+-    hermes_dirs = []
++            return "protected system/credential file"
++
++    hermes_dirs: list[str] = []
+@@ -115,5 +119,4 @@
+-            if real not in hermes_dirs:
+-                hermes_dirs.append(real)
+-        except Exception:
+-            continue
+-
++        except (OSError, ValueError):
++            continue
++        if real not in hermes_dirs:
++            hermes_dirs.append(real)
+@@ -121,24 +124,26 @@
+-        try:
+-            mcp_real = os.path.realpath(os.path.join(base_real, mcp_tokens_dir_name))
+-            if resolved == mcp_real or resolved.startswith(mcp_real + os.sep):
+-                return True
+-        except Exception:
+-            pass
+-        try:
+-            pairing_real = os.path.realpath(os.path.join(base_real, "pairing"))
+-            if resolved == pairing_real or resolved.startswith(pairing_real + os.sep):
+-                return True
+-        except Exception:
+-            pass
+-
+-    safe_roots = get_safe_write_roots()
+-    if safe_roots:
+-        allowed = False
+-        for safe_root in safe_roots:
+-            if resolved == safe_root or resolved.startswith(safe_root + os.sep):
+-                allowed = True
+-                break
+-        if not allowed:
+-            return True
+-
+-    return False
++        for store in ("mcp-tokens", "pairing"):
++            try:
++                store_real = os.path.realpath(os.path.join(base_real, store))
++            except (OSError, ValueError):
++                continue
++            if resolved == store_real or resolved.startswith(store_real + os.sep):
++                return "protected system/credential file"
++
++    env = os.getenv("HERMES_WRITE_SAFE_ROOT", "")
++    roots = get_safe_write_roots()
++    if env and not roots:
++        return "HERMES_WRITE_SAFE_ROOT has no valid roots"
++    if roots and not any(resolved == root or resolved.startswith(root + os.sep) for root in roots):
++        return f"outside HERMES_WRITE_SAFE_ROOT ({os.pathsep.join(sorted(roots))})"
++    return None
++
++
++def get_write_denied_error(path: str, verb: str = "write") -> Optional[str]:
++    """Return the shared, non-secret diagnostic for a denied mutation."""
++    del verb  # Callers own their operation prefix; policy text is shared.
++    return _classify_write_denial(path)
++
++
++def is_write_denied(path: str) -> bool:
++    """Return True if path is blocked by the write denylist or safe-root."""
++    return _classify_write_denial(path) is not None
+--- a/tools/file_operations.py
++++ b/tools/file_operations.py
+@@ -40,0 +41 @@
++    get_write_denied_error as _shared_get_write_denied_error,
+@@ -148,0 +150,4 @@
++
++
++def _write_denied_error(path: str, verb: str) -> str:
++    return _shared_get_write_denied_error(path, verb=verb) or "protected system/credential file"
+@@ -1253 +1258 @@
+-            return WriteResult(error=f"Delete denied: {path} is a protected path")
++            return WriteResult(error=f"Delete denied: {_write_denied_error(path, 'delete')}")
+@@ -1299 +1304 @@
+-                return WriteResult(error=f"Move denied: {p} is a protected path")
++                return WriteResult(error=f"Move denied: {_write_denied_error(p, 'move')}")
+@@ -1338 +1343 @@
+-            return WriteResult(error=f"Write denied: '{path}' is a protected system/credential file.")
++            return WriteResult(error=f"Write denied: {_write_denied_error(path, 'write')}")
+@@ -1484 +1489 @@
+-            return PatchResult(error=f"Write denied: '{path}' is a protected system/credential file.")
++            return PatchResult(error=f"Patch denied: {_write_denied_error(path, 'patch')}")
+--- a/agent/copilot_acp_client.py
++++ b/agent/copilot_acp_client.py
+@@ -29 +29 @@
+-from agent.file_safety import get_read_block_error, is_write_denied
++from agent.file_safety import get_read_block_error, get_write_denied_error, is_write_denied
+@@ -732 +732 @@
+-                        f"Write denied: '{path}' is a protected system/credential file."
++                        f"Write denied: {get_write_denied_error(str(path), verb='write') or 'protected system/credential file'}"
