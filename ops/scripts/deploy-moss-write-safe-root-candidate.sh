@@ -38,10 +38,14 @@ if (( ! execute )); then
 fi
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-canonical_container=${MOSS_CANONICAL_CONTAINER:-the-ai-crowd-moss-1}
+# Production mutation anchors are deliberately literal and cannot be redirected.
+if [[ -v MOSS_CANONICAL_CONTAINER || -v MOSS_COMPOSE_SERVICE ]]; then
+  die 'canonical target environment overrides are not allowed'
+fi
+readonly canonical_container='the-ai-crowd-moss-1'
+readonly compose_service='moss'
 container=${container:-$canonical_container}
-[[ $container == "$canonical_container" && $container != moss ]] || die 'canonical container target is required'
-compose_service=${MOSS_COMPOSE_SERVICE:-moss}
+[[ $container == "$canonical_container" ]] || die 'canonical container target is required'
 head=$(git -C "$repo" rev-parse HEAD)
 resolved_commit=$(git -C "$repo" rev-parse --verify "${commit}^{commit}")
 state_root=${MOSS_WRITE_SAFE_ROOT_STATE_ROOT:-"$repo/ops/candidates"}
