@@ -56,7 +56,7 @@ services:
       HERMES_WEBUI_PORT: '8787'
       HERMES_WEBUI_STATE_DIR: /opt/data/webui
       HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/moss/private
-      HERMES_WEBUI_CHAT_BACKEND: api_server
+      HERMES_WEBUI_CHAT_BACKEND: legacy-direct
       HERMES_WEBUI_GATEWAY_BASE_URL: http://moss:8648
       HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL: http://jen:8642
       HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY_ENV: API_SERVER_KEY
@@ -295,7 +295,7 @@ services:
       HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/roy/private
       ROY_DELIVERY_TRANSFER_DIR: /mnt/user/transfer
       ROY_DELIVERY_WORKSPACE_ROOT: /agents/roy/private
-      HERMES_WEBUI_CHAT_BACKEND: api_server
+      HERMES_WEBUI_CHAT_BACKEND: legacy-direct
       HERMES_WEBUI_GATEWAY_BASE_URL: http://roy:8645
       HERMES_WEBUI_ISOLATED_PROFILE: '1'
       ROY_DELIVERY_WEBUI_BASE_URL: https://roy.rodolflix.com
