@@ -1,0 +1,58 @@
+{
+  "allowed_source_paths": [
+    "api/agent_health.py",
+    "api/background_process.py",
+    "api/gateway_chat.py",
+    "api/profiles.py",
+    "api/routes.py",
+    "static/ui.js"
+  ],
+  "already_upstream": [
+    {
+      "behavior": "gateway SSE read-inactivity timeout",
+      "path": "api/gateway_chat.py",
+      "source_commit": "fcb135a133e789fb2e8c590c630c2a42d239b498"
+    }
+  ],
+  "apply": {
+    "command": "ops/scripts/reapply-webui-v05228-ai-crowd-candidate.sh --repo /opt/hermes-webui --patch ops/hermes-webui-overrides/webui-v0.52.28-ai-crowd-minimal.patch --manifest ops/hermes-webui-overrides/webui-v0.52.28-ai-crowd-minimal.manifest.json",
+    "policy": "exact clean target; git apply --check; no fuzz or rejects; reset rollback on failure"
+  },
+  "excluded": [
+    "context resolver implementation",
+    "Runs API reverts",
+    "duplicate Bearer authentication",
+    "duplicate single-flight health probing",
+    "whole-file vendor copies"
+  ],
+  "name": "webui-v0.52.28-ai-crowd-minimal",
+  "patch_bytes": 55305,
+  "patch_file": "webui-v0.52.28-ai-crowd-minimal.patch",
+  "patch_paths": [
+    "api/agent_health.py",
+    "api/background_process.py",
+    "api/gateway_chat.py",
+    "api/profiles.py",
+    "api/routes.py",
+    "static/ui.js",
+    "tests/test_agent_health_remote.py",
+    "tests/test_background_process_stale_stream.py",
+    "tests/test_issue716_agent_heartbeat.py",
+    "tests/test_mobile_layout.py",
+    "tests/test_optionz_liveview_perf.py",
+    "tests/test_profile_proxy_jen.py",
+    "tests/test_remote_cron_proxy_guard.py",
+    "tests/test_webui_gateway_chat_backend.py"
+  ],
+  "patch_sha256": "85b830f202e21c4b07f04ee04539df911bdb79a2bd4691ae93406568b8c6995f",
+  "patched_source_tree": "405db1a13f3560f3b63a9be04af8d09cf1d678e1",
+  "ported_behaviors": [
+    "remote persona proxies with fail-closed cron and session isolation",
+    "native-context unknown without fictitious denominator",
+    "explicit health telemetry degradation and cross-origin redirect auth protection",
+    "cancel-flicker stale-stream guard requiring ACTIVE_RUNS and STREAMS membership"
+  ],
+  "schema_version": 1,
+  "upstream_target_commit": "62a185e453c06f56afa896cdfbc32392bb6f9372",
+  "upstream_target_tree": "331cd55ad43537bbb658bfe8f81196f7a0322780"
+}
