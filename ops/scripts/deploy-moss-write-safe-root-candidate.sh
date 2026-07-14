@@ -53,6 +53,11 @@ printf '%s\n' "$candidate" >"$state/candidate-image"
 
 record_phase() { printf 'commit=%s\nhead=%s\nphase=%s\n' "$resolved_commit" "$head" "$1" >"$state/$1"; }
 require_phase() { [[ -s $state/$1 ]] || die "missing CAS-bound $1 evidence"; }
+remove_build_evidence() { rm -f "$state/build" "$state/candidate-image-id" "$state/validate" "$state/promote" "$state/rollback-image"; }
+begin_build_attempt() {
+  remove_build_evidence
+  printf "build_started\n" >"$state/status"
+}
 
 validate_container_image() {
   local expected=$1 observed
@@ -73,9 +78,15 @@ build_candidate() (
     docker image rm -f "$base_image" >/dev/null 2>&1 || cleanup_rc=1
     rm -rf "$archive_root" || cleanup_rc=1
     if (( build_rc != 0 )); then
+      remove_build_evidence
+      printf "build_failed\nexit_code=%s\n" "$build_rc" >"$state/status"
       exit "$build_rc"
     fi
-    (( cleanup_rc == 0 )) || exit "$cleanup_rc"
+    if (( cleanup_rc != 0 )); then
+      remove_build_evidence
+      printf "build_cleanup_failed\nexit_code=%s\n" "$cleanup_rc" >"$state/status"
+      exit "$cleanup_rc"
+    fi
     exit 0
   }
   trap cleanup_candidate_build EXIT
@@ -129,6 +140,7 @@ case "$phase" in
     ;;
   build)
     require_phase preflight
+    begin_build_attempt
     build_candidate
     candidate_image_id=$(docker image inspect -f '{{.Id}}' "$candidate")
     [[ $candidate_image_id =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'could not record immutable candidate image ID'

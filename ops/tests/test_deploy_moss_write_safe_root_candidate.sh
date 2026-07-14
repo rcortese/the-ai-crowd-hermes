@@ -169,10 +169,10 @@ test -z "$(find "$tmp/buildtmp" -mindepth 1 -print -quit)"
 ! grep -q 'compose\|env/' "$CALL_LOG"
 
 # Cleanup failures after a successful build fail closed. Both cleanup actions
-# must still be attempted and no successful build evidence may be recorded.
+# must still be attempted, invalidate prior same-commit evidence, and leave
+# validation/promotion unable to reach Docker mutation.
 for cleanup_scenario in base_cleanup_failure context_cleanup_failure; do
   : >"$tmp/calls"; rm -f "$tmp/build-count"
-  rm -f "$tmp/state/write-safe-root-$commit/build" "$tmp/state/write-safe-root-$commit/candidate-image-id" "$tmp/state/write-safe-root-$commit/status"
   if SCENARIO="$cleanup_scenario" run --commit "$commit" --phase build --execute >"$tmp/$cleanup_scenario" 2>&1; then
     echo "$cleanup_scenario unexpectedly succeeded" >&2; exit 1
   fi
@@ -180,8 +180,26 @@ for cleanup_scenario in base_cleanup_failure context_cleanup_failure; do
   grep -Fq "rm -rf $tmp/buildtmp/moss-write-safe-root-context." "$CALL_LOG"
   ! test -e "$tmp/state/write-safe-root-$commit/build"
   ! test -e "$tmp/state/write-safe-root-$commit/candidate-image-id"
-  ! test -e "$tmp/state/write-safe-root-$commit/status"
+  ! test -e "$tmp/state/write-safe-root-$commit/validate"
+  ! test -e "$tmp/state/write-safe-root-$commit/promote"
+  grep -Fxq 'build_cleanup_failed' "$tmp/state/write-safe-root-$commit/status"
   ! grep -q 'compose\|env/' "$CALL_LOG"
+
+  : >"$tmp/calls"
+  if run --commit "$commit" --phase validate --execute >"$tmp/$cleanup_scenario-validate" 2>&1; then
+    echo "$cleanup_scenario validate unexpectedly succeeded" >&2; exit 1
+  fi
+  grep -q 'missing CAS-bound build evidence' "$tmp/$cleanup_scenario-validate"
+  assert_no_recreate
+  ! grep -q '^docker ' "$CALL_LOG"
+
+  : >"$tmp/calls"
+  if run --commit "$commit" --phase promote --execute >"$tmp/$cleanup_scenario-promote" 2>&1; then
+    echo "$cleanup_scenario promote unexpectedly succeeded" >&2; exit 1
+  fi
+  grep -q 'missing CAS-bound validate evidence' "$tmp/$cleanup_scenario-promote"
+  assert_no_recreate
+  ! grep -q '^docker ' "$CALL_LOG"
 done
 
 # Restore successful evidence for validation and promotion coverage below.
