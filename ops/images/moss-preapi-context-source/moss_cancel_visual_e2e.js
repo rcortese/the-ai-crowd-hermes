@@ -1,0 +1,58 @@
+const {chromium}=require('playwright-core');
+(async()=>{
+  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME,args:['--no-sandbox']});
+  const page=await browser.newPage();
+  const errors=[]; const steerResponses=[]; let runsCalls=0;
+  page.on('pageerror',e=>errors.push(String(e)));
+  page.on('request',r=>{if(r.url().includes('/v1/runs')) runsCalls++;});
+  await page.goto('http://127.0.0.1:8787/',{waitUntil:'domcontentloaded'});
+  await page.waitForFunction(()=>typeof newSession==='function'&&typeof send==='function'&&document.getElementById('msg'),null,{timeout:30000});
+  await page.waitForTimeout(2000);
+  await page.evaluate(async()=>{await newSession();});
+  await page.waitForFunction(()=>S.session&&S.session.session_id,null,{timeout:30000});
+  const sid=await page.evaluate(()=>S.session.session_id);
+  console.log(JSON.stringify({checkpoint:'session_created',sid}));
+  await page.evaluate(()=>{
+    const root=document.getElementById('msgInner');
+    const trace=window.__cancelTrace={start:performance.now(),frames:[],mutations:[],renders:[]};
+    const nodeIds=new WeakMap(); let nextNodeId=1;
+    const id=n=>{if(!n)return null;if(!nodeIds.has(n))nodeIds.set(n,nextNodeId++);return nodeIds.get(n)};
+    const snap=label=>{const live=document.getElementById('liveAssistantTurn');trace.frames.push({t:performance.now()-trace.start,label,childCount:root.childElementCount,textLen:root.innerText.length,height:root.getBoundingClientRect().height,busy:S.busy,stream:S.activeStreamId,msgCount:S.messages.length,rootFirst:id(root.firstElementChild),rootLast:id(root.lastElementChild),liveId:id(live),liveConnected:!!(live&&live.isConnected)});};
+    new MutationObserver(records=>{for(const r of records)trace.mutations.push({t:performance.now()-trace.start,added:r.addedNodes.length,removed:r.removedNodes.length,targetId:id(r.target),targetTag:r.target&&r.target.id||r.target&&r.target.nodeName});}).observe(root,{childList:true,subtree:true});
+    const original=renderMessages;
+    renderMessages=function(...args){trace.renders.push({t:performance.now()-trace.start,phase:'before',args,childCount:root.childElementCount,textLen:root.innerText.length,stack:(new Error()).stack.split('\n').slice(1,6)});const result=original.apply(this,args);trace.renders.push({t:performance.now()-trace.start,phase:'after',childCount:root.childElementCount,textLen:root.innerText.length});return result;};
+    window.renderMessages=renderMessages;
+    window.__beginCancelFrames=()=>{trace.cancelAt=performance.now()-trace.start;const until=performance.now()+2500;const tick=()=>{snap('raf');if(performance.now()<until)requestAnimationFrame(tick);};requestAnimationFrame(tick);};
+    window.__snapCancel=label=>snap(label);
+  });
+  await page.locator('#msg').fill('Write the integers from 1 through 5000, one per line, with no omissions. Continue until complete.');
+  await page.evaluate(()=>send());
+  await page.waitForFunction(()=>S.busy&&S.activeStreamId&&document.getElementById('msgInner').innerText.length>120,null,{timeout:60000});
+  const stream1=await page.evaluate(()=>S.activeStreamId);
+  await page.evaluate(()=>{__snapCancel('pre_cancel');__beginCancelFrames();});
+  await page.evaluate(()=>cancelStream());
+  await page.waitForFunction(()=>!S.busy,null,{timeout:30000});
+  await page.evaluate(()=>__snapCancel('frontend_idle'));
+  await page.waitForTimeout(2500);
+  await page.evaluate(()=>__snapCancel('settled'));
+  const cancelSession=await (await page.request.get(`http://127.0.0.1:8787/api/session?session_id=${encodeURIComponent(sid)}`)).json();
+  const trace=await page.evaluate(()=>window.__cancelTrace);
+  require('fs').writeFileSync(process.env.OUT||'/tmp/flicker-repro.json',JSON.stringify({sid,stream1,errors,backend:{active_stream_id:cancelSession?.session?.active_stream_id,message_count:cancelSession?.session?.messages?.length},trace},null,2));
+  console.log(JSON.stringify({checkpoint:'cancel_trace',sid,stream1,errors,backendActive:cancelSession?.session?.active_stream_id,frames:trace.frames.length,mutations:trace.mutations.length,renders:trace.renders.length}));
+  const frames=trace.frames.filter(x=>x.t>=trace.cancelAt);
+  const renders=trace.renders.filter(x=>x.phase==='before'&&x.t>=trace.cancelAt);
+  const identities=[];
+  for(const frame of frames){
+    const value=[frame.rootFirst,frame.rootLast,frame.liveId];
+    if(!identities.length||JSON.stringify(identities[identities.length-1])!==JSON.stringify(value)) identities.push(value);
+  }
+  const backendRecord=cancelSession&&cancelSession.session;
+  if(!backendRecord||!Object.prototype.hasOwnProperty.call(backendRecord,'active_stream_id')||backendRecord.active_stream_id!==null) throw new Error(`backend stream not exactly terminal: ${backendRecord&&backendRecord.active_stream_id}`);
+  if(errors.length) throw new Error(`browser errors: ${JSON.stringify(errors)}`);
+  if(runsCalls!==0) throw new Error(`unexpected Runs API calls: ${runsCalls}`);
+  if(renders.length>1) throw new Error(`cancel caused repeated transcript renders: ${renders.length}`);
+  if(identities.length>2) throw new Error(`cancel caused DOM identity flapping: ${identities.length}`);
+  if(!frames.length||Math.min(...frames.map(x=>x.childCount))<2||Math.min(...frames.map(x=>x.textLen))<=0) throw new Error('transcript became empty during cancel');
+  console.log(JSON.stringify({checkpoint:'cancel_visual_complete',sid,stream1,backendActive:backendRecord.active_stream_id,rendersAfterCancel:renders.length,identityTransitions:identities.length,minChildren:Math.min(...frames.map(x=>x.childCount)),minText:Math.min(...frames.map(x=>x.textLen)),runsCalls,errors}));
+  await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});
