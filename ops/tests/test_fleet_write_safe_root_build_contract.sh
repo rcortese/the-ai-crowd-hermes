@@ -31,6 +31,14 @@ all_persona_dockerfiles = {
     "ops/images/Dockerfile.roy-all-in-one",
     "ops/images/Dockerfile.the-elders",
 }
+required_base_persona_dockerfiles = {
+    "ops/images/Dockerfile.moss",
+    "ops/images/Dockerfile.jen",
+    "ops/images/Dockerfile.denholm",
+    "ops/images/Dockerfile.richmond",
+    "ops/images/Dockerfile.roy",
+    "ops/images/Dockerfile.the-elders",
+}
 interpreter = "/opt/hermes/.venv/bin/python3"
 
 
@@ -115,6 +123,20 @@ def verify_persona_services(services, dockerfile_sources, expected_map):
 def assert_rejected(name, services, sources, expected_map):
     try:
         verify_persona_services(services, sources, expected_map)
+    except ValueError:
+        return
+    raise SystemExit(f"mutation fixture unexpectedly passed: {name}")
+
+
+def verify_patch_prerequisites(dockerfile_sources, required_dockerfiles):
+    for dockerfile in required_dockerfiles:
+        if not has_patch_prerequisite(dockerfile_sources[dockerfile]):
+            raise ValueError(f"missing patch prerequisite before source-backed gate: {dockerfile}")
+
+
+def assert_patch_prerequisite_rejected(name, dockerfile_sources, required_dockerfiles):
+    try:
+        verify_patch_prerequisites(dockerfile_sources, required_dockerfiles)
     except ValueError:
         return
     raise SystemExit(f"mutation fixture unexpectedly passed: {name}")
@@ -216,6 +238,20 @@ for dockerfile in all_persona_dockerfiles:
     if not path.is_file():
         raise SystemExit(f"missing persona Dockerfile: {dockerfile}")
     dockerfile_sources[dockerfile] = path.read_text()
+
+verify_patch_prerequisites(dockerfile_sources, required_base_persona_dockerfiles)
+for dockerfile in sorted(required_base_persona_dockerfiles):
+    mutated_sources = dict(dockerfile_sources)
+    mutated_sources[dockerfile] = mutated_sources[dockerfile].replace(
+        "apt-get install -y --no-install-recommends patch",
+        "apt-get install -y --no-install-recommends not-patch",
+        1,
+    )
+    assert_patch_prerequisite_rejected(
+        f"patch prerequisite missing: {dockerfile}",
+        mutated_sources,
+        required_base_persona_dockerfiles,
+    )
 
 try:
     verify_persona_services(services, dockerfile_sources, expected_service_dockerfiles)

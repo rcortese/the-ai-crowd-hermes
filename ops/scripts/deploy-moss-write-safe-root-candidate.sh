@@ -96,29 +96,39 @@ case "$phase" in
   build)
     require_phase preflight
     docker build --tag "$candidate" -f "$repo/ops/images/Dockerfile.moss-all-in-one" "$repo" >"$state/build.log"
+    candidate_image_id=$(docker image inspect -f '{{.Id}}' "$candidate")
+    [[ $candidate_image_id =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'could not record immutable candidate image ID'
+    printf '%s\n' "$candidate_image_id" >"$state/candidate-image-id"
     record_phase build
-    printf 'build_complete\n' >"$state/status"
+    printf 'build_complete\nimage_id=%s\n' "$candidate_image_id" >"$state/status"
     ;;
   validate)
     require_phase build
-    docker image inspect "$candidate" >/dev/null
+    [[ -s $state/candidate-image-id ]] || die 'missing immutable candidate image ID'
+    candidate_image_id=$(<"$state/candidate-image-id")
+    [[ $candidate_image_id =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'invalid immutable candidate image ID'
+    observed_candidate_image_id=$(docker image inspect -f '{{.Id}}' "$candidate")
+    [[ $observed_candidate_image_id == "$candidate_image_id" ]] || die 'candidate image ID changed after build'
     record_phase validate
-    printf 'validate_complete\n' >"$state/status"
+    printf 'validate_complete\nimage_id=%s\n' "$candidate_image_id" >"$state/status"
     ;;
   promote)
     require_phase validate
-    # Capture and persist the immutable image ID before any stop/recreate call.
+    [[ -s $state/candidate-image-id ]] || die 'missing immutable candidate image ID'
+    candidate_image_id=$(<"$state/candidate-image-id")
+    [[ $candidate_image_id =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'invalid immutable candidate image ID'
+    # Capture and persist the immutable rollback image ID before any stop/recreate call.
     rollback_image=$(docker inspect -f '{{.Image}}' moss)
-    [[ -n $rollback_image ]] || die 'could not record current moss image'
+    [[ $rollback_image =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'could not record current moss image ID'
     printf '%s\n' "$rollback_image" >"$state/rollback-image"
-    docker image tag "$candidate" "$production_image"
+    docker image tag "$candidate_image_id" "$production_image"
     mutation_started=1
     "${compose[@]}" stop moss
     "${compose[@]}" up -d --no-deps --force-recreate moss
-    validate_container_image "$candidate"
+    validate_container_image "$candidate_image_id"
     mutation_started=0
     rm -f "$state/rollback-image"
     record_phase promote
-    printf 'promote_complete\nimage=%s\n' "$candidate" >"$state/status"
+    printf 'promote_complete\nimage_id=%s\n' "$candidate_image_id" >"$state/status"
     ;;
 esac
