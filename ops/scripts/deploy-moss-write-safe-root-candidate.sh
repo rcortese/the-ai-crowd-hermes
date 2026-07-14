@@ -43,6 +43,7 @@ resolved_commit=$(git -C "$repo" rev-parse --verify "${commit}^{commit}")
 state_root=${MOSS_WRITE_SAFE_ROOT_STATE_ROOT:-"$repo/ops/candidates"}
 state="$state_root/write-safe-root-$resolved_commit"
 candidate="the-ai-crowd/moss-all-in-one:write-safe-root-$resolved_commit"
+base_image="the-ai-crowd/moss:write-safe-root-base-$resolved_commit"
 production_image="the-ai-crowd/moss-all-in-one:local"
 compose=(docker compose -f "$repo/compose.yaml")
 mkdir -p "$state"
@@ -58,6 +59,33 @@ validate_container_image() {
   observed=$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.Image}}' moss)
   [[ $observed == "running|healthy|$expected" ]]
 }
+
+build_candidate() (
+  local archive_root context archive expected actual
+  archive_root=$(mktemp -d "${TMPDIR:-/tmp}/moss-write-safe-root-context.XXXXXX")
+  context="$archive_root/context"
+  archive="$archive_root/tracked-tree.tar"
+  expected="$archive_root/expected-files"
+  actual="$archive_root/archive-files"
+  cleanup_candidate_build() {
+    docker image rm -f "$base_image" >/dev/null 2>&1 || true
+    rm -rf "$archive_root"
+  }
+  trap cleanup_candidate_build EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  # The context is populated only from the resolved commit's tracked archive.
+  git -C "$repo" archive --format=tar "$resolved_commit" >"$archive"
+  git -C "$repo" ls-tree -r --name-only "$resolved_commit" | LC_ALL=C sort -u >"$expected"
+  tar -tf "$archive" | grep -v '/$' | LC_ALL=C sort -u >"$actual"
+  cmp -s "$expected" "$actual" || die 'tracked archive tree provenance mismatch'
+  mkdir -p "$context"
+  tar -xf "$archive" -C "$context"
+
+  docker build --tag "$base_image" -f "$context/ops/images/Dockerfile.moss" "$context" >"$state/build-base.log"
+  docker build --tag "$candidate" --build-arg "MOSS_BASE_IMAGE=$base_image" -f "$context/ops/images/Dockerfile.moss-all-in-one" "$context" >"$state/build.log"
+)
 
 mutation_started=0
 rollback_image=
@@ -89,13 +117,12 @@ trap 'exit 143' TERM
 
 case "$phase" in
   preflight)
-    "${compose[@]}" config --quiet
     record_phase preflight
     printf 'preflight_complete\n' >"$state/status"
     ;;
   build)
     require_phase preflight
-    docker build --tag "$candidate" -f "$repo/ops/images/Dockerfile.moss-all-in-one" "$repo" >"$state/build.log"
+    build_candidate
     candidate_image_id=$(docker image inspect -f '{{.Id}}' "$candidate")
     [[ $candidate_image_id =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'could not record immutable candidate image ID'
     printf '%s\n' "$candidate_image_id" >"$state/candidate-image-id"
