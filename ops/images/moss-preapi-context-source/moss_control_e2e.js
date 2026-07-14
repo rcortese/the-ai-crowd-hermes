@@ -59,9 +59,15 @@ const {chromium}=require('playwright-core');
   const cancelled=frontendObservedIdle&&backendStreamCleared&&Number.isInteger(cancelMessageCount)&&cancelMessageCount>=2;
   if(!cancelled) throw new Error(`cancel gate failed: frontendObservedIdle=${frontendObservedIdle} hasActiveStreamField=${hasActiveStreamField} backendActiveStream=${backendActiveStream} messageCount=${cancelMessageCount}`);
   await page.reload({waitUntil:'domcontentloaded'});
-  await page.waitForTimeout(2000);
+  await page.waitForFunction(()=>typeof loadSession==='function'&&S.session,null,{timeout:30000});
+  await page.evaluate(async sid=>{await loadSession(sid);},sid);
+  await page.waitForFunction(sid=>S.session?.session_id===sid,sid,{timeout:30000});
+  const reloadedSid=await page.evaluate(()=>S.session?.session_id);
+  if(reloadedSid!==sid) throw new Error(`reload session drift: expected=${sid} actual=${reloadedSid}`);
   let preCompactRecord=null;
   for(const [prompt,targetCount] of [['Reply exactly SECOND_TURN_OK',4],['Reply exactly THIRD_TURN_OK',6]]){
+    const activeSid=await page.evaluate(()=>S.session?.session_id);
+    if(activeSid!==sid) throw new Error(`follow-up session drift: expected=${sid} actual=${activeSid}`);
     await page.locator('#msg').fill(prompt);
     await page.evaluate(()=>send());
     const turnDeadline=Date.now()+60000;
@@ -78,6 +84,8 @@ const {chromium}=require('playwright-core');
     await page.waitForFunction(()=>!S.busy,null,{timeout:10000});
   }
   const preCompactMessages=Array.isArray(preCompactRecord?.messages)?preCompactRecord.messages.length:0;
+  const compactSid=await page.evaluate(()=>S.session?.session_id);
+  if(compactSid!==sid) throw new Error(`compact session drift: expected=${sid} actual=${compactSid}`);
   await page.locator('#msg').fill('/compact');
   await page.evaluate(()=>send());
   const compactStatuses=[];
