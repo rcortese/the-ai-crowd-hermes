@@ -1,0 +1,21 @@
+{
+  "name": "clash-royale-war-bot",
+  "version": "1.0.0",
+  "description": "Local automation bot for monitoring Clash Royale clan member war activity with official API snapshots and RoyaleAPI browser-assisted screening.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "PYTHONPATH=src python3 -m unittest discover -s tests -v",
+    "fetch:royaleapi": "node scripts/royaleapi_fetch.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.59.1"
+  }
+}
