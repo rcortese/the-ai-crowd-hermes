@@ -5,7 +5,7 @@ set -Eeuo pipefail
 
 usage() {
   printf '%s\n' \
-    'Usage: deploy-moss-write-safe-root-candidate.sh --commit SHA --phase PHASE [--container CONTAINER] [--execute]' \
+    'Usage: deploy-moss-write-safe-root-candidate.sh --commit SHA --phase PHASE [--container CONTAINER] [--deployment-root /mnt/user/appdata/the-ai-crowd] [--execute]' \
     '' \
     'Phases: preflight, build, validate, promote, abort.' \
     'Dry runs are inert. Only an explicitly executed promote may recreate the canonical Moss target.'
@@ -16,12 +16,14 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 commit=
 phase=
 container=
+requested_deployment_root=
 execute=0
 while (($#)); do
   case "$1" in
     --commit) (($# >= 2)) || { usage >&2; exit 2; }; commit=$2; shift 2 ;;
     --phase) (($# >= 2)) || { usage >&2; exit 2; }; phase=$2; shift 2 ;;
     --container) (($# >= 2)) || { usage >&2; exit 2; }; container=$2; shift 2 ;;
+    --deployment-root) (($# >= 2)) || { usage >&2; exit 2; }; requested_deployment_root=$2; shift 2 ;;
     --execute) execute=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
@@ -30,6 +32,18 @@ done
 
 [[ -n $commit && -n $phase ]] || { usage >&2; exit 2; }
 case "$phase" in preflight|build|validate|promote|abort) ;; *) printf 'invalid phase: %s\n' "$phase" >&2; exit 2 ;; esac
+
+# Compose/lifecycle inputs are a separate trust domain from the reviewed Git
+# worktree. This literal path is deliberately neither configurable nor derived
+# from the script location, current directory, or environment.
+readonly canonical_deployment_root='/mnt/user/appdata/the-ai-crowd'
+if [[ -v MOSS_DEPLOYMENT_ROOT ]]; then
+  die 'deployment root environment override is not allowed'
+fi
+if [[ -n $requested_deployment_root && $requested_deployment_root != "$canonical_deployment_root" ]]; then
+  die 'canonical deployment root is required'
+fi
+readonly deployment_root="$canonical_deployment_root"
 
 # Do not call git, Docker, or create state for a dry run.
 if (( ! execute )); then
@@ -60,23 +74,41 @@ fi
 candidate="the-ai-crowd/moss-all-in-one:write-safe-root-$resolved_commit"
 base_image="the-ai-crowd/moss:write-safe-root-base-$resolved_commit"
 production_image="the-ai-crowd/moss-all-in-one:local"
-compose=(docker compose -f "$repo/compose.yaml")
+validate_canonical_deployment_root() {
+  [[ -d $deployment_root && ! -L $deployment_root ]] || die 'canonical deployment root is unavailable'
+  [[ -f $deployment_root/compose.yaml ]] || die 'canonical Compose input is missing'
+  [[ -f $deployment_root/.env && -f $deployment_root/env/fleet.env ]] || die 'canonical Compose environment input is missing'
+}
+deployment_root_identity() { stat -Lc '%d:%i' -- "$deployment_root"; }
+canonical_compose_sha256() { sha256sum -- "$deployment_root/compose.yaml" | awk '{print $1}'; }
+canonical_env_sha256() { sha256sum -- "$deployment_root/.env" "$deployment_root/env/fleet.env" | sha256sum | awk '{print $1}'; }
+# Keep rendered config (which may contain secrets) inside the pipe. Do not add
+# tee, command substitution of the raw render, or diagnostic output here.
+compose=(docker compose --project-directory "$deployment_root" --env-file "$deployment_root/.env" -f "$deployment_root/compose.yaml")
 staged_diff_sha256() { git -C "$repo" diff --cached --binary | sha256sum | awk '{print $1}'; }
-rendered_compose_sha256() { "${compose[@]}" config | sha256sum | awk '{print $1}'; }
+rendered_compose_sha256() { (cd "$deployment_root" && "${compose[@]}" config 2>/dev/null | sha256sum | awk '{print $1}'); }
+run_canonical_compose() { (cd "$deployment_root" && "${compose[@]}" "$@"); }
 read_live_target() { docker inspect -f '{{.Id}}|{{.Image}}' "$container"; }
 record_activation_preflight() {
-  local staged_sha live compose_sha live_id live_image observed_candidate
+  local staged_sha live root_id compose_input_sha env_sha compose_sha live_id live_image observed_candidate
+  validate_canonical_deployment_root
+  root_id=$(deployment_root_identity)
+  compose_input_sha=$(canonical_compose_sha256)
+  env_sha=$(canonical_env_sha256)
   staged_sha=$(staged_diff_sha256)
   live=$(read_live_target) || die 'canonical container target is missing'
   IFS='|' read -r live_id live_image <<<"$live"
   [[ $live_id =~ ^[[:alnum:]][[:alnum:]._-]*$ && $live_image =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'canonical container target is invalid'
   compose_sha=$(rendered_compose_sha256)
-  [[ $staged_sha =~ ^[[:xdigit:]]{64}$ && $compose_sha =~ ^[[:xdigit:]]{64}$ ]] || die 'could not capture activation CAS evidence'
+  [[ $root_id =~ ^[[:digit:]]+:[[:digit:]]+$ && $staged_sha =~ ^[[:xdigit:]]{64}$ && $compose_input_sha =~ ^[[:xdigit:]]{64}$ && $env_sha =~ ^[[:xdigit:]]{64}$ && $compose_sha =~ ^[[:xdigit:]]{64}$ ]] || die 'could not capture activation CAS evidence'
   printf '%s\n' "$head" >"$state/activation-head"
   printf '%s\n' "$staged_sha" >"$state/activation-staged-diff-sha256"
   printf '%s\n' "$container" >"$state/activation-container"
   printf '%s\n' "$live_id" >"$state/activation-container-id"
   printf '%s\n' "$live_image" >"$state/activation-live-image-id"
+  printf '%s\n' "$root_id" >"$state/activation-deployment-root-id"
+  printf '%s\n' "$compose_input_sha" >"$state/activation-compose-input-sha256"
+  printf '%s\n' "$env_sha" >"$state/activation-env-sha256"
   printf '%s\n' "$compose_sha" >"$state/activation-compose-sha256"
   if observed_candidate=$(docker image inspect -f '{{.Id}}' "$candidate" 2>/dev/null); then
     [[ $observed_candidate =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'could not capture candidate image ID'
@@ -86,13 +118,17 @@ record_activation_preflight() {
   fi
 }
 verify_activation_cas() {
-  local expected_head expected_staged expected_container expected_live_id expected_live_image expected_compose expected_candidate live current_staged current_compose current_candidate
-  for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-compose-sha256 activation-candidate-image-id candidate-image-id; do
+  local expected_head expected_staged expected_container expected_live_id expected_live_image expected_root_id expected_compose_input expected_env expected_compose expected_candidate live current_root_id current_compose_input current_env current_staged current_compose current_candidate
+  for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-deployment-root-id activation-compose-input-sha256 activation-env-sha256 activation-compose-sha256 activation-candidate-image-id candidate-image-id; do
     [[ -s $state/$evidence ]] || die "missing activation CAS evidence: $evidence"
   done
-  expected_head=$(<"$state/activation-head"); expected_staged=$(<"$state/activation-staged-diff-sha256"); expected_container=$(<"$state/activation-container"); expected_live_id=$(<"$state/activation-container-id"); expected_live_image=$(<"$state/activation-live-image-id"); expected_compose=$(<"$state/activation-compose-sha256"); expected_candidate=$(<"$state/activation-candidate-image-id")
+  expected_head=$(<"$state/activation-head"); expected_staged=$(<"$state/activation-staged-diff-sha256"); expected_container=$(<"$state/activation-container"); expected_live_id=$(<"$state/activation-container-id"); expected_live_image=$(<"$state/activation-live-image-id"); expected_root_id=$(<"$state/activation-deployment-root-id"); expected_compose_input=$(<"$state/activation-compose-input-sha256"); expected_env=$(<"$state/activation-env-sha256"); expected_compose=$(<"$state/activation-compose-sha256"); expected_candidate=$(<"$state/activation-candidate-image-id")
   [[ $expected_container == "$canonical_container" && $container == "$expected_container" ]] || die 'canonical container target CAS mismatch'
   [[ $head == "$expected_head" ]] || die 'activation CAS mismatch: HEAD changed'
+  validate_canonical_deployment_root
+  current_root_id=$(deployment_root_identity); [[ $current_root_id == "$expected_root_id" ]] || die 'activation CAS mismatch: deployment root changed'
+  current_compose_input=$(canonical_compose_sha256); [[ $current_compose_input == "$expected_compose_input" ]] || die 'activation CAS mismatch: Compose input changed'
+  current_env=$(canonical_env_sha256); [[ $current_env == "$expected_env" ]] || die 'activation CAS mismatch: Compose environment changed'
   current_staged=$(staged_diff_sha256); [[ $current_staged == "$expected_staged" ]] || die 'activation CAS mismatch: staged diff changed'
   live=$(read_live_target) || die 'canonical container target is missing'
   [[ $live == "$expected_live_id|$expected_live_image" ]] || die 'activation CAS mismatch: live target changed'
@@ -100,6 +136,8 @@ verify_activation_cas() {
   current_candidate=$(docker image inspect -f '{{.Id}}' "$candidate") || die 'activation CAS mismatch: candidate missing'
   [[ $current_candidate == "$expected_candidate" && $current_candidate == $(<"$state/candidate-image-id") ]] || die 'activation CAS mismatch: candidate image changed'
 }
+# Reject unavailable canonical Compose inputs before creating candidate state.
+validate_canonical_deployment_root
 mkdir -p "$state"
 printf '%s\n' "$resolved_commit" >"$state/commit"
 printf '%s\n' "$head" >"$state/head"
@@ -166,7 +204,7 @@ rollback() {
   [[ -n $rollback_image ]] || return 1
   printf 'rolling_back\n' >"$state/status"
   docker image tag "$rollback_image" "$production_image" || rollback_rc=1
-  "${compose[@]}" up -d --no-deps --force-recreate "$compose_service" || rollback_rc=1
+  run_canonical_compose up -d --no-deps --force-recreate "$compose_service" || rollback_rc=1
   validate_container_image "$rollback_image" || rollback_rc=1
   if (( rollback_rc )); then
     printf 'rollback_failed\nimage=%s\n' "$rollback_image" >"$state/status"
@@ -231,8 +269,8 @@ case "$phase" in
     printf '%s\n' "$rollback_image" >"$state/rollback-image"
     docker image tag "$candidate_image_id" "$production_image"
     mutation_started=1
-    "${compose[@]}" stop "$compose_service"
-    "${compose[@]}" up -d --no-deps --force-recreate "$compose_service"
+    run_canonical_compose stop "$compose_service"
+    run_canonical_compose up -d --no-deps --force-recreate "$compose_service"
     validate_container_image "$candidate_image_id"
     mutation_started=0
     rm -f "$state/rollback-image"

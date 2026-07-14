@@ -37,7 +37,7 @@ EOF
   cat >"$tmp/fakebin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'docker %s\n' "$*" >>"$CALL_LOG"
+printf 'docker %s cwd=%s\n' "$*" "$PWD" >>"$CALL_LOG"
 args="$*"
 if [[ $args == build* ]]; then
   count_file="$TEST_TMP/build-count"; count=$(cat "$count_file" 2>/dev/null || printf 0); count=$((count + 1)); printf '%s' "$count" >"$count_file"
@@ -61,7 +61,7 @@ if [[ $args == *'image rm -f '* ]]; then
   exit 0
 fi
 if [[ $args == *'compose '* && $args == *' config' ]]; then
-  [[ ${SCENARIO:-} == compose_changed ]] && printf 'rendered-compose-changed\n' || printf 'rendered-compose-baseline\n'
+  [[ ${SCENARIO:-} == compose_changed ]] && printf 'rendered-compose-changed-%s\n' "${COMPOSE_SECRET_CANARY:-}" || printf 'rendered-compose-baseline-%s\n' "${COMPOSE_SECRET_CANARY:-}"
   exit 0
 fi
 if [[ $args == *'{{.Id}}|{{.Image}}'* && $args == *'the-ai-crowd-moss-1' ]]; then
@@ -128,12 +128,12 @@ assert_rollback_exact() {
   test "$(grep -c -- 'up -d --no-deps --force-recreate moss' "$CALL_LOG")" -eq 2
 }
 run() {
-  CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" CANDIDATE_IMAGE_ID="$candidate_image_id" PATH="$tmp/fakebin:$PATH" TMPDIR="$tmp/buildtmp" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
+  CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" CANDIDATE_IMAGE_ID="$candidate_image_id" COMPOSE_SECRET_CANARY=K6J_COMPOSE_SECRET_CANARY PATH="$tmp/fakebin:$PATH" TMPDIR="$tmp/buildtmp" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
 }
 run_with_env() {
   local override=$1
   shift
-  env "$override" CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" CANDIDATE_IMAGE_ID="$candidate_image_id" PATH="$tmp/fakebin:$PATH" TMPDIR="$tmp/buildtmp" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
+  env "$override" CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" CANDIDATE_IMAGE_ID="$candidate_image_id" COMPOSE_SECRET_CANARY=K6J_COMPOSE_SECRET_CANARY PATH="$tmp/fakebin:$PATH" TMPDIR="$tmp/buildtmp" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
 }
 
 make_fakes
@@ -169,6 +169,31 @@ for override in MOSS_CANONICAL_CONTAINER=the-ai-crowd-moss-1 MOSS_CANONICAL_CONT
   assert_no_production_mutation
   ! grep -q '^docker ' "$CALL_LOG"
 done
+
+# Deployment root is a literal trust anchor: caller environment and any
+# nonliteral CLI spelling fail before Docker or candidate state creation.
+for override in MOSS_DEPLOYMENT_ROOT=/mnt/user/appdata/the-ai-crowd MOSS_DEPLOYMENT_ROOT=/tmp/alternate; do
+  : >"$tmp/calls"; rm -rf "$tmp/state"
+  if run_with_env "$override" --commit "$commit" --phase preflight --execute >"$tmp/override-deployment-root" 2>&1; then
+    echo "deployment root environment override unexpectedly succeeded" >&2; exit 1
+  fi
+  grep -q 'deployment root environment override is not allowed' "$tmp/override-deployment-root"
+  test ! -e "$tmp/state"
+  ! grep -q '^docker ' "$CALL_LOG"
+done
+for invalid_root in /tmp/alternate /mnt/user/appdata/the-ai-crowd/; do
+  : >"$tmp/calls"; rm -rf "$tmp/state"
+  if run --commit "$commit" --phase preflight --deployment-root "$invalid_root" --execute >"$tmp/invalid-root" 2>&1; then
+    echo "invalid deployment root unexpectedly succeeded" >&2; exit 1
+  fi
+  grep -q 'canonical deployment root is required' "$tmp/invalid-root"
+  test ! -e "$tmp/state"
+  ! grep -q '^docker ' "$CALL_LOG"
+done
+# This guard is exercised through the fake non-mutating runner; the source
+# contains no copy/symlink operation for canonical environment inputs.
+grep -Fq 'canonical Compose environment input is missing' "$runner"
+! grep -Eq '\b(cp|ln -s) .*\.env' "$runner"
 
 for phase in preflight build validate promote; do
   : >"$tmp/calls"
@@ -213,8 +238,8 @@ grep -Fq "docker image rm -f $base" "$CALL_LOG"
 grep -Fq "archive --format=tar $commit" "$CALL_LOG"
 grep -Fq "ls-tree -r --name-only $commit" "$CALL_LOG"
 test "$(grep -c '^tar ' "$CALL_LOG")" -eq 2
-grep -Fq 'compose -f ' "$CALL_LOG"
-! grep -q 'compose.*\(stop\|up -d\)\|env/' "$CALL_LOG"
+grep -Fq 'compose --project-directory /mnt/user/appdata/the-ai-crowd --env-file /mnt/user/appdata/the-ai-crowd/.env -f /mnt/user/appdata/the-ai-crowd/compose.yaml config' "$CALL_LOG"
+! grep -Fq "$repo/env/" "$CALL_LOG"
 test -z "$(find "$tmp/buildtmp" -mindepth 1 -print -quit)"
 
 : >"$tmp/calls"; rm -f "$tmp/build-count"
@@ -300,16 +325,25 @@ grep -Fxq "$candidate_image_id" "$tmp/state/write-safe-root-$commit/candidate-im
 grep -Fxq 'phase=promote' "$tmp/state/write-safe-root-$commit/promote"
 grep -Fxq "promote_complete" "$tmp/state/write-safe-root-$commit/status"
 test "$(grep -c -- 'up -d --no-deps --force-recreate moss' "$tmp/calls")" -eq 1
+# Lifecycle commands receive both canonical cwd and Compose project directory,
+# independent of the reviewed source worktree/current shell directory.
+grep -Fq 'compose --project-directory /mnt/user/appdata/the-ai-crowd --env-file /mnt/user/appdata/the-ai-crowd/.env -f /mnt/user/appdata/the-ai-crowd/compose.yaml stop moss cwd=/mnt/user/appdata/the-ai-crowd' "$tmp/calls"
+grep -Fq 'compose --project-directory /mnt/user/appdata/the-ai-crowd --env-file /mnt/user/appdata/the-ai-crowd/.env -f /mnt/user/appdata/the-ai-crowd/compose.yaml up -d --no-deps --force-recreate moss cwd=/mnt/user/appdata/the-ai-crowd' "$tmp/calls"
 
 # Activation preflight must bind the canonical target and every observed CAS value;
 # changing any observed source/live/compose value must fail before Docker lifecycle.
 : >"$tmp/calls"
 run --commit "$commit" --phase preflight --execute
-for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-compose-sha256 activation-candidate-image-id; do
+for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-deployment-root-id activation-compose-input-sha256 activation-env-sha256 activation-compose-sha256 activation-candidate-image-id; do
   test -s "$tmp/state/write-safe-root-$commit/$evidence"
 done
 [[ $(<"$tmp/state/write-safe-root-$commit/activation-container") == the-ai-crowd-moss-1 ]]
 grep -Fq 'the-ai-crowd-moss-1' "$CALL_LOG"
+# Fake Compose emits a canary as if it were rendered secret material. The
+# runner only persists its digest; neither state nor command log may contain it.
+! grep -R --binary-files=without-match -q 'K6J_COMPOSE_SECRET_CANARY' "$tmp/state" "$CALL_LOG"
+
+grep -Fq 'compose --project-directory /mnt/user/appdata/the-ai-crowd --env-file /mnt/user/appdata/the-ai-crowd/.env -f /mnt/user/appdata/the-ai-crowd/compose.yaml config' "$CALL_LOG"
 
 for mismatch in head_changed staged_changed live_changed compose_changed missing_target wrong_target candidate_id_changed live_image_changed; do
   : >"$tmp/calls"
@@ -337,7 +371,7 @@ if assert_no_production_mutation; then
 fi
 CALL_LOG=$saved_call_log
 
-for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-compose-sha256 activation-candidate-image-id candidate-image-id; do
+for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-deployment-root-id activation-compose-input-sha256 activation-env-sha256 activation-compose-sha256 activation-candidate-image-id candidate-image-id; do
   # Start every case from the complete baseline. The comparison below proves
   # exactly one persisted-CAS file changed, so cumulative corruption cannot
   # make a later fixture pass on an earlier mismatch.
@@ -346,6 +380,7 @@ for evidence in activation-head activation-staged-diff-sha256 activation-contain
   case $evidence in
     activation-container) printf '%s\n' another-container >"$state_dir/$evidence" ;;
     activation-container-id) printf '%s\n' another-container-id >"$state_dir/$evidence" ;;
+    activation-deployment-root-id) printf '%s\n' 2:2 >"$state_dir/$evidence" ;;
     *) printf '%s\n' sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd >"$state_dir/$evidence" ;;
   esac
   assert_only_evidence_file_changed "$evidence"
