@@ -76,8 +76,9 @@ base_image="the-ai-crowd/moss:write-safe-root-base-$resolved_commit"
 production_image="the-ai-crowd/moss-all-in-one:local"
 validate_canonical_deployment_root() {
   [[ -d $deployment_root && ! -L $deployment_root ]] || die 'canonical deployment root is unavailable'
-  [[ -f $deployment_root/compose.yaml ]] || die 'canonical Compose input is missing'
-  [[ -f $deployment_root/.env && -f $deployment_root/env/fleet.env ]] || die 'canonical Compose environment input is missing'
+  [[ -f $deployment_root/compose.yaml && ! -L $deployment_root/compose.yaml ]] || die 'canonical Compose input is unavailable'
+  [[ -d $deployment_root/env && ! -L $deployment_root/env ]] || die 'canonical Compose environment input is unavailable'
+  [[ -f $deployment_root/.env && ! -L $deployment_root/.env && -f $deployment_root/env/fleet.env && ! -L $deployment_root/env/fleet.env ]] || die 'canonical Compose environment input is unavailable'
 }
 deployment_root_identity() { stat -Lc '%d:%i' -- "$deployment_root"; }
 canonical_compose_sha256() { sha256sum -- "$deployment_root/compose.yaml" | awk '{print $1}'; }

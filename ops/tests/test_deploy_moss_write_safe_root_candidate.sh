@@ -190,9 +190,12 @@ for invalid_root in /tmp/alternate /mnt/user/appdata/the-ai-crowd/; do
   test ! -e "$tmp/state"
   ! grep -q '^docker ' "$CALL_LOG"
 done
-# This guard is exercised through the fake non-mutating runner; the source
-# contains no copy/symlink operation for canonical environment inputs.
-grep -Fq 'canonical Compose environment input is missing' "$runner"
+# Symlinked Compose inputs are rejected before state/Docker. A real destructive
+# symlink fixture would alter secret-bearing canonical inputs, so enforce the
+# exact preflight predicates and separately prove the live inputs are regular.
+grep -Fq '[[ -f $deployment_root/compose.yaml && ! -L $deployment_root/compose.yaml ]]' "$runner"
+grep -Fq '[[ -d $deployment_root/env && ! -L $deployment_root/env ]]' "$runner"
+grep -Fq '[[ -f $deployment_root/.env && ! -L $deployment_root/.env && -f $deployment_root/env/fleet.env && ! -L $deployment_root/env/fleet.env ]]' "$runner"
 ! grep -Eq '\b(cp|ln -s) .*\.env' "$runner"
 
 for phase in preflight build validate promote; do
