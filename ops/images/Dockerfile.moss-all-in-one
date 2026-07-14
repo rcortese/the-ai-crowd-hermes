@@ -3,8 +3,8 @@ FROM ${MOSS_BASE_IMAGE}
 
 USER root
 
-ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=9099d8e72c844cc6cd2acb80e6fbddd2e305aa03
+ARG HERMES_WEBUI_REPO=https://github.com/nesquena/hermes-webui.git
+ARG HERMES_WEBUI_REV=62a185e453c06f56afa896cdfbc32392bb6f9372
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -40,10 +40,19 @@ RUN cd /opt/hermes \
         plugins/kanban/dashboard/plugin_api.py
 
 
+COPY ops/hermes-webui-overrides/webui-v0.52.28-ai-crowd-minimal.patch \
+     ops/hermes-webui-overrides/webui-v0.52.28-ai-crowd-minimal.manifest.json \
+     ops/scripts/reapply-webui-v05228-ai-crowd-candidate.sh \
+     /tmp/webui-port/
+
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
     && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
+    && /tmp/webui-port/reapply-webui-v05228-ai-crowd-candidate.sh \
+        --repo /opt/hermes-webui \
+        --patch /tmp/webui-port/webui-v0.52.28-ai-crowd-minimal.patch \
+        --manifest /tmp/webui-port/webui-v0.52.28-ai-crowd-minimal.manifest.json \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
     && cd /opt/hermes \
     && if [ -f tests/hermes_cli/test_auth_commands.py ]; then \
@@ -55,12 +64,17 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
         /opt/hermes/.venv/bin/python3 -c 'import importlib; [importlib.import_module(m) for m in ("hermes_cli.auth", "hermes_cli.config", "agent.credential_pool", "gateway.run")]; print("agent_import_smoke_ok")'; \
        fi \
     && cd /opt/hermes-webui \
-    && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py \
+    && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py api/agent_health.py api/background_process.py \
     && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
         tests/test_kanban_bridge.py \
         tests/test_profile_proxy_jen.py \
         tests/test_remote_cron_proxy_guard.py \
         tests/test_webui_gateway_chat_backend.py \
+        tests/test_mobile_layout.py \
+        tests/test_agent_health_remote.py \
+        tests/test_issue716_agent_heartbeat.py \
+        tests/test_optionz_liveview_perf.py \
+        tests/test_background_process_stale_stream.py \
         tests/test_stage364_opus_live_sse_event_id.py \
         tests/test_session_channel_option_x.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
