@@ -5,6 +5,16 @@ ARG GOG_VERSION=v0.30.0
 
 USER root
 
+# Source-backed fleet guard: patch the shared Hermes base before validating it.
+COPY ops/hermes-agent-overrides/write-safe-root-invalid-config-fail-closed.patch /tmp/write-safe-root.patch
+COPY ops/images/write-safe-root-contract.py /opt/hermes/write-safe-root-contract.py
+RUN command -v patch >/dev/null \
+    && cd /opt/hermes \
+    && patch -p1 < /tmp/write-safe-root.patch \
+    && /opt/hermes/.venv/bin/python3 -m py_compile agent/file_safety.py tools/file_operations.py agent/copilot_acp_client.py \
+    && /opt/hermes/.venv/bin/python3 /opt/hermes/write-safe-root-contract.py \
+    && rm -f /tmp/write-safe-root.patch /opt/hermes/write-safe-root-contract.py
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates curl dnsutils fd-find git iputils-ping jq netcat-openbsd \

@@ -3,6 +3,11 @@ FROM ${MOSS_BASE_IMAGE}
 
 USER root
 
+# Execute the shared write-safe-root compatibility contract in this final image.
+COPY ops/images/write-safe-root-contract.py /opt/hermes/write-safe-root-contract.py
+RUN /opt/hermes/.venv/bin/python3 /opt/hermes/write-safe-root-contract.py \
+    && rm -f /opt/hermes/write-safe-root-contract.py
+
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
 ARG HERMES_WEBUI_REV=9099d8e72c844cc6cd2acb80e6fbddd2e305aa03
 
