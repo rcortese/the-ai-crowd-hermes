@@ -59,6 +59,14 @@ def has_contract_copy(source):
     )
 
 
+def has_patch_prerequisite(source):
+    gate = source.find("RUN command -v patch")
+    if gate < 0:
+        return True
+    install = source.find("apt-get install -y --no-install-recommends patch")
+    return 0 <= install < gate
+
+
 def has_contract_execution(source):
     # Fold Dockerfile line continuations, then parse each shell command segment.
     # A copied path, comment, or echo argument cannot make the interpreter argv[0].
@@ -100,6 +108,8 @@ def verify_persona_services(services, dockerfile_sources, expected_map):
             raise ValueError(f"missing common write-safe-root contract copy: {dockerfile}")
         if not has_contract_execution(source):
             raise ValueError(f"missing executable write-safe-root contract gate: {dockerfile}")
+        if not has_patch_prerequisite(source):
+            raise ValueError(f"missing patch prerequisite before source-backed gate: {dockerfile}")
 
 
 def assert_rejected(name, services, sources, expected_map):
