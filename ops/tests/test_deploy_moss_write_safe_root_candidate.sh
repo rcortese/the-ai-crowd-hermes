@@ -111,9 +111,16 @@ EOF
 
 assert_no_recreate() { ! grep -q -- '--force-recreate moss' "$CALL_LOG"; }
 assert_no_production_mutation() {
-  ! grep -Fq "image tag $candidate_image_id the-ai-crowd/moss-all-in-one:local" "$CALL_LOG"
-  ! grep -q -- ' stop moss' "$CALL_LOG"
+  if grep -Eq '^docker image tag [^[:space:]]+ the-ai-crowd/moss-all-in-one:local$' "$CALL_LOG"; then return 1; fi
+  if grep -q -- ' stop moss' "$CALL_LOG"; then return 1; fi
   assert_no_recreate
+}
+assert_only_evidence_file_changed() {
+  local changed=$1 snapshot_file name state_file
+  for snapshot_file in "$evidence_snapshot"/*; do
+    name=${snapshot_file##*/}; state_file="$state_dir/$name"
+    if [[ $name == "$changed" ]]; then ! cmp -s "$snapshot_file" "$state_file"; else cmp -s "$snapshot_file" "$state_file"; fi
+  done
 }
 assert_immutable_image_id() { [[ $1 =~ ^sha256:[[:xdigit:]]{64}$ ]]; }
 assert_rollback_exact() {
@@ -316,25 +323,40 @@ done
 # Every persisted pre-mutation expectation is itself CAS data. A valid-looking
 # but wrong file must prevent production tagging and lifecycle mutation.
 evidence_snapshot="$tmp/activation-evidence-baseline"
-mkdir -p "$evidence_snapshot"
+state_dir="$tmp/state/write-safe-root-$commit"
+cp -a "$state_dir" "$evidence_snapshot"
+
+# This proof rejects the old source-specific tag assertion: a drifted image ID
+# is still forbidden from becoming the production tag.
+mutation_proof_log="$tmp/source-agnostic-tag-proof"
+printf 'docker image tag sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc the-ai-crowd/moss-all-in-one:local\n' >"$mutation_proof_log"
+saved_call_log=$CALL_LOG
+CALL_LOG=$mutation_proof_log
+if assert_no_production_mutation; then
+  echo 'source-agnostic production-tag assertion unexpectedly passed' >&2; exit 1
+fi
+CALL_LOG=$saved_call_log
+
 for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-compose-sha256 activation-candidate-image-id candidate-image-id; do
-  cp "$tmp/state/write-safe-root-$commit/$evidence" "$evidence_snapshot/$evidence"
-done
-for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-compose-sha256 activation-candidate-image-id candidate-image-id; do
-  cp "$evidence_snapshot/$evidence" "$tmp/state/write-safe-root-$commit/$evidence"
+  # Start every case from the complete baseline. The comparison below proves
+  # exactly one persisted-CAS file changed, so cumulative corruption cannot
+  # make a later fixture pass on an earlier mismatch.
+  rm -rf "$state_dir"
+  cp -a "$evidence_snapshot" "$state_dir"
   case $evidence in
-    activation-container) printf '%s\n' another-container >"$tmp/state/write-safe-root-$commit/$evidence" ;;
-    activation-container-id) printf '%s\n' another-container-id >"$tmp/state/write-safe-root-$commit/$evidence" ;;
-    *) printf '%s\n' sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd >"$tmp/state/write-safe-root-$commit/$evidence" ;;
+    activation-container) printf '%s\n' another-container >"$state_dir/$evidence" ;;
+    activation-container-id) printf '%s\n' another-container-id >"$state_dir/$evidence" ;;
+    *) printf '%s\n' sha256:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd >"$state_dir/$evidence" ;;
   esac
+  assert_only_evidence_file_changed "$evidence"
   : >"$tmp/calls"
   if run --commit "$commit" --phase promote --execute >"$tmp/corrupt-$evidence" 2>&1; then
     echo "corrupt $evidence unexpectedly succeeded" >&2; exit 1
   fi
   assert_no_production_mutation
 done
-cp "$evidence_snapshot"/* "$tmp/state/write-safe-root-$commit/"
-
+rm -rf "$state_dir"
+cp -a "$evidence_snapshot" "$state_dir"
 # The candidate image must remain available after validation for later review/activation.
 test -s "$tmp/state/write-safe-root-$commit/candidate-image-id"
 ! grep -Fq "image rm -f $candidate" "$CALL_LOG"
