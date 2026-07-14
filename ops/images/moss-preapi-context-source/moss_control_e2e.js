@@ -48,22 +48,54 @@ const {chromium}=require('playwright-core');
     await cancelStream();
   });
   await page.waitForFunction(()=>!S.busy,null,{timeout:30000});
+  const frontendObservedIdle=true;
   await page.waitForTimeout(500);
   const cancelSession=await (await page.request.get(`http://127.0.0.1:8787/api/session?session_id=${encodeURIComponent(sid)}`)).json();
   const cancelRecord=cancelSession?.session??cancelSession;
   const hasActiveStreamField=!!cancelRecord&&Object.prototype.hasOwnProperty.call(cancelRecord,'active_stream_id');
   const backendActiveStream=hasActiveStreamField?cancelRecord.active_stream_id:undefined;
-  const cancelled=await page.evaluate(()=>!S.busy)&&hasActiveStreamField&&!backendActiveStream;
-  if(!cancelled) throw new Error(`cancel did not clear backend stream state: ${backendActiveStream}`);
+  const cancelMessageCount=Array.isArray(cancelRecord?.messages)?cancelRecord.messages.length:null;
+  const backendStreamCleared=hasActiveStreamField&&backendActiveStream===null;
+  const cancelled=frontendObservedIdle&&backendStreamCleared&&Number.isInteger(cancelMessageCount)&&cancelMessageCount>=2;
+  if(!cancelled) throw new Error(`cancel gate failed: frontendObservedIdle=${frontendObservedIdle} hasActiveStreamField=${hasActiveStreamField} backendActiveStream=${backendActiveStream} messageCount=${cancelMessageCount}`);
   await page.reload({waitUntil:'domcontentloaded'});
   await page.waitForTimeout(2000);
+  let preCompactRecord=null;
+  for(const [prompt,targetCount] of [['Reply exactly SECOND_TURN_OK',4],['Reply exactly THIRD_TURN_OK',6]]){
+    await page.locator('#msg').fill(prompt);
+    await page.evaluate(()=>send());
+    const turnDeadline=Date.now()+60000;
+    while(Date.now()<turnDeadline){
+      const payload=await (await page.request.get(`http://127.0.0.1:8787/api/session?session_id=${encodeURIComponent(sid)}`)).json();
+      preCompactRecord=payload?.session??payload;
+      const count=Array.isArray(preCompactRecord?.messages)?preCompactRecord.messages.length:0;
+      const hasStream=!!preCompactRecord&&Object.prototype.hasOwnProperty.call(preCompactRecord,'active_stream_id');
+      if(count>=targetCount&&hasStream&&preCompactRecord.active_stream_id===null) break;
+      await page.waitForTimeout(250);
+    }
+    const turnMessages=Array.isArray(preCompactRecord?.messages)?preCompactRecord.messages.length:0;
+    if(turnMessages<targetCount||!Object.prototype.hasOwnProperty.call(preCompactRecord||{},'active_stream_id')||preCompactRecord.active_stream_id!==null) throw new Error(`follow-up turn did not persist terminally: target=${targetCount} messages=${turnMessages} stream=${preCompactRecord?.active_stream_id}`);
+    await page.waitForFunction(()=>!S.busy,null,{timeout:10000});
+  }
+  const preCompactMessages=Array.isArray(preCompactRecord?.messages)?preCompactRecord.messages.length:0;
   await page.locator('#msg').fill('/compact');
   await page.evaluate(()=>send());
-  await page.waitForFunction(()=>S.busy,null,{timeout:10000});
-  await page.waitForFunction(()=>!S.busy,null,{timeout:60000});
+  const compactStatuses=[];
+  let compactDone=false;
+  const compactDeadline=Date.now()+60000;
+  while(Date.now()<compactDeadline){
+    const response=await page.request.get(`http://127.0.0.1:8787/api/session/compress/status?session_id=${encodeURIComponent(sid)}`);
+    const data=await response.json();
+    compactStatuses.push(data?.status??null);
+    if(data?.status==='done'){compactDone=true;break;}
+    if(data?.status==='error') throw new Error(`compact failed: ${data.error||'unknown error'}`);
+    await page.waitForTimeout(250);
+  }
+  if(!compactDone) throw new Error(`compact did not reach done: ${JSON.stringify(compactStatuses.slice(-12))}`);
+  await page.waitForFunction(()=>!S.busy,null,{timeout:10000});
   const persisted=await (await page.request.get(`http://127.0.0.1:8787/api/session?session_id=${encodeURIComponent(sid)}`)).json();
   const persistedMessages=persisted?.session?.messages?.length??persisted?.messages?.length??null;
   if(!Number.isInteger(persistedMessages)||persistedMessages<2) throw new Error(`unexpected persisted message count: ${persistedMessages}`);
-  console.log(JSON.stringify({checkpoint:'lifecycle_complete',sid,cancelled,compactCompleted:true,persistedMessages}));
+  console.log(JSON.stringify({checkpoint:'lifecycle_complete',sid,cancelled,cancelMessageCount,preCompactMessages,compactCompleted:true,compactStatuses,persistedMessages}));
   await browser.close();
 })().catch(e=>{console.error(e);process.exit(1)});
