@@ -19,12 +19,15 @@ make_fakes() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'git %s\n' "$*" >>"$CALL_LOG"
-if [[ $* == *'rev-parse HEAD' ]]; then printf '%s\n' "$FAKE_HEAD"; exit 0; fi
+if [[ $* == *'rev-parse HEAD' ]]; then [[ ${SCENARIO:-} == head_changed ]] && printf '%s\n' 2222222222222222222222222222222222222222 || printf '%s\n' "$FAKE_HEAD"; exit 0; fi
 if [[ $* == *'rev-parse --verify '* ]]; then
   value=${@: -1}; printf '%s\n' "${value/\^\{commit\}/}"; exit 0
 fi
 if [[ $* == *'ls-tree -r --name-only '* ]]; then
   printf '%s\n' README.md ops/images/Dockerfile.moss ops/images/Dockerfile.moss-all-in-one; exit 0
+fi
+if [[ $* == *'diff --cached --binary' ]]; then
+  [[ ${SCENARIO:-} == staged_changed ]] && printf '%s\n' staged-diff-changed || printf '%s\n' baseline-staged-diff; exit 0
 fi
 if [[ $* == *'archive --format=tar '* ]]; then
   /usr/bin/tar -cf - -C "$TEST_TMP/archive" README.md ops; exit 0
@@ -57,11 +60,24 @@ if [[ $args == *'image rm -f '* ]]; then
   [[ ${SCENARIO:-} == base_cleanup_failure ]] && exit 1
   exit 0
 fi
+if [[ $args == *'compose '* && $args == *' config' ]]; then
+  [[ ${SCENARIO:-} == compose_changed ]] && printf 'rendered-compose-changed\n' || printf 'rendered-compose-baseline\n'
+  exit 0
+fi
+if [[ $args == *'{{.Id}}|{{.Image}}'* && $args == *'the-ai-crowd-moss-1' ]]; then
+  case ${SCENARIO:-} in
+    missing_target) exit 1 ;;
+    wrong_target) printf 'wrong-target|%s\n' "$OLD_IMAGE" ;;
+    live_changed) printf 'live-container-changed|%s\n' "$OLD_IMAGE" ;;
+    *) printf 'live-container-baseline|%s\n' "$OLD_IMAGE" ;;
+  esac
+  exit 0
+fi
 if [[ $args == *'{{.Image}}'* && $args != *'.State.Status'* && $args == *' moss' ]]; then
   [[ ${SCENARIO:-} == pre_stop_failure ]] && exit 1
   printf '%s\n' "$OLD_IMAGE"; exit 0
 fi
-if [[ $args == *'.State.Status'* && $args == *' moss' ]]; then
+if [[ $args == *'.State.Status'* && $args == *'the-ai-crowd-moss-1' ]]; then
   count_file="$TEST_TMP/state-inspect-count"; count=$(cat "$count_file" 2>/dev/null || printf 0); count=$((count + 1)); printf '%s' "$count" >"$count_file"
   if [[ ${SCENARIO:-} == post_validate_failure && $count -eq 1 ]]; then printf 'running|unhealthy|%s\n' "$CANDIDATE_IMAGE_ID"; elif [[ ${SCENARIO:-} == post_stop_failure || ${SCENARIO:-} == post_validate_failure ]]; then printf 'running|healthy|%s\n' "$OLD_IMAGE"; else printf 'running|healthy|%s\n' "$CANDIDATE_IMAGE_ID"; fi
   exit 0
@@ -155,7 +171,8 @@ grep -Fq "docker image rm -f $base" "$CALL_LOG"
 grep -Fq "archive --format=tar $commit" "$CALL_LOG"
 grep -Fq "ls-tree -r --name-only $commit" "$CALL_LOG"
 test "$(grep -c '^tar ' "$CALL_LOG")" -eq 2
-! grep -q 'compose\|env/' "$CALL_LOG"
+grep -Fq 'compose -f ' "$CALL_LOG"
+! grep -q 'compose.*\(stop\|up -d\)\|env/' "$CALL_LOG"
 test -z "$(find "$tmp/buildtmp" -mindepth 1 -print -quit)"
 
 : >"$tmp/calls"; rm -f "$tmp/build-count"
@@ -214,9 +231,10 @@ grep -q 'candidate image ID changed after build' "$tmp/candidate-id-changed"
 assert_no_recreate
 ! grep -q -- ' stop moss' "$tmp/calls"
 
-# Capturing the old image is pre-mutation: its failure must not stop/recreate.
+# A missing canonical target is detected by the pre-mutation CAS check.
 : >"$tmp/calls"
-if SCENARIO=pre_stop_failure run --commit "$commit" --phase promote --execute >"$tmp/pre-stop" 2>&1; then echo 'pre-stop failure unexpectedly succeeded' >&2; exit 1; fi
+if SCENARIO=missing_target run --commit "$commit" --phase promote --execute >"$tmp/pre-stop" 2>&1; then echo 'missing target unexpectedly succeeded' >&2; exit 1; fi
+grep -q 'canonical container target' "$tmp/pre-stop"
 assert_no_recreate
 ! grep -q -- ' stop moss' "$tmp/calls"
 
@@ -240,5 +258,29 @@ grep -Fxq "$candidate_image_id" "$tmp/state/write-safe-root-$commit/candidate-im
 grep -Fxq 'phase=promote' "$tmp/state/write-safe-root-$commit/promote"
 grep -Fxq "promote_complete" "$tmp/state/write-safe-root-$commit/status"
 test "$(grep -c -- 'up -d --no-deps --force-recreate moss' "$tmp/calls")" -eq 1
+
+# Activation preflight must bind the canonical target and every observed CAS value;
+# changing any observed source/live/compose value must fail before Docker lifecycle.
+: >"$tmp/calls"
+run --commit "$commit" --phase preflight --execute
+for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-compose-sha256 activation-candidate-image-id; do
+  test -s "$tmp/state/write-safe-root-$commit/$evidence"
+done
+[[ $(<"$tmp/state/write-safe-root-$commit/activation-container") == the-ai-crowd-moss-1 ]]
+grep -Fq 'the-ai-crowd-moss-1' "$CALL_LOG"
+
+for mismatch in head_changed staged_changed live_changed compose_changed missing_target wrong_target; do
+  : >"$tmp/calls"
+  if SCENARIO="$mismatch" run --commit "$commit" --phase promote --execute >"$tmp/activation-$mismatch" 2>&1; then
+    echo "activation $mismatch unexpectedly succeeded" >&2; exit 1
+  fi
+  grep -q 'activation CAS mismatch\|canonical container target' "$tmp/activation-$mismatch"
+  assert_no_recreate
+  ! grep -q -- ' stop moss' "$tmp/calls"
+done
+
+# The candidate image must remain available after validation for later review/activation.
+test -s "$tmp/state/write-safe-root-$commit/candidate-image-id"
+! grep -Fq "image rm -f $candidate" "$CALL_LOG"
 
 echo runner_contract_ok
