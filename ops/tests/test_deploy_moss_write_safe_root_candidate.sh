@@ -69,6 +69,7 @@ if [[ $args == *'{{.Id}}|{{.Image}}'* && $args == *'the-ai-crowd-moss-1' ]]; the
     missing_target) exit 1 ;;
     wrong_target) printf 'wrong-target|%s\n' "$OLD_IMAGE" ;;
     live_changed) printf 'live-container-changed|%s\n' "$OLD_IMAGE" ;;
+    live_image_changed) printf 'live-container-baseline|sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\n' ;;
     *) printf 'live-container-baseline|%s\n' "$OLD_IMAGE" ;;
   esac
   exit 0
@@ -109,6 +110,11 @@ EOF
 }
 
 assert_no_recreate() { ! grep -q -- '--force-recreate moss' "$CALL_LOG"; }
+assert_no_production_mutation() {
+  ! grep -Fq "image tag $candidate_image_id the-ai-crowd/moss-all-in-one:local" "$CALL_LOG"
+  ! grep -q -- ' stop moss' "$CALL_LOG"
+  assert_no_recreate
+}
 assert_immutable_image_id() { [[ $1 =~ ^sha256:[[:xdigit:]]{64}$ ]]; }
 assert_rollback_exact() {
   grep -Fq "image tag $old_image the-ai-crowd/moss-all-in-one:local" "$CALL_LOG"
@@ -116,6 +122,11 @@ assert_rollback_exact() {
 }
 run() {
   CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" CANDIDATE_IMAGE_ID="$candidate_image_id" PATH="$tmp/fakebin:$PATH" TMPDIR="$tmp/buildtmp" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
+}
+run_with_env() {
+  local override=$1
+  shift
+  env "$override" CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" CANDIDATE_IMAGE_ID="$candidate_image_id" PATH="$tmp/fakebin:$PATH" TMPDIR="$tmp/buildtmp" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
 }
 
 make_fakes
@@ -127,6 +138,30 @@ run --help >"$tmp/help"
 grep -q 'Usage:' "$tmp/help"
 test ! -e "$tmp/state"
 test ! -s "$tmp/calls"
+
+# The mutation target is literal: malformed, bare, noncanonical, and environment
+# override attempts must fail before Docker or state creation.
+for invalid_container in bare moss another-container; do
+  : >"$tmp/calls"
+  case $invalid_container in
+    bare) command=(--commit "$commit" --phase preflight --execute --container) ;;
+    *) command=(--commit "$commit" --phase preflight --container "$invalid_container" --execute) ;;
+  esac
+  if run "${command[@]}" >"$tmp/invalid-container-$invalid_container" 2>&1; then
+    echo "invalid container $invalid_container unexpectedly succeeded" >&2; exit 1
+  fi
+  assert_no_production_mutation
+  ! grep -q '^docker ' "$CALL_LOG"
+done
+for override in MOSS_CANONICAL_CONTAINER=the-ai-crowd-moss-1 MOSS_CANONICAL_CONTAINER=alternate MOSS_COMPOSE_SERVICE=moss MOSS_COMPOSE_SERVICE=alternate; do
+  : >"$tmp/calls"; rm -rf "$tmp/state"
+  if run_with_env "$override" --commit "$commit" --phase preflight --execute >"$tmp/override-${override%%=*}" 2>&1; then
+    echo "environment override $override unexpectedly succeeded" >&2; exit 1
+  fi
+  grep -q 'environment overrides are not allowed' "$tmp/override-${override%%=*}"
+  assert_no_production_mutation
+  ! grep -q '^docker ' "$CALL_LOG"
+done
 
 for phase in preflight build validate promote; do
   : >"$tmp/calls"
@@ -269,15 +304,36 @@ done
 [[ $(<"$tmp/state/write-safe-root-$commit/activation-container") == the-ai-crowd-moss-1 ]]
 grep -Fq 'the-ai-crowd-moss-1' "$CALL_LOG"
 
-for mismatch in head_changed staged_changed live_changed compose_changed missing_target wrong_target; do
+for mismatch in head_changed staged_changed live_changed compose_changed missing_target wrong_target candidate_id_changed live_image_changed; do
   : >"$tmp/calls"
   if SCENARIO="$mismatch" run --commit "$commit" --phase promote --execute >"$tmp/activation-$mismatch" 2>&1; then
     echo "activation $mismatch unexpectedly succeeded" >&2; exit 1
   fi
   grep -q 'activation CAS mismatch\|canonical container target' "$tmp/activation-$mismatch"
-  assert_no_recreate
-  ! grep -q -- ' stop moss' "$tmp/calls"
+  assert_no_production_mutation
 done
+
+# Every persisted pre-mutation expectation is itself CAS data. A valid-looking
+# but wrong file must prevent production tagging and lifecycle mutation.
+evidence_snapshot="$tmp/activation-evidence-baseline"
+mkdir -p "$evidence_snapshot"
+for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-compose-sha256 activation-candidate-image-id candidate-image-id; do
+  cp "$tmp/state/write-safe-root-$commit/$evidence" "$evidence_snapshot/$evidence"
+done
+for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-compose-sha256 activation-candidate-image-id candidate-image-id; do
+  cp "$evidence_snapshot/$evidence" "$tmp/state/write-safe-root-$commit/$evidence"
+  case $evidence in
+    activation-container) printf '%s\n' another-container >"$tmp/state/write-safe-root-$commit/$evidence" ;;
+    activation-container-id) printf '%s\n' another-container-id >"$tmp/state/write-safe-root-$commit/$evidence" ;;
+    *) printf '%s\n' sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd >"$tmp/state/write-safe-root-$commit/$evidence" ;;
+  esac
+  : >"$tmp/calls"
+  if run --commit "$commit" --phase promote --execute >"$tmp/corrupt-$evidence" 2>&1; then
+    echo "corrupt $evidence unexpectedly succeeded" >&2; exit 1
+  fi
+  assert_no_production_mutation
+done
+cp "$evidence_snapshot"/* "$tmp/state/write-safe-root-$commit/"
 
 # The candidate image must remain available after validation for later review/activation.
 test -s "$tmp/state/write-safe-root-$commit/candidate-image-id"
