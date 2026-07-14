@@ -5,8 +5,9 @@ runner="$repo/ops/scripts/deploy-moss-write-safe-root-candidate.sh"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 commit=1111111111111111111111111111111111111111
-old_image=sha256:recorded-old-image
+old_image=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 candidate="the-ai-crowd/moss-all-in-one:write-safe-root-$commit"
+candidate_image_id=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 CALL_LOG="$tmp/calls"
 
 make_fakes() {
@@ -26,13 +27,21 @@ EOF
 set -euo pipefail
 printf 'docker %s\n' "$*" >>"$CALL_LOG"
 args="$*"
+if [[ $args == *'image inspect '* && $args == *'{{.Id}}'* ]]; then
+  if [[ ${SCENARIO:-} == candidate_id_changed ]]; then
+    printf '%s\n' sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  else
+    printf '%s\n' "$CANDIDATE_IMAGE_ID"
+  fi
+  exit 0
+fi
 if [[ $args == *'{{.Image}}'* && $args != *'.State.Status'* && $args == *' moss' ]]; then
   [[ ${SCENARIO:-} == pre_stop_failure ]] && exit 1
   printf '%s\n' "$OLD_IMAGE"; exit 0
 fi
 if [[ $args == *'.State.Status'* && $args == *' moss' ]]; then
   count_file="$TEST_TMP/state-inspect-count"; count=$(cat "$count_file" 2>/dev/null || printf 0); count=$((count + 1)); printf '%s' "$count" >"$count_file"
-  if [[ ${SCENARIO:-} == post_validate_failure && $count -eq 1 ]]; then printf 'running|unhealthy|%s\n' "$CANDIDATE"; elif [[ ${SCENARIO:-} == post_stop_failure || ${SCENARIO:-} == post_validate_failure ]]; then printf 'running|healthy|%s\n' "$OLD_IMAGE"; else printf 'running|healthy|%s\n' "$CANDIDATE"; fi
+  if [[ ${SCENARIO:-} == post_validate_failure && $count -eq 1 ]]; then printf 'running|unhealthy|%s\n' "$CANDIDATE_IMAGE_ID"; elif [[ ${SCENARIO:-} == post_stop_failure || ${SCENARIO:-} == post_validate_failure ]]; then printf 'running|healthy|%s\n' "$OLD_IMAGE"; else printf 'running|healthy|%s\n' "$CANDIDATE_IMAGE_ID"; fi
   exit 0
 fi
 if [[ $args == *'compose '* && $args == *' up -d --no-deps --force-recreate moss'* ]]; then
@@ -45,15 +54,18 @@ EOF
 }
 
 assert_no_recreate() { ! grep -q -- '--force-recreate moss' "$CALL_LOG"; }
+assert_immutable_image_id() { [[ $1 =~ ^sha256:[[:xdigit:]]{64}$ ]]; }
 assert_rollback_exact() {
   grep -Fq "image tag $old_image the-ai-crowd/moss-all-in-one:local" "$CALL_LOG"
   test "$(grep -c -- 'up -d --no-deps --force-recreate moss' "$CALL_LOG")" -eq 2
 }
 run() {
-  CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" PATH="$tmp/fakebin:$PATH" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
+  CALL_LOG="$CALL_LOG" TEST_TMP="$tmp" SCENARIO="${SCENARIO:-}" EXPECTED_IMAGE="${EXPECTED_IMAGE:-}" FAKE_HEAD="${FAKE_HEAD:-$commit}" OLD_IMAGE="$old_image" CANDIDATE="$candidate" CANDIDATE_IMAGE_ID="$candidate_image_id" PATH="$tmp/fakebin:$PATH" MOSS_WRITE_SAFE_ROOT_STATE_ROOT="$tmp/state" "$runner" "$@"
 }
 
 make_fakes
+assert_immutable_image_id "$old_image"
+assert_immutable_image_id "$candidate_image_id"
 : >"$tmp/calls"
 if run >"$tmp/noargs" 2>&1; then echo 'no-args unexpectedly succeeded' >&2; exit 1; fi
 run --help >"$tmp/help"
@@ -86,6 +98,13 @@ grep -Fxq "$commit" "$tmp/state/write-safe-root-$commit/commit"
 grep -Fxq 'phase=validate' "$tmp/state/write-safe-root-$commit/validate"
 assert_no_recreate
 
+# A moved candidate tag must fail validation before any promotion mutation.
+: >"$tmp/calls"
+if SCENARIO=candidate_id_changed run --commit "$commit" --phase validate --execute >"$tmp/candidate-id-changed" 2>&1; then echo 'candidate ID mismatch unexpectedly succeeded' >&2; exit 1; fi
+grep -q 'candidate image ID changed after build' "$tmp/candidate-id-changed"
+assert_no_recreate
+! grep -q -- ' stop moss' "$tmp/calls"
+
 # Capturing the old image is pre-mutation: its failure must not stop/recreate.
 : >"$tmp/calls"
 if SCENARIO=pre_stop_failure run --commit "$commit" --phase promote --execute >"$tmp/pre-stop" 2>&1; then echo 'pre-stop failure unexpectedly succeeded' >&2; exit 1; fi
@@ -106,8 +125,9 @@ assert_rollback_exact
 
 # Successful promote validates the candidate and removes only temporary rollback state.
 : >"$tmp/calls"; rm -f "$tmp/recreate-count" "$tmp/state-inspect-count"
-EXPECTED_IMAGE="$candidate" run --commit "$commit" --phase promote --execute
+EXPECTED_IMAGE="$candidate_image_id" run --commit "$commit" --phase promote --execute
 ! test -e "$tmp/state/write-safe-root-$commit/rollback-image"
+grep -Fxq "$candidate_image_id" "$tmp/state/write-safe-root-$commit/candidate-image-id"
 grep -Fxq 'phase=promote' "$tmp/state/write-safe-root-$commit/promote"
 grep -Fxq "promote_complete" "$tmp/state/write-safe-root-$commit/status"
 test "$(grep -c -- 'up -d --no-deps --force-recreate moss' "$tmp/calls")" -eq 1
