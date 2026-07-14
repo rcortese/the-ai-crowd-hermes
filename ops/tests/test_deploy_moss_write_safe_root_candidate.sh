@@ -346,13 +346,17 @@ for evidence in activation-head activation-staged-diff-sha256 activation-contain
   case $evidence in
     activation-container) printf '%s\n' another-container >"$state_dir/$evidence" ;;
     activation-container-id) printf '%s\n' another-container-id >"$state_dir/$evidence" ;;
-    *) printf '%s\n' sha256:ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd >"$state_dir/$evidence" ;;
+    *) printf '%s\n' sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd >"$state_dir/$evidence" ;;
   esac
   assert_only_evidence_file_changed "$evidence"
   : >"$tmp/calls"
   if run --commit "$commit" --phase promote --execute >"$tmp/corrupt-$evidence" 2>&1; then
     echo "corrupt $evidence unexpectedly succeeded" >&2; exit 1
   fi
+  case $evidence in
+    activation-container) grep -q 'canonical container target CAS mismatch' "$tmp/corrupt-$evidence" ;;
+    *) grep -q 'activation CAS mismatch' "$tmp/corrupt-$evidence" ;;
+  esac
   assert_no_production_mutation
 done
 rm -rf "$state_dir"
