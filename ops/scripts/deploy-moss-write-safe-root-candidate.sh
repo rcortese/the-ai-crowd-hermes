@@ -5,21 +5,23 @@ set -Eeuo pipefail
 
 usage() {
   printf '%s\n' \
-    'Usage: deploy-moss-write-safe-root-candidate.sh --commit SHA --phase PHASE [--execute]' \
+    'Usage: deploy-moss-write-safe-root-candidate.sh --commit SHA --phase PHASE [--container CONTAINER] [--execute]' \
     '' \
-    'Phases: preflight, build, validate, promote.' \
-    'Dry runs are inert. Only an explicitly executed promote may recreate moss.'
+    'Phases: preflight, build, validate, promote, abort.' \
+    'Dry runs are inert. Only an explicitly executed promote may recreate the canonical Moss target.'
 }
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 
 commit=
 phase=
+container=
 execute=0
 while (($#)); do
   case "$1" in
     --commit) (($# >= 2)) || { usage >&2; exit 2; }; commit=$2; shift 2 ;;
     --phase) (($# >= 2)) || { usage >&2; exit 2; }; phase=$2; shift 2 ;;
+    --container) (($# >= 2)) || { usage >&2; exit 2; }; container=$2; shift 2 ;;
     --execute) execute=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
@@ -27,7 +29,7 @@ while (($#)); do
 done
 
 [[ -n $commit && -n $phase ]] || { usage >&2; exit 2; }
-case "$phase" in preflight|build|validate|promote) ;; *) printf 'invalid phase: %s\n' "$phase" >&2; exit 2 ;; esac
+case "$phase" in preflight|build|validate|promote|abort) ;; *) printf 'invalid phase: %s\n' "$phase" >&2; exit 2 ;; esac
 
 # Do not call git, Docker, or create state for a dry run.
 if (( ! execute )); then
@@ -36,16 +38,64 @@ if (( ! execute )); then
 fi
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+canonical_container=${MOSS_CANONICAL_CONTAINER:-the-ai-crowd-moss-1}
+container=${container:-$canonical_container}
+[[ $container == "$canonical_container" && $container != moss ]] || die 'canonical container target is required'
+compose_service=${MOSS_COMPOSE_SERVICE:-moss}
 head=$(git -C "$repo" rev-parse HEAD)
 resolved_commit=$(git -C "$repo" rev-parse --verify "${commit}^{commit}")
-[[ $head == "$resolved_commit" ]] || die 'commit CAS mismatch'
-
 state_root=${MOSS_WRITE_SAFE_ROOT_STATE_ROOT:-"$repo/ops/candidates"}
 state="$state_root/write-safe-root-$resolved_commit"
+if [[ $head != "$resolved_commit" ]]; then
+  if [[ $phase == promote && -s $state/activation-head ]]; then
+    die 'activation CAS mismatch: HEAD changed'
+  fi
+  die 'commit CAS mismatch'
+fi
+
 candidate="the-ai-crowd/moss-all-in-one:write-safe-root-$resolved_commit"
 base_image="the-ai-crowd/moss:write-safe-root-base-$resolved_commit"
 production_image="the-ai-crowd/moss-all-in-one:local"
 compose=(docker compose -f "$repo/compose.yaml")
+staged_diff_sha256() { git -C "$repo" diff --cached --binary | sha256sum | awk '{print $1}'; }
+rendered_compose_sha256() { "${compose[@]}" config | sha256sum | awk '{print $1}'; }
+read_live_target() { docker inspect -f '{{.Id}}|{{.Image}}' "$container"; }
+record_activation_preflight() {
+  local staged_sha live compose_sha live_id live_image observed_candidate
+  staged_sha=$(staged_diff_sha256)
+  live=$(read_live_target) || die 'canonical container target is missing'
+  IFS='|' read -r live_id live_image <<<"$live"
+  [[ $live_id =~ ^[[:alnum:]][[:alnum:]._-]*$ && $live_image =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'canonical container target is invalid'
+  compose_sha=$(rendered_compose_sha256)
+  [[ $staged_sha =~ ^[[:xdigit:]]{64}$ && $compose_sha =~ ^[[:xdigit:]]{64}$ ]] || die 'could not capture activation CAS evidence'
+  printf '%s\n' "$head" >"$state/activation-head"
+  printf '%s\n' "$staged_sha" >"$state/activation-staged-diff-sha256"
+  printf '%s\n' "$container" >"$state/activation-container"
+  printf '%s\n' "$live_id" >"$state/activation-container-id"
+  printf '%s\n' "$live_image" >"$state/activation-live-image-id"
+  printf '%s\n' "$compose_sha" >"$state/activation-compose-sha256"
+  if observed_candidate=$(docker image inspect -f '{{.Id}}' "$candidate" 2>/dev/null); then
+    [[ $observed_candidate =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'could not capture candidate image ID'
+    printf '%s\n' "$observed_candidate" >"$state/activation-candidate-image-id"
+  else
+    rm -f "$state/activation-candidate-image-id"
+  fi
+}
+verify_activation_cas() {
+  local expected_head expected_staged expected_container expected_live_id expected_live_image expected_compose expected_candidate live current_staged current_compose current_candidate
+  for evidence in activation-head activation-staged-diff-sha256 activation-container activation-container-id activation-live-image-id activation-compose-sha256 activation-candidate-image-id candidate-image-id; do
+    [[ -s $state/$evidence ]] || die "missing activation CAS evidence: $evidence"
+  done
+  expected_head=$(<"$state/activation-head"); expected_staged=$(<"$state/activation-staged-diff-sha256"); expected_container=$(<"$state/activation-container"); expected_live_id=$(<"$state/activation-container-id"); expected_live_image=$(<"$state/activation-live-image-id"); expected_compose=$(<"$state/activation-compose-sha256"); expected_candidate=$(<"$state/activation-candidate-image-id")
+  [[ $expected_container == "$canonical_container" && $container == "$expected_container" ]] || die 'canonical container target CAS mismatch'
+  [[ $head == "$expected_head" ]] || die 'activation CAS mismatch: HEAD changed'
+  current_staged=$(staged_diff_sha256); [[ $current_staged == "$expected_staged" ]] || die 'activation CAS mismatch: staged diff changed'
+  live=$(read_live_target) || die 'canonical container target is missing'
+  [[ $live == "$expected_live_id|$expected_live_image" ]] || die 'activation CAS mismatch: live target changed'
+  current_compose=$(rendered_compose_sha256); [[ $current_compose == "$expected_compose" ]] || die 'activation CAS mismatch: rendered Compose changed'
+  current_candidate=$(docker image inspect -f '{{.Id}}' "$candidate") || die 'activation CAS mismatch: candidate missing'
+  [[ $current_candidate == "$expected_candidate" && $current_candidate == $(<"$state/candidate-image-id") ]] || die 'activation CAS mismatch: candidate image changed'
+}
 mkdir -p "$state"
 printf '%s\n' "$resolved_commit" >"$state/commit"
 printf '%s\n' "$head" >"$state/head"
@@ -61,7 +111,7 @@ begin_build_attempt() {
 
 validate_container_image() {
   local expected=$1 observed
-  observed=$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.Image}}' moss)
+  observed=$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.Image}}' "$container")
   [[ $observed == "running|healthy|$expected" ]]
 }
 
@@ -112,7 +162,7 @@ rollback() {
   [[ -n $rollback_image ]] || return 1
   printf 'rolling_back\n' >"$state/status"
   docker image tag "$rollback_image" "$production_image" || rollback_rc=1
-  "${compose[@]}" up -d --no-deps --force-recreate moss || rollback_rc=1
+  "${compose[@]}" up -d --no-deps --force-recreate "$compose_service" || rollback_rc=1
   validate_container_image "$rollback_image" || rollback_rc=1
   if (( rollback_rc )); then
     printf 'rollback_failed\nimage=%s\n' "$rollback_image" >"$state/status"
@@ -135,6 +185,7 @@ trap 'exit 143' TERM
 
 case "$phase" in
   preflight)
+    record_activation_preflight
     record_phase preflight
     printf 'preflight_complete\n' >"$state/status"
     ;;
@@ -158,19 +209,26 @@ case "$phase" in
     record_phase validate
     printf 'validate_complete\nimage_id=%s\n' "$candidate_image_id" >"$state/status"
     ;;
+  abort)
+    # Explicit closeout only: validation deliberately preserves the candidate for K7.
+    docker image rm -f "$candidate"
+    rm -f "$state/candidate-image-id" "$state/activation-candidate-image-id"
+    printf 'abort_complete\n' >"$state/status"
+    ;;
   promote)
     require_phase validate
     [[ -s $state/candidate-image-id ]] || die 'missing immutable candidate image ID'
     candidate_image_id=$(<"$state/candidate-image-id")
     [[ $candidate_image_id =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'invalid immutable candidate image ID'
-    # Capture and persist the immutable rollback image ID before any stop/recreate call.
-    rollback_image=$(docker inspect -f '{{.Image}}' moss)
-    [[ $rollback_image =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'could not record current moss image ID'
+    # Recheck every source/live/compose/candidate fact before the first mutation.
+    verify_activation_cas
+    # The CAS-bound live image is the only valid rollback image.
+    rollback_image=$(<"$state/activation-live-image-id")
     printf '%s\n' "$rollback_image" >"$state/rollback-image"
     docker image tag "$candidate_image_id" "$production_image"
     mutation_started=1
-    "${compose[@]}" stop moss
-    "${compose[@]}" up -d --no-deps --force-recreate moss
+    "${compose[@]}" stop "$compose_service"
+    "${compose[@]}" up -d --no-deps --force-recreate "$compose_service"
     validate_container_image "$candidate_image_id"
     mutation_started=0
     rm -f "$state/rollback-image"

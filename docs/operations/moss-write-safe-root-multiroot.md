@@ -34,15 +34,7 @@ context exclusively with `git archive` of the resolved full commit, verifies its
 file tree against that commit, then directly builds `Dockerfile.moss` to a
 commit-scoped temporary base tag and `Dockerfile.moss-all-in-one` with
 `MOSS_BASE_IMAGE` bound to that tag. The temporary context and base tag are
-removed on both success and failure. These three phases never invoke Compose or
-read an environment file. `promote` requires the same-commit `validate`
-evidence and is the only phase which can recreate `moss`. It first records the
-running Moss image ID, tags the candidate into the compose image reference,
-stops only `moss`, recreates only `moss`, and validates a healthy container
-using the candidate image. Any failure after the stop (including signals)
-retags and recreates from that exact recorded image, then validates the rollback
-image before reporting the original failure. A successful promotion keeps
-durable phase evidence but removes the temporary rollback-image marker.
+removed on both success and failure. Build and validation never invoke Compose or read an environment file. Preflight uses only read-only inspection: it binds the canonical container target (default `the-ai-crowd-moss-1`, never bare `moss`) plus checkout HEAD, SHA-256 of the staged binary diff, target container ID and immutable image ID, rendered Compose SHA-256, and—when the candidate exists—the immutable candidate image ID. `promote` requires same-commit validation and this activation evidence, recomputes every bound fact immediately before its first mutation, and fails closed before any lifecycle command on a mismatch or missing target. It tags the candidate into the compose image reference, recreates only the configured Moss compose service, and validates the same canonical container using the candidate image. Any failure after the stop (including signals) retags and recreates from the exact CAS-bound old image, then validates that same canonical container before reporting the original failure. Validation preserves the candidate tag and image for K7 review/activation; only explicit `abort` closeout may remove them. A successful promotion keeps durable phase evidence but removes the temporary rollback-image marker.
 
 K3/K4/K5 must not execute a build, candidate, or promotion. K6 owns isolated
 candidate build/validation. K7 approval plus an external guarded invocation is
