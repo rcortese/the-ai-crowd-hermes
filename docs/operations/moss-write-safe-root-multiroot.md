@@ -17,11 +17,28 @@ Every persona Dockerfile copies and executes
 `ops/tests/test_fleet_write_safe_root_build_contract.sh` before any candidate
 build. The gate is source-backed by
 `ops/hermes-agent-overrides/write-safe-root-invalid-config-fail-closed.patch`.
+Source-backed base images install `patch` before the patch/gate layer so the
+pinned base image's package set cannot bypass or prevent this contract.
 
 ## Candidate runner and rollback boundary
-Run `ops/scripts/deploy-moss-write-safe-root-candidate.sh --help` first. The
-runner is dry-run unless `--execute` is given and has explicit phases. K3/K4/K5
-must not execute a build, candidate, or promotion. K6 owns isolated candidate
-build/validation. K7 approval plus an external guarded invocation is required
-before the runner may touch only Moss; any post-stop failure must restore the
-recorded exact image before reporting failure.
+Run `ops/scripts/deploy-moss-write-safe-root-candidate.sh --help` first. With
+no `--execute`, every phase is inert: it performs no Git/Docker call and writes
+no state. Executed phases record commit-addressed evidence under
+`ops/candidates/write-safe-root-<full-commit>/`; the requested commit must
+resolve exactly to the checkout `HEAD` before the runner creates that state or
+touches Docker.
+
+`preflight`, `build`, and `validate` are ordered read/build/inspect phases;
+none can stop or recreate a service. `promote` requires the same-commit
+`validate` evidence and is the only phase which can recreate `moss`. It first
+records the running Moss image ID, tags the candidate into the compose image
+reference, stops only `moss`, recreates only `moss`, and validates a healthy
+container using the candidate image. Any failure after the stop (including
+signals) retags and recreates from that exact recorded image, then validates
+the rollback image before reporting the original failure. A successful
+promotion keeps durable phase evidence but removes the temporary rollback-image
+marker.
+
+K3/K4/K5 must not execute a build, candidate, or promotion. K6 owns isolated
+candidate build/validation. K7 approval plus an external guarded invocation is
+required before the runner may touch only Moss.
