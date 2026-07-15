@@ -77,11 +77,19 @@ wait_for_initial_idle() {
   return 1
 }
 probe_ready() {
-  local expected=$1 observed
+  local expected=$1 observed attempt code
   observed=$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.Image}}' "$container")
   [[ $observed == "running|healthy|$expected" ]] || return 1
-  docker exec "$container" sh -lc 'curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS http://127.0.0.1:9119/ >/dev/null'
-  curl -fsS -o /dev/null -w '%{http_code}' https://hermes.rodolflix.com/ | grep -Eq '^(200|401|403)$'
+  # Compose health covers WebUI/webhook/gateway. Dashboard may start just after it;
+  # allow a bounded 60-second convergence window rather than racing it once.
+  for attempt in {1..12}; do
+    if docker exec "$container" sh -lc 'curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS http://127.0.0.1:9119/ >/dev/null'; then break; fi
+    (( attempt == 12 )) && return 1
+    sleep 5
+  done
+  # Authenticated public endpoint: a 401/403 proves the proxy route is alive.
+  code=$(curl -sS -o /dev/null -w '%{http_code}' https://hermes.rodolflix.com/) || return 1
+  [[ $code =~ ^(200|401|403)$ ]]
 }
 rollback() {
   write_status rollback_uncertain

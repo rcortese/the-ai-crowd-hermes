@@ -32,7 +32,13 @@ case "$1 ${2:-}" in
 esac
 exit 97
 DOCKER
-printf '%s\n' '#!/usr/bin/env bash' 'printf 401' > "$tmp/fakebin/curl"
+cat > "$tmp/fakebin/curl" <<'CURL'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [[ $arg == -*f* || $arg == --fail ]] && exit 22
+done
+printf 401
+CURL
 chmod 0755 "$tmp/fakebin/docker" "$tmp/fakebin/curl"
 : > "$tmp/calls"
 FAKE_CALLS="$tmp/calls" FAKE_CANDIDATE="$candidate" FAKE_ROLLBACK="$rollback" PATH="$tmp/fakebin:$PATH" "$guardian" --state "$tmp/state" --execute >/dev/null
