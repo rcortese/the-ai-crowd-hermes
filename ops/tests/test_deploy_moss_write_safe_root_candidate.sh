@@ -308,30 +308,13 @@ grep -q 'canonical container target' "$tmp/pre-stop"
 assert_no_recreate
 ! grep -q -- ' stop moss' "$tmp/calls"
 
-# A recreate failure after stop must reapply the exact recorded image.
-: >"$tmp/calls"; rm -f "$tmp/recreate-count" "$tmp/state-inspect-count"
-if SCENARIO=post_stop_failure EXPECTED_IMAGE="$old_image" run --commit "$commit" --phase promote --execute >"$tmp/post-stop" 2>&1; then echo 'post-stop failure unexpectedly succeeded' >&2; exit 1; fi
-grep -q -- ' stop moss' "$tmp/calls"
-assert_rollback_exact
-# The call log above proves rollback used the captured exact image.
-
-# A post-recreate validation failure uses the same exact-image rollback path.
-: >"$tmp/calls"; rm -f "$tmp/recreate-count" "$tmp/state-inspect-count"
-if SCENARIO=post_validate_failure EXPECTED_IMAGE="$old_image" run --commit "$commit" --phase promote --execute >"$tmp/post-validate" 2>&1; then echo 'post-validate failure unexpectedly succeeded' >&2; exit 1; fi
-assert_rollback_exact
-
-# Successful promote validates the candidate and removes only temporary rollback state.
-: >"$tmp/calls"; rm -f "$tmp/recreate-count" "$tmp/state-inspect-count"
-EXPECTED_IMAGE="$candidate_image_id" run --commit "$commit" --phase promote --execute
-! test -e "$tmp/state/write-safe-root-$commit/rollback-image"
-grep -Fxq "$candidate_image_id" "$tmp/state/write-safe-root-$commit/candidate-image-id"
-grep -Fxq 'phase=promote' "$tmp/state/write-safe-root-$commit/promote"
-grep -Fxq "promote_complete" "$tmp/state/write-safe-root-$commit/status"
-test "$(grep -c -- 'up -d --no-deps --force-recreate moss' "$tmp/calls")" -eq 1
-# Lifecycle commands receive both canonical cwd and Compose project directory,
-# independent of the reviewed source worktree/current shell directory.
-grep -Fq 'compose --project-directory /mnt/user/appdata/the-ai-crowd --env-file /mnt/user/appdata/the-ai-crowd/.env -f /mnt/user/appdata/the-ai-crowd/compose.yaml stop moss cwd=/mnt/user/appdata/the-ai-crowd' "$tmp/calls"
-grep -Fq 'compose --project-directory /mnt/user/appdata/the-ai-crowd --env-file /mnt/user/appdata/the-ai-crowd/.env -f /mnt/user/appdata/the-ai-crowd/compose.yaml up -d --no-deps --force-recreate moss cwd=/mnt/user/appdata/the-ai-crowd' "$tmp/calls"
+# Promotion only hands ownership to the detached guardian. The caller must never
+# execute a separate stop/recreate lifecycle command itself.
+: >"$tmp/calls"
+run --commit "$commit" --phase promote --execute
+! grep -q -- " stop moss" "$tmp/calls"
+assert_no_recreate
+grep -Fxq guardian_launched "$tmp/state/write-safe-root-$commit/status"
 
 # Activation preflight must bind the canonical target and every observed CAS value;
 # changing any observed source/live/compose value must fail before Docker lifecycle.

@@ -265,17 +265,12 @@ case "$phase" in
     [[ $candidate_image_id =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'invalid immutable candidate image ID'
     # Recheck every source/live/compose/candidate fact before the first mutation.
     verify_activation_cas
-    # The CAS-bound live image is the only valid rollback image.
-    rollback_image=$(<"$state/activation-live-image-id")
-    printf '%s\n' "$rollback_image" >"$state/rollback-image"
-    docker image tag "$candidate_image_id" "$production_image"
-    mutation_started=1
-    run_canonical_compose stop "$compose_service"
-    run_canonical_compose up -d --no-deps --force-recreate "$compose_service"
-    validate_container_image "$candidate_image_id"
-    mutation_started=0
-    rm -f "$state/rollback-image"
-    record_phase promote
-    printf 'promote_complete\nimage_id=%s\n' "$candidate_image_id" >"$state/status"
+    # Lifecycle is owned by a detached guardian. The caller may disappear after this point without preventing the CAS-bound recovery path.
+    guardian="$repo/ops/scripts/moss-promotion-guardian.sh"
+    [[ -x $guardian ]] || die 'promotion guardian is unavailable'
+    setsid "$guardian" --state "$state" --execute >"$state/guardian.log" 2>&1 < /dev/null &
+    guardian_pid=$!
+    printf '%s\n' "$guardian_pid" >"$state/guardian.pid"
+    printf 'guardian_launched\npid=%s\n' "$guardian_pid" >"$state/status"
     ;;
 esac
