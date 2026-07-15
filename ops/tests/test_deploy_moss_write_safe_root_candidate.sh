@@ -232,6 +232,8 @@ trap 'chmod 600 "$repo/.candidate-dirty" "$repo/env/.candidate-ignored.env" 2>/d
 run --commit "$commit" --phase preflight --execute
 run --commit "$commit" --phase build --execute
 run --commit "$commit" --phase validate --execute
+# The normal preflight → build → validate flow must bind the built image into activation CAS.
+grep -Fxq "$candidate_image_id" "$tmp/state/write-safe-root-$commit/activation-candidate-image-id"
 grep -Fxq "$commit" "$tmp/state/write-safe-root-$commit/commit"
 grep -Fxq 'phase=validate' "$tmp/state/write-safe-root-$commit/validate"
 assert_no_recreate

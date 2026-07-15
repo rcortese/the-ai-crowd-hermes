@@ -146,7 +146,7 @@ printf '%s\n' "$candidate" >"$state/candidate-image"
 
 record_phase() { printf 'commit=%s\nhead=%s\nphase=%s\n' "$resolved_commit" "$head" "$1" >"$state/$1"; }
 require_phase() { [[ -s $state/$1 ]] || die "missing CAS-bound $1 evidence"; }
-remove_build_evidence() { rm -f "$state/build" "$state/candidate-image-id" "$state/validate" "$state/promote" "$state/rollback-image"; }
+remove_build_evidence() { rm -f "$state/build" "$state/candidate-image-id" "$state/activation-candidate-image-id" "$state/validate" "$state/promote" "$state/rollback-image"; }
 begin_build_attempt() {
   remove_build_evidence
   printf "build_started\n" >"$state/status"
@@ -239,6 +239,8 @@ case "$phase" in
     candidate_image_id=$(docker image inspect -f '{{.Id}}' "$candidate")
     [[ $candidate_image_id =~ ^sha256:[[:xdigit:]]{64}$ ]] || die 'could not record immutable candidate image ID'
     printf '%s\n' "$candidate_image_id" >"$state/candidate-image-id"
+    # Bind the immutable image produced by this build into activation CAS.
+    printf '%s\n' "$candidate_image_id">"$state/activation-candidate-image-id"
     record_phase build
     printf 'build_complete\nimage_id=%s\n' "$candidate_image_id" >"$state/status"
     ;;
