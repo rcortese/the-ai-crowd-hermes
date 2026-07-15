@@ -17,6 +17,8 @@ done
 readonly deployment_root=/mnt/user/appdata/the-ai-crowd
 readonly container=the-ai-crowd-moss-1 service=moss production_image=the-ai-crowd/moss-all-in-one:local
 readonly ingress_network=network_default lock_path="$deployment_root/state/shared/moss-promotion.lock"
+admission_wait_seconds=${MOSS_PROMOTION_ADMISSION_WAIT_SECONDS:-1800}
+[[ $admission_wait_seconds =~ ^[0-9]+$ ]] || { printf "invalid admission wait\n" >&2; exit 64; }
 compose=(docker compose --project-directory "$deployment_root" --env-file "$deployment_root/.env" -f "$deployment_root/compose.yaml")
 fenced=0 transition_started=0 terminal=0
 write_status() { printf '%s\n' "$1" >"$state/status"; }
@@ -69,6 +71,15 @@ admit_after_fence() {
   sleep 5
   health_idle
 }
+wait_for_initial_idle() {
+  local deadline=$((SECONDS + admission_wait_seconds))
+  write_status waiting_for_idle
+  while (( SECONDS <= deadline )); do
+    if health_idle && sleep 5 && health_idle; then return 0; fi
+    sleep 5
+  done
+  return 1
+}
 probe_ready() {
   local expected=$1 observed
   observed=$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.Image}}' "$container")
@@ -88,7 +99,7 @@ rollback() {
 write_status guardian_started
 # An observation happens before the fence only to avoid needless ingress loss.
 # It is never admission: admission is exclusively the post-fence stable window.
-if ! health_idle; then terminal_status admission_blocked:active_or_ambiguous; exit 2; fi
+if ! wait_for_initial_idle; then terminal_status admission_blocked:active_or_ambiguous; exit 2; fi
 fence_ingress
 if ! admit_after_fence; then terminal_status admission_blocked:post_fence_activity; exit 2; fi
 assert_cas
