@@ -25,7 +25,8 @@ set -Eeuo pipefail
 printf '%s\n' "$*" >> "$FAKE_CALLS"
 case "$1 ${2:-}" in
   "exec the-ai-crowd-moss-1") [[ $* == *'/health'* ]] && printf '%s\n' '{"status":"ok","active_streams":0,"active_runs":0}'; exit 0 ;;
-  "network disconnect"|"network connect"|"image tag"|"compose --project-directory") exit 0 ;;
+  "network disconnect"|"network connect"|"compose --project-directory") exit 0 ;;
+  "image tag") if [[ ${FAKE_KILL_GUARDIAN:-0} == 1 ]]; then kill -KILL "$PPID"; exit 0; fi; exit 0 ;;
   "inspect -f") if [[ $3 == *'{{.Id}}|{{.Image}}'* ]]; then printf '%s|%s\n' fake-container "$FAKE_ROLLBACK"; else printf '%s|%s|%s\n' running healthy "$FAKE_CANDIDATE"; fi; exit 0 ;;
   "image inspect") printf '%s\n' "$FAKE_CANDIDATE"; exit 0 ;;
 esac
@@ -50,4 +51,11 @@ sleep 0.1
 set +e; FAKE_CALLS="$tmp/calls" FAKE_CANDIDATE="$candidate" FAKE_ROLLBACK="$rollback" PATH="$tmp/fakebin:$PATH" "$guardian" --state "$tmp/state" --execute >/dev/null 2>&1; rc=$?; set -e
 wait "$holder"
 [[ $rc == 2 && $(<"$tmp/state/status") == lifecycle_lock_busy && ! -s $tmp/calls ]]
+# A non-trappable death after the first mutation intent leaves an explicit, durable
+# recovery-required receipt rather than the ambiguous old `activating` state.
+set +e
+FAKE_CALLS="$tmp/calls" FAKE_CANDIDATE="$candidate" FAKE_ROLLBACK="$rollback" FAKE_KILL_GUARDIAN=1 PATH="$tmp/fakebin:$PATH" "$guardian" --state "$tmp/state" --execute >/dev/null 2>&1
+rc=$?
+set -e
+[[ $rc -eq 137 && $(<"$tmp/state/status") == activation_uncertain ]]
 echo moss_promotion_guardian_contract_ok

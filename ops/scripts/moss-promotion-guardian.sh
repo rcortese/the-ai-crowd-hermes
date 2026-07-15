@@ -77,7 +77,8 @@ probe_ready() {
   curl -fsS -o /dev/null -w '%{http_code}' https://hermes.rodolflix.com/ | grep -Eq '^(200|401|403)$'
 }
 rollback() {
-  terminal_status rolling_back
+  # Persist an unambiguous recovery-required receipt before rollback mutates.
+  write_status rollback_uncertain
   docker image tag "$rollback_image" "$production_image" || { terminal_status rollback_failed:retag; return 1; }
   "${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 180 "$service" || { terminal_status rollback_failed:compose; return 1; }
   fenced=0
@@ -92,7 +93,9 @@ fence_ingress
 if ! admit_after_fence; then terminal_status admission_blocked:post_fence_activity; exit 2; fi
 assert_cas
 printf '%s\n' "$rollback_image" >"$state/rollback-image"
-write_status activating
+# This receipt is deliberately durable before the first tag/Compose mutation: a
+# non-trappable death cannot be mistaken for a completed or merely pending deploy.
+write_status activation_uncertain
 transition_started=1
 docker image tag "$candidate" "$production_image" || { rollback; exit 1; }
 if ! "${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 180 "$service"; then rollback; exit 1; fi
