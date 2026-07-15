@@ -106,7 +106,13 @@ if [[ $* == *moss-write-safe-root-context.* ]]; then
 fi
 exec /usr/bin/rm "$@"
 EOF
-  chmod +x "$tmp/fakebin/git" "$tmp/fakebin/docker" "$tmp/fakebin/tar" "$tmp/fakebin/rm"
+  cat >"$tmp/fakebin/setsid" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+printf "setsid %s\n" "$*" >>"$CALL_LOG"
+exit 0
+EOF
+  chmod +x "$tmp/fakebin/git" "$tmp/fakebin/docker" "$tmp/fakebin/tar" "$tmp/fakebin/rm" "$tmp/fakebin/setsid"
 }
 
 assert_no_recreate() { ! grep -q -- '--force-recreate moss' "$CALL_LOG"; }
