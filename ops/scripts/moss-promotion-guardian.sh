@@ -3,12 +3,13 @@
 # It accepts immutable image IDs only, fences ingress before its final idle
 # assertion, serializes the lifecycle, and leaves a terminal receipt.
 set -Eeuo pipefail
-usage() { printf '%s\n' 'usage: moss-promotion-guardian.sh --state ABSOLUTE_DIR --execute'; }
-state= execute=0
+usage() { printf '%s\n' 'usage: moss-promotion-guardian.sh --state ABSOLUTE_DIR --execute [--force-drain]'; }
+state= execute=0 force_drain=0
 while (($#)); do
   case $1 in
     --state) (($# >= 2)) || { usage >&2; exit 64; }; state=$2; shift 2 ;;
     --execute) execute=1; shift ;;
+    --force-drain) force_drain=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 64 ;;
   esac
@@ -62,15 +63,10 @@ health_idle() {
 fence_ingress() {
   write_status fencing_ingress
   docker exec "$container" supervisorctl -c /etc/supervisor/conf.d/moss-all-in-one.conf stop moss-gateway >/dev/null || fail gateway_fence_failed
-  # From this point cleanup must restore the gateway even if network fencing fails.
   fenced=1
   docker network disconnect "$ingress_network" "$container" || fail proxy_fence_failed
 }
-admit_after_fence() {
-  health_idle || return 1
-  sleep 5
-  health_idle
-}
+admit_after_fence() { health_idle && sleep 5 && health_idle; }
 wait_for_initial_idle() {
   local deadline=$((SECONDS + admission_wait_seconds))
   write_status waiting_for_idle
@@ -88,7 +84,6 @@ probe_ready() {
   curl -fsS -o /dev/null -w '%{http_code}' https://hermes.rodolflix.com/ | grep -Eq '^(200|401|403)$'
 }
 rollback() {
-  # Persist an unambiguous recovery-required receipt before rollback mutates.
   write_status rollback_uncertain
   docker image tag "$rollback_image" "$production_image" || { terminal_status rollback_failed:retag; return 1; }
   "${compose[@]}" up -d --no-deps --force-recreate --wait --wait-timeout 180 "$service" || { terminal_status rollback_failed:compose; return 1; }
@@ -97,15 +92,16 @@ rollback() {
   terminal_status rollback_ready
 }
 write_status guardian_started
-# An observation happens before the fence only to avoid needless ingress loss.
-# It is never admission: admission is exclusively the post-fence stable window.
-if ! wait_for_initial_idle; then terminal_status admission_blocked:active_or_ambiguous; exit 2; fi
-fence_ingress
-if ! admit_after_fence; then terminal_status admission_blocked:post_fence_activity; exit 2; fi
+if (( force_drain )); then
+  write_status force_drain_authorized
+  fence_ingress
+else
+  if ! wait_for_initial_idle; then terminal_status admission_blocked:active_or_ambiguous; exit 2; fi
+  fence_ingress
+  if ! admit_after_fence; then terminal_status admission_blocked:post_fence_activity; exit 2; fi
+fi
 assert_cas
 printf '%s\n' "$rollback_image" >"$state/rollback-image"
-# This receipt is deliberately durable before the first tag/Compose mutation: a
-# non-trappable death cannot be mistaken for a completed or merely pending deploy.
 write_status activation_uncertain
 transition_started=1
 docker image tag "$candidate" "$production_image" || { rollback; exit 1; }
