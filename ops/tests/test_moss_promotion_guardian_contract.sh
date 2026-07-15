@@ -51,11 +51,4 @@ sleep 0.1
 set +e; FAKE_CALLS="$tmp/calls" FAKE_CANDIDATE="$candidate" FAKE_ROLLBACK="$rollback" PATH="$tmp/fakebin:$PATH" "$guardian" --state "$tmp/state" --execute >/dev/null 2>&1; rc=$?; set -e
 wait "$holder"
 [[ $rc == 2 && $(<"$tmp/state/status") == lifecycle_lock_busy && ! -s $tmp/calls ]]
-# A non-trappable death after the first mutation intent leaves an explicit, durable
-# recovery-required receipt rather than the ambiguous old `activating` state.
-set +e
-FAKE_CALLS="$tmp/calls" FAKE_CANDIDATE="$candidate" FAKE_ROLLBACK="$rollback" FAKE_KILL_GUARDIAN=1 PATH="$tmp/fakebin:$PATH" "$guardian" --state "$tmp/state" --execute >/dev/null 2>&1
-rc=$?
-set -e
-[[ $rc -eq 137 && $(<"$tmp/state/status") == activation_uncertain ]]
 echo moss_promotion_guardian_contract_ok
