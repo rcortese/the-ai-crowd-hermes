@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # Detached, durable owner of the only Moss lifecycle transition.
-# It accepts immutable image IDs only, fences ingress before its final idle
-# assertion, serializes the lifecycle, and leaves a terminal receipt.
+# Admission occurs only after a stable idle window; ingress is fenced on the
+# same network that the Caddy edge uses, and readiness proves every boundary.
 set -Eeuo pipefail
-usage() { printf '%s\n' 'usage: moss-promotion-guardian.sh --state ABSOLUTE_DIR --execute [--force-drain]'; }
-state= execute=0 force_drain=0
+usage() { printf '%s\n' 'usage: moss-promotion-guardian.sh --state ABSOLUTE_DIR --execute'; }
+state= execute=0
 while (($#)); do
   case $1 in
     --state) (($# >= 2)) || { usage >&2; exit 64; }; state=$2; shift 2 ;;
     --execute) execute=1; shift ;;
-    --force-drain) force_drain=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 64 ;;
   esac
@@ -17,7 +16,7 @@ done
 [[ $execute == 1 && $state == /* && -d $state && ! -L $state ]] || { usage >&2; exit 64; }
 readonly deployment_root=/mnt/user/appdata/the-ai-crowd
 readonly container=the-ai-crowd-moss-1 service=moss production_image=the-ai-crowd/moss-all-in-one:local
-readonly ingress_network=network_default lock_path="$deployment_root/state/shared/moss-promotion.lock"
+readonly ingress_network=local-llm-net proxy_container=network-caddy-1 lock_path="$deployment_root/state/shared/moss-promotion.lock"
 admission_wait_seconds=${MOSS_PROMOTION_ADMISSION_WAIT_SECONDS:-1800}
 [[ $admission_wait_seconds =~ ^[0-9]+$ ]] || { printf "invalid admission wait\n" >&2; exit 64; }
 compose=(docker compose --project-directory "$deployment_root" --env-file "$deployment_root/.env" -f "$deployment_root/compose.yaml")
@@ -27,7 +26,7 @@ terminal_status() { terminal=1; write_status "$1"; }
 fail() { terminal_status "guardian_failed:$1"; printf '%s\n' "$1" >&2; exit 1; }
 restore_fence() {
   [[ $fenced == 1 ]] || return 0
-  docker network connect --alias moss --alias hermes "$ingress_network" "$container" 2>/dev/null || true
+  docker network connect --alias moss "$ingress_network" "$container" 2>/dev/null || true
   docker exec "$container" supervisorctl -c /etc/supervisor/conf.d/moss-all-in-one.conf start moss-gateway >/dev/null 2>&1 || true
   fenced=0
 }
@@ -76,20 +75,28 @@ wait_for_initial_idle() {
   done
   return 1
 }
+container_http_200() {
+  docker exec "$container" sh -c 'code=$(curl -sS -o /dev/null -w "%{http_code}" "$1") || exit 1; [ "$code" = 200 ]' sh "$1"
+}
+proxy_backend_ready() {
+  local code
+  code=$(docker exec "$proxy_container" sh -c 'wget -qSO /dev/null "$1" 2>&1 | sed -n "s/^  HTTP\/[^ ]* \([0-9][0-9][0-9]\).*/\1/p" | head -n1' sh http://moss:8787/) || return 1
+  [[ $code == 200 ]]
+}
+public_edge_ready() {
+  local code
+  code=$(curl -sS -o /dev/null -w '%{http_code}' https://hermes.rodolflix.com/) || return 1
+  [[ $code =~ ^(200|401|403)$ ]]
+}
 probe_ready() {
-  local expected=$1 observed attempt code
+  local expected=$1 attempt observed
   observed=$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|{{.Image}}' "$container")
   [[ $observed == "running|healthy|$expected" ]] || return 1
-  # Compose health covers WebUI/webhook/gateway. Dashboard may start just after it;
-  # allow a bounded 60-second convergence window rather than racing it once.
   for attempt in {1..12}; do
-    if docker exec "$container" sh -lc 'curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS http://127.0.0.1:9119/ >/dev/null'; then break; fi
+    if container_http_200 http://127.0.0.1:8787/health && container_http_200 http://127.0.0.1:8644/health && container_http_200 http://127.0.0.1:8648/health && container_http_200 http://127.0.0.1:9119/ && proxy_backend_ready && public_edge_ready; then return 0; fi
     (( attempt == 12 )) && return 1
     sleep 5
   done
-  # Authenticated public endpoint: a 401/403 proves the proxy route is alive.
-  code=$(curl -sS -o /dev/null -w '%{http_code}' https://hermes.rodolflix.com/) || return 1
-  [[ $code =~ ^(200|401|403)$ ]]
 }
 rollback() {
   write_status rollback_uncertain
@@ -100,14 +107,9 @@ rollback() {
   terminal_status rollback_ready
 }
 write_status guardian_started
-if (( force_drain )); then
-  write_status force_drain_authorized
-  fence_ingress
-else
-  if ! wait_for_initial_idle; then terminal_status admission_blocked:active_or_ambiguous; exit 2; fi
-  fence_ingress
-  if ! admit_after_fence; then terminal_status admission_blocked:post_fence_activity; exit 2; fi
-fi
+if ! wait_for_initial_idle; then terminal_status admission_blocked:active_or_ambiguous; exit 2; fi
+fence_ingress
+if ! admit_after_fence; then terminal_status admission_blocked:post_fence_activity; exit 2; fi
 assert_cas
 printf '%s\n' "$rollback_image" >"$state/rollback-image"
 write_status activation_uncertain
