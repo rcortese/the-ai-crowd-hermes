@@ -1,0 +1,1199 @@
+diff --git a/api/agent_health.py b/api/agent_health.py
+index 276ca0d6..3861d044 100644
+--- a/api/agent_health.py
++++ b/api/agent_health.py
+@@ -392,10 +392,10 @@ def _http_probe(
+     on this particular path) so the caller can move on to the next path.
+     ``body`` is the raw response bytes for 2xx responses, None otherwise.
+     """
+-    headers: dict[str, str] = {}
++    req = urllib_request.Request(url, method="GET")
+     if api_key:
+-        headers["Authorization"] = f"Bearer {api_key}"
+-    req = urllib_request.Request(url, method="GET", headers=headers)
++        # urllib does not copy unredirected headers to redirected requests.
++        req.add_unredirected_header("Authorization", f"Bearer {api_key}")
+     try:
+         with urllib_request.urlopen(req, timeout=timeout_s) as resp:  # noqa: S310 - trusted env var URL
+             status = getattr(resp, "status", None) or resp.getcode()
+@@ -457,6 +457,24 @@ def _run_remote_probe(base_url: str) -> dict[str, Any]:
+                         details["gateway_state"] = data["gateway_state"]
+                 except (json.JSONDecodeError, UnicodeDecodeError):
+                     pass
++            if path == "/health/detailed" and "gateway_state" in details:
++                details["telemetry_state"] = "detailed"
++            elif path == "/health/detailed":
++                details.update(
++                    {
++                        "reason": "remote_gateway_detailed_unverified",
++                        "telemetry_state": "detailed_unverified",
++                        "degraded": True,
++                    }
++                )
++            else:
++                details.update(
++                    {
++                        "reason": "remote_gateway_basic_fallback",
++                        "telemetry_state": "basic_fallback",
++                        "degraded": True,
++                    }
++                )
+             # An over-cap body (len > limit, i.e. the +1 sentinel byte was read)
+             # is treated as "alive but no parseable gateway_state" — we still
+             # report the gateway as up, just without the detailed state.
+diff --git a/api/gateway_chat.py b/api/gateway_chat.py
+index caddecc0..5cca223c 100644
+--- a/api/gateway_chat.py
++++ b/api/gateway_chat.py
+@@ -43,6 +43,51 @@ _WEBUI_GATEWAY_BASE_URL_ENV = "HERMES_WEBUI_GATEWAY_BASE_URL"
+ _WEBUI_GATEWAY_API_KEY_ENV = "HERMES_WEBUI_GATEWAY_API_KEY"
+ _WEBUI_GATEWAY_USE_RUNS_API_ENV = "HERMES_WEBUI_GATEWAY_USE_RUNS_API"
+ _GATEWAY_CHAT_BACKENDS = {"gateway", "api_server", "api-server"}
++_PROFILE_PROXY_ENV_PREFIX = "HERMES_WEBUI_PROFILE_PROXY_"
++
++def profile_proxy_entries(config_data=None, environ: dict[str, str] | None = None) -> dict[str, dict]:
++    source = os.environ if environ is None else environ
++    entries: dict[str, dict] = {}
++    for key, value in source.items():
++        if not key.startswith(_PROFILE_PROXY_ENV_PREFIX) or not key.endswith("_BASE_URL"):
++            continue
++        token = key[len(_PROFILE_PROXY_ENV_PREFIX):-len("_BASE_URL")]
++        name = token.lower().replace("_", "-")
++        prefix = f"{_PROFILE_PROXY_ENV_PREFIX}{token}_"
++        base_url = str(value or "").strip().rstrip("/")
++        if not name or not base_url:
++            continue
++        api_key_env = str(source.get(prefix + "API_KEY_ENV") or "").strip()
++        api_key = str(source.get(api_key_env) or "").strip() if api_key_env else str(source.get(prefix + "API_KEY") or "").strip()
++        entries[name] = {
++            "name": name,
++            "label": str(source.get(prefix + "LABEL") or name).strip() or name,
++            "base_url": base_url,
++            "api_key": api_key,
++            "api_key_configured": bool(api_key),
++            "remote_profile": str(source.get(prefix + "REMOTE_PROFILE") or name).strip() or name,
++            "session_key_prefix": str(source.get(prefix + "SESSION_KEY_PREFIX") or f"webui:{name}").strip() or f"webui:{name}",
++            "source": "env",
++        }
++    return entries
++
++def profile_proxy_for(name: str, config_data=None, environ: dict[str, str] | None = None) -> dict | None:
++    return profile_proxy_entries(config_data, environ).get(str(name or "").strip().lower())
++
++def profile_proxy_public_entries(config_data=None, environ: dict[str, str] | None = None) -> list[dict]:
++    public = []
++    for item in profile_proxy_entries(config_data, environ).values():
++        public.append({
++            "name": item["name"], "path": None, "is_default": False, "is_active": False,
++            "gateway_running": True, "model": item.get("remote_profile") or item["name"],
++            "provider": "remote-gateway", "has_env": bool(item.get("api_key_configured")),
++            "visible": True, "skill_count": 0, "enabled_skills": 0, "total_skills": 0,
++            "remote_proxy": True, "profile_kind": "remote_gateway_proxy",
++            "base_url": item.get("base_url"), "label": item.get("label") or item["name"],
++        })
++    preferred_order = {"jen": 0, "denholm": 1, "roy": 2, "richmond": 3, "the-elders": 4}
++    return sorted(public, key=lambda p: (preferred_order.get(p.get("name"), 100), p.get("name") or ""))
++
+ 
+ # Total byte-silence budget (seconds) for the gateway SSE socket, applied via
+ # ``urlopen(timeout=...)``. A stream that emits ANY byte within the window never
+@@ -269,11 +314,27 @@ def _gateway_stream_usage(payload: dict) -> dict:
+     usage = payload.get("usage") if isinstance(payload, dict) else None
+     if not isinstance(usage, dict):
+         return {}
+-    return {
++    normalized = {
+         "input_tokens": int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0),
+         "output_tokens": int(usage.get("completion_tokens") or usage.get("output_tokens") or 0),
+         "estimated_cost": usage.get("estimated_cost") or usage.get("estimated_cost_usd") or 0,
+     }
++    # Preserve Hermes-native context metadata when the gateway includes it. The
++    # WebUI context ring is intentionally based on last_prompt_tokens /
++    # context_length, not cumulative input_tokens; dropping these fields in the
++    # API bridge makes the frontend fall back to guessed context windows.
++    for key in (
++        "last_prompt_tokens",
++        "context_length",
++        "threshold_tokens",
++        "cache_read_tokens",
++        "cache_write_tokens",
++        "cache_hit_percent",
++        "turn_cache_hit_percent",
++    ):
++        if usage.get(key) is not None:
++            normalized[key] = usage.get(key)
++    return normalized
+ 
+ 
+ def _gateway_reasoning_delta(payload: dict) -> str:
+@@ -359,7 +420,7 @@ def _run_gateway_runs_api_streaming(
+     session_id, msg_text, model, workspace, stream_id,
+     base_url, api_key, prefill_messages, body_extras,
+     *, put_gateway_event, cancel_event,
+-    attachments=None, cfg=None, session=None,
++    attachments=None, cfg=None, session=None, session_key_prefix="webui",
+ ):
+     """Submit via POST /v1/runs and relay SSE events including approval."""
+     url_runs = f"{base_url.rstrip('/')}/v1/runs"
+@@ -370,7 +431,7 @@ def _run_gateway_runs_api_streaming(
+     }
+     if api_key:
+         headers["Authorization"] = f"Bearer {api_key}"
+-        headers["X-Hermes-Session-Key"] = f"webui:{session_id}"
++        headers["X-Hermes-Session-Key"] = f"{session_key_prefix}:{session_id}"
+     message_content: Any = str(msg_text or "")
+     if attachments:
+         try:
+@@ -583,6 +644,7 @@ def _run_gateway_chat_streaming(
+     *,
+     model_provider=None,
+     goal_related=False,
++    gateway_config=None,
+ ):
+     """Bridge a WebUI chat turn through Hermes Gateway's API server.
+ 
+@@ -696,8 +758,10 @@ def _run_gateway_chat_streaming(
+         except Exception:
+             logger.debug("Failed to load WebUI gateway prefill context", exc_info=True)
+             prefill_messages = []
+-        base_url = _gateway_base_url(cfg)
+-        api_key = _gateway_api_key()
++        proxy = gateway_config if isinstance(gateway_config, dict) else None
++        base_url = str((proxy or {}).get("base_url") or _gateway_base_url(cfg)).rstrip("/")
++        api_key = str((proxy or {}).get("api_key") or _gateway_api_key()).strip()
++        session_key_prefix = str((proxy or {}).get("session_key_prefix") or "webui").strip() or "webui"
+         try:
+             from api.config import _main_model_request_overrides
+             _gw_overrides = _main_model_request_overrides(
+@@ -726,6 +790,7 @@ def _run_gateway_chat_streaming(
+                     attachments=attachments,
+                     cfg=cfg,
+                     session=s,
++                    session_key_prefix=session_key_prefix,
+                 )
+             except Exception as exc:
+                 put_gateway_event("apperror", {
+@@ -766,7 +831,7 @@ def _run_gateway_chat_streaming(
+                 headers["Authorization"] = f"Bearer {api_key}"
+                 # Scope Gateway long-term continuity to this WebUI conversation
+                 # without exposing the browser's auth cookie or CSRF material.
+-                headers["X-Hermes-Session-Key"] = f"webui:{session_id}"
++                headers["X-Hermes-Session-Key"] = f"{session_key_prefix}:{session_id}"
+             message_content: Any = str(msg_text or "")
+             if attachments:
+                 try:
+diff --git a/api/profiles.py b/api/profiles.py
+index 7f047673..af68626f 100644
+--- a/api/profiles.py
++++ b/api/profiles.py
+@@ -1529,6 +1529,20 @@ def switch_profile(name: str, *, process_wide: bool = True) -> dict:
+                     'Cancel or wait for it to finish.'
+                 )
+ 
++    # Remote profile proxies are logical WebUI targets backed by another persona gateway.
++    # A per-client switch must not mutate local HERMES_HOME/config/cron state.
++    try:
++        from api.config import DEFAULT_WORKSPACE as _DW, get_config
++        from api.gateway_chat import profile_proxy_for
++        remote_proxy = profile_proxy_for(name, get_config())
++    except Exception:
++        remote_proxy = None
++    if remote_proxy is not None:
++        if process_wide:
++            raise ValueError(f"Remote profile proxy {name!r} cannot be selected process-wide")
++        profiles = [{**p, 'is_active': p.get('name') == name} for p in list_profiles_api()]
++        return {'profiles': profiles, 'active': name, 'is_default': False, 'default_model': None, 'default_model_provider': 'remote-gateway', 'default_workspace': str(_DW), 'remote_proxy': True, 'profile_kind': 'remote_gateway_proxy'}
++
+     # Resolve profile directory
+     if _is_isolated_profile_mode():
+         home = Path(_INITIAL_HERMES_HOME).expanduser()
+@@ -1921,6 +1935,22 @@ def _build_profile_rows_fast() -> list | None:
+     return rows
+ 
+ 
++def _with_remote_profile_proxies(rows: list[dict]) -> list[dict]:
++    active = get_active_profile_name()
++    try:
++        from api.config import get_config
++        from api.gateway_chat import profile_proxy_public_entries
++        proxies = profile_proxy_public_entries(get_config())
++    except Exception:
++        proxies = []
++    # Remote profile proxies are cross-persona chat targets. Keep them at the
++    # top of the WebUI profile selector ("personas first"), then show local
++    # Moss profiles after them. profile_proxy_public_entries() already orders
++    # personas within the proxy group.
++    merged = [*proxies, *rows]
++    return [{**p, 'is_active': p.get('name') == active} for p in merged]
++
++
+ def list_profiles_api() -> list:
+     """List all profiles with metadata, serialized for JSON response.
+ 
+@@ -2034,10 +2064,10 @@ def list_profiles_api() -> list:
+                 'enabled_skills': enabled_count,
+                 'total_skills': total_count,
+             })
+-        return result
++        return _with_remote_profile_proxies(result)
+ 
+     active = get_active_profile_name()
+-    return [{**p, 'is_active': p['name'] == active} for p in rows]
++    return _with_remote_profile_proxies(rows)
+ 
+ 
+ def _profile_visible_from_meta(profile_path: Path) -> bool:
+diff --git a/api/routes.py b/api/routes.py
+index 34b2166d..99d11bb1 100644
+--- a/api/routes.py
++++ b/api/routes.py
+@@ -475,6 +475,35 @@ from api.profiles import (  # noqa: F401, E402  (re-export)
+ )
+ 
+ 
++def _remote_cron_proxy_unsupported_payload(proxy: dict | None = None) -> dict:
++    proxy = proxy or {}
++    return {
++        "error": "remote_cron_proxy_unsupported",
++        "profile_kind": "remote_gateway_proxy",
++        "remote_proxy": True,
++        "backend": "unsupported_remote",
++        "profile": proxy.get("name"),
++        "label": proxy.get("label") or proxy.get("name"),
++        "message": "Cron operations for remote profile proxies are not supported here. Moss-local cron jobs were not read or modified",
++    }
++
++def _active_remote_cron_proxy() -> dict | None:
++    try:
++        from api.config import get_config
++        from api.gateway_chat import profile_proxy_for
++        return profile_proxy_for(get_active_profile_name(), get_config())
++    except Exception:
++        return None
++
++def _guard_remote_cron_proxy(handler) -> bool:
++    proxy = _active_remote_cron_proxy()
++    if proxy is None:
++        return False
++    from api.helpers import j
++    j(handler, _remote_cron_proxy_unsupported_payload(proxy))
++    return True
++
++
+ def _all_profiles_query_flag(parsed_url) -> bool:
+     """Return True if the request URL has `?all_profiles=1` (or true/yes).
+ 
+@@ -13138,6 +13167,8 @@ def handle_get(handler, parsed) -> bool:
+     # aggregates per visible profile home so the UI can surface hidden-row
+     # counts and, when opted in, read-only foreign rows.
+     if parsed.path == "/api/crons":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         # #4768: in split-container / minimal Docker deployments the WebUI image may
+         # not ship the agent's `cron` package on its import path. Degrade gracefully
+         # (empty list + cron_unavailable flag) instead of 500ing the whole Task tab.
+@@ -13163,6 +13194,8 @@ def handle_get(handler, parsed) -> bool:
+         })
+ 
+     if parsed.path == "/api/crons/output":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -13170,6 +13203,8 @@ def handle_get(handler, parsed) -> bool:
+             return _handle_cron_output(handler, parsed)
+ 
+     if parsed.path == "/api/crons/history":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -13177,6 +13212,8 @@ def handle_get(handler, parsed) -> bool:
+             return _handle_cron_history(handler, parsed)
+ 
+     if parsed.path == "/api/crons/run":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -13184,6 +13221,8 @@ def handle_get(handler, parsed) -> bool:
+             return _handle_cron_run_detail(handler, parsed)
+ 
+     if parsed.path == "/api/crons/recent":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -13191,12 +13230,16 @@ def handle_get(handler, parsed) -> bool:
+             return _handle_cron_recent(handler, parsed)
+ 
+     if parsed.path == "/api/crons/status":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+             return _handle_cron_status(handler, parsed)
+ 
+     if parsed.path == "/api/crons/delivery-options":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -14938,6 +14981,8 @@ def handle_post(handler, parsed) -> bool:
+     # See GET-side comment above: wrap in cron_profile_context so writes go
+     # to the TLS-active profile's jobs.json instead of the process default.
+     if parsed.path == "/api/crons/create":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -14945,6 +14990,8 @@ def handle_post(handler, parsed) -> bool:
+             return _handle_cron_create(handler, body)
+ 
+     if parsed.path == "/api/crons/update":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -14952,6 +14999,8 @@ def handle_post(handler, parsed) -> bool:
+             return _handle_cron_update(handler, body)
+ 
+     if parsed.path == "/api/crons/delete":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -14959,6 +15008,8 @@ def handle_post(handler, parsed) -> bool:
+             return _handle_cron_delete(handler, body)
+ 
+     if parsed.path == "/api/crons/run":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -14966,6 +15017,8 @@ def handle_post(handler, parsed) -> bool:
+             return _handle_cron_run(handler, body)
+ 
+     if parsed.path == "/api/crons/pause":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -14973,6 +15026,8 @@ def handle_post(handler, parsed) -> bool:
+             return _handle_cron_pause(handler, body)
+ 
+     if parsed.path == "/api/crons/resume":
++        if _guard_remote_cron_proxy(handler):
++            return True
+         from api.profiles import cron_profile_context
+ 
+         with cron_profile_context():
+@@ -20736,9 +20791,23 @@ def _start_chat_stream_for_session(
+     if goal_related:
+         STREAM_GOAL_RELATED[stream_id] = True
+     diag.stage("worker_thread_start") if diag else None
+-    backend_is_gateway = webui_gateway_chat_enabled(get_config())
++    cfg = get_config()
++    backend_is_gateway = webui_gateway_chat_enabled(cfg)
+     worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming
+-    worker_kwargs = {"model_provider": model_provider, "goal_related": goal_related}
++    worker_kwargs = {"model_provider": model_provider}
++    if backend_is_gateway:
++        try:
++            from api.gateway_chat import profile_proxy_for
++            active_profile_name = getattr(s, "profile", None)
++            if not active_profile_name:
++                active_profile_name = get_active_profile_name()
++            gateway_profile_proxy = profile_proxy_for(active_profile_name, cfg)
++        except Exception:
++            gateway_profile_proxy = None
++        if gateway_profile_proxy is not None:
++            worker_kwargs["gateway_config"] = gateway_profile_proxy
++    if not backend_is_gateway:
++        worker_kwargs["goal_related"] = goal_related
+     if moa_config and not backend_is_gateway:
+         worker_kwargs["moa_config"] = moa_config
+     thr = threading.Thread(
+diff --git a/static/ui.js b/static/ui.js
+index c1d007c2..c6edd07d 100644
+--- a/static/ui.js
++++ b/static/ui.js
+@@ -6035,9 +6035,8 @@ function _syncCtxIndicator(usage){
+   const totalTok=(usage.input_tokens||0)+(usage.output_tokens||0);
+   const cacheReadTok=usage.cache_read_tokens||0;
+   const cacheWriteTok=usage.cache_write_tokens||0;
+-  // Default context window to 128K when not provided by backend
+-  const DEFAULT_CTX=128*1024;
+-  const ctxWindow=usage.context_length||DEFAULT_CTX;
++  const hasExplicitCtx=Number(usage.context_length)>0;
++  const ctxWindow=hasExplicitCtx?Number(usage.context_length):0;
+   const cost=usage.estimated_cost;
+   // Show indicator whenever we have any usage data (tokens or cost)
+   if(!promptTok&&!totalTok&&!cost&&!cacheReadTok&&!cacheWriteTok){
+@@ -6052,7 +6051,8 @@ function _syncCtxIndicator(usage){
+     wrap.style.display='';
+   }
+   const hasPromptTok=!!promptTok;
+-  const rawPct=hasPromptTok?Math.round((promptTok/ctxWindow)*100):0;
++  const hasMeasuredCtx=hasPromptTok&&hasExplicitCtx;
++  const rawPct=hasMeasuredCtx?Math.round((promptTok/ctxWindow)*100):0;
+   const pct=Math.min(100,rawPct);
+   const overflowed=rawPct>100;
+   const ring=$('ctxRingValue');
+@@ -6066,8 +6066,7 @@ function _syncCtxIndicator(usage){
+     ring.style.strokeDasharray=String(circumference);
+     ring.style.strokeDashoffset=String(circumference*(1-pct/100));
+   }
+-  if(center) center.textContent=hasPromptTok?String(pct):'\u00b7';
+-  const hasExplicitCtx=!!usage.context_length;
++  if(center) center.textContent=hasMeasuredCtx?String(pct):'\u00b7';
+   el.classList.toggle('ctx-mid',pct>50&&pct<=75);
+   el.classList.toggle('ctx-high',pct>75);
+   // ── Compress affordance (#524) ──
+@@ -6080,13 +6079,12 @@ function _syncCtxIndicator(usage){
+   _setCtxCompressButton(compressBtn,compressText);
+   const cacheHitPct=usage.cache_hit_percent;
+   const cacheText=cacheHitPct!=null?t('usage_cache_hit_detail',cacheHitPct,_fmtTokens(cacheReadTok),_fmtTokens(cacheWriteTok)):'';
+-  let label=hasPromptTok?`Context window ${pct}% used`:`${_fmtTokens(totalTok)} tokens used`;
+-  if(!hasExplicitCtx&&hasPromptTok) label+=' (est. 128K)';
++  let label=hasMeasuredCtx?`Context window ${pct}% used`:(hasPromptTok?`${_fmtTokens(promptTok)} prompt tokens used (context window unknown)`:`${_fmtTokens(totalTok)} tokens used`);
+   if(cost) label+=` \u00b7 $${cost<0.01?cost.toFixed(4):cost.toFixed(2)}`;
+   if(cacheText) label+=` \u00b7 ${cacheText}`;
+   el.setAttribute('aria-label',label);
+-  const usageText=hasPromptTok?(overflowed?`${rawPct}% used (context exceeded)`:`${pct}% used (${100-pct}% left)`):`${_fmtTokens(totalTok)} tokens used`;
+-  const tokensText=hasPromptTok?`${_fmtTokens(promptTok)} / ${_fmtTokens(ctxWindow)} tokens used`:`In: ${_fmtTokens(usage.input_tokens||0)} \u00b7 Out: ${_fmtTokens(usage.output_tokens||0)}`;
++  const usageText=hasMeasuredCtx?(overflowed?`${rawPct}% used (context exceeded)`:`${pct}% used (${100-pct}% left)`):(hasPromptTok?`Context window unknown`:`${_fmtTokens(totalTok)} tokens used`);
++  const tokensText=hasMeasuredCtx?`${_fmtTokens(promptTok)} / ${_fmtTokens(ctxWindow)} tokens used`:(hasPromptTok?`${_fmtTokens(promptTok)} prompt tokens used; context window unknown`:`In: ${_fmtTokens(usage.input_tokens||0)} \u00b7 Out: ${_fmtTokens(usage.output_tokens||0)}`);
+   if(usageLine) usageLine.textContent=usageText;
+   if(tokensLine) tokensLine.textContent=tokensText;
+   const threshold=usage.threshold_tokens||0;
+@@ -9013,10 +9011,18 @@ function _showAgentHealthAlert(payload){
+   const banner=$('agentHealthBanner');
+   const title=$('agentHealthTitle');
+   const details=$('agentHealthDetails');
++  const restartBtn=$('btnRestartGateway');
+   if(!banner) return;
+-  if(title) title.textContent='Hermes agent is not responding';
+-  const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
+-  if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
++  const degraded=payload&&payload.alive===true&&payload.details&&payload.details.degraded===true;
++  if(restartBtn){restartBtn.hidden=!!degraded;restartBtn.disabled=!!degraded;}
++  if(degraded){
++    if(title) title.textContent='Gateway telemetry is degraded';
++    if(details) details.textContent='The gateway is reachable, but detailed telemetry is unavailable. Restart is disabled because reachability is healthy.';
++  }else{
++    if(title) title.textContent='Hermes agent is not responding';
++    const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
++    if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
++  }
+   banner.hidden=false;
+   banner.classList.add('visible');
+ }
+@@ -9055,6 +9061,11 @@ async function pollAgentHealth(){
+   if(Date.now() - _lastGatewayRestartTime < 15000) return;
+   try{
+     const payload=await api('/api/health/agent',{timeoutToast:false});
++    if(payload.alive === true && payload.details && payload.details.degraded === true){
++      _agentHealthLastState='degraded';
++      _showAgentHealthAlert(payload);
++      return;
++    }
+     if(payload.alive === true){
+       _agentHealthLastState='alive';
+       _setAgentHealthDismissed(false);
+diff --git a/tests/test_agent_health_remote.py b/tests/test_agent_health_remote.py
+index 13c3c22e..bf8064d7 100644
+--- a/tests/test_agent_health_remote.py
++++ b/tests/test_agent_health_remote.py
+@@ -2,13 +2,20 @@
+ from __future__ import annotations
+ 
+ import json
++import logging
++import threading
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+ from unittest import mock
++from urllib import error as urllib_error
+ 
+ import pytest
+ 
+ from api import agent_health
+ 
+ 
++_SENTINEL_KEY = "sentinel-health-auth-key-do-not-leak"
++
++
+ @pytest.fixture(autouse=True)
+ def _clear_cache():
+     agent_health._reset_remote_probe_cache_for_tests()
+@@ -48,7 +55,8 @@ def test_remote_gateway_healthy_when_200(monkeypatch):
+         payload = agent_health.build_agent_health_payload()
+ 
+     assert payload["alive"] is True
+-    assert payload["details"]["reason"] == "remote_gateway"
++    assert payload["details"]["reason"] == "remote_gateway_detailed_unverified"
++    assert payload["details"]["degraded"] is True
+     assert payload["details"]["status_code"] == 200
+     assert calls and calls[0].startswith("http://gateway:8080/")
+ 
+@@ -98,7 +106,8 @@ def test_remote_probe_result_cached_for_5s(monkeypatch):
+ 
+     assert first["alive"] is True
+     assert second["alive"] is True
+-    assert second["details"]["reason"] == "remote_gateway"
++    assert second["details"]["reason"] == "remote_gateway_detailed_unverified"
++    assert second["details"]["degraded"] is True
+     # Second call must NOT have hit the network.
+     assert call_count["n"] == 1
+     # checked_at is refreshed even on cache hit so the UI shows a current time.
+@@ -293,3 +302,179 @@ def test_oversized_remote_body_does_not_hang_and_skips_parse(monkeypatch):
+     assert captured_amt and all(a is not None for a in captured_amt)
+     assert payload["alive"] is True
+     assert "gateway_state" not in payload["details"]
++
++
++@pytest.mark.parametrize(
++    ("specific", "fleet", "expected"),
++    [
++        (" specific-key ", "", "specific-key"),
++        ("", " fleet-key ", "fleet-key"),
++        (" specific-key ", " fleet-key ", "specific-key"),
++        ("  ", "  ", ""),
++    ],
++)
++def test_gateway_api_key_precedence_and_stripping(monkeypatch, specific, fleet, expected):
++    monkeypatch.setenv("HERMES_WEBUI_GATEWAY_API_KEY", specific)
++    monkeypatch.setenv("API_SERVER_KEY", fleet)
++
++    assert agent_health._remote_gateway_api_key() == expected
++
++
++@pytest.mark.parametrize("api_key", ["specific-key", "fleet-key"])
++def test_http_probe_adds_exact_unredirected_bearer_header(api_key):
++    seen = {}
++
++    def fake_urlopen(req, timeout=None):
++        seen["authorization"] = req.get_header("Authorization")
++        seen["unredirected"] = dict(req.unredirected_hdrs)
++        return _FakeResp(200, b'{"gateway_state":"running"}')
++
++    with mock.patch.object(agent_health.urllib_request, "urlopen", fake_urlopen):
++        ok, status, error, _body = agent_health._http_probe(
++            "http://gateway:8648/health/detailed", 2.0, api_key=api_key
++        )
++
++    assert (ok, status, error) == (True, 200, None)
++    assert seen["authorization"] == f"Bearer {api_key}"
++    assert seen["unredirected"]["Authorization"] == f"Bearer {api_key}"
++
++
++def test_http_probe_omits_authorization_when_key_is_empty():
++    seen = {}
++
++    def fake_urlopen(req, timeout=None):
++        seen["authorization"] = req.get_header("Authorization")
++        seen["unredirected"] = dict(req.unredirected_hdrs)
++        return _FakeResp(200)
++
++    with mock.patch.object(agent_health.urllib_request, "urlopen", fake_urlopen):
++        agent_health._http_probe("http://gateway:8648/health", 2.0, api_key="")
++
++    assert seen["authorization"] is None
++    assert "Authorization" not in seen["unredirected"]
++
++
++def test_unredirected_authorization_is_not_forwarded_cross_origin():
++    received = {"authorization": None}
++
++    class DestinationHandler(BaseHTTPRequestHandler):
++        def do_GET(self):  # noqa: N802 - stdlib handler contract
++            received["authorization"] = self.headers.get("Authorization")
++            body = b'{"gateway_state":"running"}'
++            self.send_response(200)
++            self.send_header("Content-Type", "application/json")
++            self.send_header("Content-Length", str(len(body)))
++            self.end_headers()
++            self.wfile.write(body)
++
++        def log_message(self, *_args):
++            return
++
++    destination = ThreadingHTTPServer(("127.0.0.1", 0), DestinationHandler)
++    destination_url = f"http://127.0.0.1:{destination.server_port}/destination"
++
++    class RedirectHandler(BaseHTTPRequestHandler):
++        def do_GET(self):  # noqa: N802 - stdlib handler contract
++            self.send_response(302)
++            self.send_header("Location", destination_url)
++            self.end_headers()
++
++        def log_message(self, *_args):
++            return
++
++    redirect = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
++    threads = [
++        threading.Thread(target=destination.serve_forever, daemon=True),
++        threading.Thread(target=redirect.serve_forever, daemon=True),
++    ]
++    for thread in threads:
++        thread.start()
++    try:
++        result = agent_health._http_probe(
++            f"http://127.0.0.1:{redirect.server_port}/health/detailed",
++            2.0,
++            api_key=_SENTINEL_KEY,
++        )
++    finally:
++        redirect.shutdown()
++        destination.shutdown()
++        redirect.server_close()
++        destination.server_close()
++        for thread in threads:
++            thread.join(timeout=2)
++
++    assert result[:3] == (True, 200, None)
++    assert received["authorization"] is None
++
++
++def test_detailed_health_with_gateway_state_is_not_degraded(monkeypatch):
++    monkeypatch.setattr(agent_health, "_remote_gateway_api_key", lambda: "specific-key")
++    monkeypatch.setattr(
++        agent_health,
++        "_http_probe",
++        lambda url, timeout, *, api_key=None: (True, 200, None, b'{"gateway_state":"running"}'),
++    )
++
++    payload = agent_health._probe_remote_gateway("http://gateway:8648", now=10.0)
++
++    assert payload["alive"] is True
++    assert payload["details"]["gateway_state"] == "running"
++    assert payload["details"]["telemetry_state"] == "detailed"
++    assert payload["details"].get("degraded") is not True
++
++
++def test_detailed_health_without_gateway_state_is_explicitly_degraded(monkeypatch):
++    monkeypatch.setattr(agent_health, "_remote_gateway_api_key", lambda: "specific-key")
++    monkeypatch.setattr(
++        agent_health,
++        "_http_probe",
++        lambda url, timeout, *, api_key=None: (True, 200, None, b'{"status":"ok"}'),
++    )
++
++    payload = agent_health._probe_remote_gateway("http://gateway:8648", now=20.0)
++
++    assert payload["alive"] is True
++    assert payload["details"]["telemetry_state"] == "detailed_unverified"
++    assert payload["details"]["degraded"] is True
++    assert payload["details"]["reason"] == "remote_gateway_detailed_unverified"
++
++
++def test_detailed_401_then_public_health_200_is_basic_fallback(monkeypatch):
++    calls = []
++    monkeypatch.setattr(agent_health, "_remote_gateway_api_key", lambda: "specific-key")
++
++    def fake_probe(url, timeout, *, api_key=None):
++        calls.append((url, api_key))
++        if url.endswith("/health/detailed"):
++            return False, 401, "HTTPError", None
++        return True, 200, None, b'{"status":"ok"}'
++
++    monkeypatch.setattr(agent_health, "_http_probe", fake_probe)
++
++    payload = agent_health._probe_remote_gateway("http://gateway:8648", now=30.0)
++
++    assert calls[:2] == [
++        ("http://gateway:8648/health/detailed", "specific-key"),
++        ("http://gateway:8648/health", None),
++    ]
++    assert payload["alive"] is True
++    assert payload["details"]["telemetry_state"] == "basic_fallback"
++    assert payload["details"]["degraded"] is True
++    assert payload["details"]["reason"] == "remote_gateway_basic_fallback"
++
++
++def test_total_failure_preserves_down_semantics_and_does_not_leak_key(monkeypatch, caplog):
++    monkeypatch.setenv("HERMES_WEBUI_GATEWAY_API_KEY", _SENTINEL_KEY)
++
++    def fail(_req, timeout=None):
++        raise urllib_error.URLError(f"failure containing {_SENTINEL_KEY}")
++
++    caplog.set_level(logging.DEBUG)
++    with mock.patch.object(agent_health.urllib_request, "urlopen", fail):
++        payload = agent_health._probe_remote_gateway("http://gateway:8648", now=40.0)
++
++    assert payload["alive"] is False
++    assert payload["details"]["state"] == "down"
++    assert payload["details"]["reason"] == "remote_gateway_unreachable"
++    assert _SENTINEL_KEY not in json.dumps(payload)
++    assert _SENTINEL_KEY not in caplog.text
+diff --git a/tests/test_issue716_agent_heartbeat.py b/tests/test_issue716_agent_heartbeat.py
+index 25024c76..2018f1ac 100644
+--- a/tests/test_issue716_agent_heartbeat.py
++++ b/tests/test_issue716_agent_heartbeat.py
+@@ -4,9 +4,13 @@ from __future__ import annotations
+ 
+ import json
+ import pathlib
++import shutil
++import subprocess
+ import sys
+ import types
+ 
++import pytest
++
+ REPO_ROOT = pathlib.Path(__file__).parent.parent
+ 
+ UI_JS = (REPO_ROOT / "static" / "ui.js").read_text(encoding="utf-8")
+@@ -212,3 +216,102 @@ def test_agent_health_backend_does_not_use_shell_or_expose_raw_process_fields():
+     for private_field in ("argv", "command", "executable", "env"):
+         assert f'details["{private_field}"]' not in src
+         assert f"details['{private_field}']" not in src
++
++
++def _extract_js_function(source: str, name: str) -> str:
++    marker = f"function {name}("
++    marker_start = source.index(marker)
++    async_prefix = "async "
++    start = marker_start - len(async_prefix) if source[max(0, marker_start - len(async_prefix)) : marker_start] == async_prefix else marker_start
++    brace = source.index("{", start)
++    depth = 0
++    quote = None
++    escaped = False
++    for index in range(brace, len(source)):
++        char = source[index]
++        if quote:
++            if escaped:
++                escaped = False
++            elif char == "\\":
++                escaped = True
++            elif char == quote:
++                quote = None
++            continue
++        if char in ("'", '"', "`"):
++            quote = char
++        elif char == "{":
++            depth += 1
++        elif char == "}":
++            depth -= 1
++            if depth == 0:
++                return source[start : index + 1]
++    raise AssertionError(f"unterminated JavaScript function: {name}")
++
++
++@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
++def test_agent_health_frontend_executes_degraded_before_healthy_branch():
++    functions = "\n".join(
++        _extract_js_function(UI_JS, name)
++        for name in ("_hideAgentHealthAlert", "_showAgentHealthAlert", "pollAgentHealth")
++    )
++    harness = f"""
++const nodes = {{}};
++function makeNode(id) {{
++  const classes = new Set();
++  return nodes[id] = {{
++    id, hidden: false, disabled: false, textContent: '',
++    classList: {{add: value => classes.add(value), remove: value => classes.delete(value), contains: value => classes.has(value)}}
++  }};
++}}
++for (const id of ['agentHealthBanner', 'agentHealthTitle', 'agentHealthDetails', 'btnRestartGateway']) makeNode(id);
++function $(id) {{ return nodes[id] || null; }}
++const localStorage = {{getItem: () => null, setItem: () => {{}}, removeItem: () => {{}}}};
++const document = {{visibilityState: 'visible'}};
++let _agentHealthLastState = 'unknown';
++let _lastGatewayRestartTime = 0;
++function _agentHealthDismissed() {{ return false; }}
++function _setAgentHealthDismissed(_value) {{}}
++{functions}
++
++async function classify(payload) {{
++  api = async () => payload;
++  await pollAgentHealth();
++  return {{
++    state: _agentHealthLastState,
++    bannerHidden: nodes.agentHealthBanner.hidden,
++    bannerVisible: nodes.agentHealthBanner.classList.contains('visible'),
++    title: nodes.agentHealthTitle.textContent,
++    details: nodes.agentHealthDetails.textContent,
++    restartHidden: nodes.btnRestartGateway.hidden,
++    restartDisabled: nodes.btnRestartGateway.disabled,
++  }};
++}}
++
++(async () => {{
++  const detailed = await classify({{alive: true, details: {{telemetry_state: 'detailed', gateway_state: 'running'}}}});
++  const degraded = await classify({{alive: true, details: {{degraded: true, telemetry_state: 'basic_fallback'}}}});
++  const down = await classify({{alive: false, details: {{state: 'down'}}}});
++  console.log(JSON.stringify({{detailed, degraded, down}}));
++}})().catch(error => {{ console.error(error); process.exit(1); }});
++"""
++    result = subprocess.run(
++        ["node", "-e", harness],
++        check=True,
++        capture_output=True,
++        text=True,
++    )
++    states = json.loads(result.stdout)
++
++    assert states["detailed"]["bannerHidden"] is True
++    assert states["detailed"]["bannerVisible"] is False
++    assert states["degraded"]["state"] == "degraded"
++    assert states["degraded"]["bannerHidden"] is False
++    assert states["degraded"]["bannerVisible"] is True
++    assert "reachable" in states["degraded"]["details"].lower()
++    assert "detailed telemetry" in states["degraded"]["details"].lower()
++    assert states["degraded"]["restartHidden"] is True
++    assert states["degraded"]["restartDisabled"] is True
++    assert states["down"]["state"] == "down"
++    assert states["down"]["bannerVisible"] is True
++    assert states["down"]["restartHidden"] is False
++    assert states["down"]["restartDisabled"] is False
+diff --git a/tests/test_mobile_layout.py b/tests/test_mobile_layout.py
+index 8a0d09a4..a2e70da7 100644
+--- a/tests/test_mobile_layout.py
++++ b/tests/test_mobile_layout.py
+@@ -1325,8 +1325,8 @@ def test_context_details_live_in_mobile_overflow_panel():
+     sync_end = ui_js.index("// ── Touch support", sync_start)
+     sync_body = ui_js[sync_start:sync_end]
+     for expected in (
+-        "DEFAULT_CTX=128*1024",
+         "hasExplicitCtx",
++        "hasMeasuredCtx",
+         "hasPromptTok",
+         "rawPct",
+         "overflowed",
+@@ -1337,6 +1337,13 @@ def test_context_details_live_in_mobile_overflow_panel():
+         assert expected in sync_body, \
+             f"_syncCtxIndicator must preserve upstream context logic while updating mobile context UI ({expected})"
+ 
++    for forbidden in (
++        "DEFAULT_CTX=128*1024",
++        "(est. 128K)",
++    ):
++        assert forbidden not in sync_body, \
++            f"_syncCtxIndicator must not render fake context percentages from fallback windows ({forbidden})"
++
+     mobile_css = _composer_phone_media_block()
+     ctx_wrap = _declarations(_rule_body(mobile_css, ".ctx-indicator-wrap"))
+     assert ctx_wrap.get("display") == "none!important", \
+diff --git a/tests/test_optionz_liveview_perf.py b/tests/test_optionz_liveview_perf.py
+index b56fe787..edc927c1 100644
+--- a/tests/test_optionz_liveview_perf.py
++++ b/tests/test_optionz_liveview_perf.py
+@@ -313,12 +313,14 @@ def test_active_stream_id_for_session_returns_live_run_stream():
+     assert bp.active_stream_id_for_session(sid) is None  # idle → None
+ 
+     cfg.ACTIVE_RUNS[stream_id] = {"session_id": sid}
++    cfg.STREAMS[stream_id] = object()
+     try:
+         assert bp.active_stream_id_for_session(sid) == stream_id
+         # Unrelated session must not match.
+         assert bp.active_stream_id_for_session("sess-other") is None
+     finally:
+         cfg.ACTIVE_RUNS.pop(stream_id, None)
++        cfg.STREAMS.pop(stream_id, None)
+     assert bp.active_stream_id_for_session(sid) is None  # cleaned up → None
+ 
+ 
+@@ -342,6 +344,7 @@ def test_session_sse_on_subscribe_recovers_lost_server_turn_started():
+     # the original server_turn_started broadcast already happened and reached
+     # NO subscriber (the tab's EventSource was momentarily down).
+     cfg.ACTIVE_RUNS[stream_id] = {"session_id": sid}
++    cfg.STREAMS[stream_id] = object()
+     ch = bp.get_or_create_session_channel(sid)
+     q = ch.subscribe()  # tab (re)connects NOW, after the lost broadcast
+     try:
+@@ -365,9 +368,11 @@ def test_session_sse_on_subscribe_recovers_lost_server_turn_started():
+         # And when the session is idle (no live run) the recovery is a no-op
+         # — no spurious attach frame for a session with nothing running.
+         cfg.ACTIVE_RUNS.pop(stream_id, None)
++        cfg.STREAMS.pop(stream_id, None)
+         assert bp.active_stream_id_for_session(sid) is None
+     finally:
+         ch.unsubscribe(q)
++        cfg.STREAMS.pop(stream_id, None)
+         with bp.SESSION_CHANNELS_LOCK:
+             bp.SESSION_CHANNELS.pop(sid, None)
+         cfg.ACTIVE_RUNS.pop(stream_id, None)
+diff --git a/tests/test_profile_proxy_jen.py b/tests/test_profile_proxy_jen.py
+new file mode 100644
+index 00000000..80bd5d43
+--- /dev/null
++++ b/tests/test_profile_proxy_jen.py
+@@ -0,0 +1,170 @@
++import os
++
++
++def test_env_profile_proxy_public_entry(monkeypatch):
++    from api.gateway_chat import profile_proxy_public_entries, profile_proxy_for
++
++    env = {
++        "HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL": "http://jen:8642/",
++        "HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY_ENV": "API_SERVER_KEY",
++        "HERMES_WEBUI_PROFILE_PROXY_JEN_LABEL": "Jen",
++        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_BASE_URL": "http://denholm:8643",
++        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_API_KEY_ENV": "API_SERVER_KEY",
++        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_LABEL": "Denholm",
++        "HERMES_WEBUI_PROFILE_PROXY_ROY_BASE_URL": "http://roy:8645",
++        "HERMES_WEBUI_PROFILE_PROXY_ROY_API_KEY_ENV": "API_SERVER_KEY",
++        "HERMES_WEBUI_PROFILE_PROXY_ROY_LABEL": "Roy",
++        "API_SERVER_KEY": "secret-value",
++    }
++
++    proxy = profile_proxy_for("jen", environ=env)
++    assert proxy["base_url"] == "http://jen:8642"
++    assert proxy["api_key"] == "secret-value"
++    assert proxy["api_key_configured"] is True
++
++    public = profile_proxy_public_entries(environ=env)
++    by_name = {entry["name"]: entry for entry in public}
++    assert set(by_name) == {"denholm", "jen", "roy"}
++    assert by_name["jen"] | {} == by_name["jen"]
++    assert by_name["jen"]["base_url"] == "http://jen:8642"
++    assert by_name["denholm"]["base_url"] == "http://denholm:8643"
++    assert by_name["denholm"]["label"] == "Denholm"
++    assert by_name["roy"]["base_url"] == "http://roy:8645"
++    assert by_name["roy"]["label"] == "Roy"
++    for entry in public:
++        assert entry["remote_proxy"] is True
++        assert entry["profile_kind"] == "remote_gateway_proxy"
++        assert entry["provider"] == "remote-gateway"
++        assert entry["gateway_running"] is True
++    assert "secret-value" not in repr(public)
++
++
++
++def test_list_profiles_includes_remote_proxy(monkeypatch, tmp_path):
++    import api.profiles as profiles
++
++    monkeypatch.setattr(profiles, "get_active_profile_name", lambda: "default")
++    monkeypatch.setattr(profiles, "_get_profile_skills_stats", lambda path: (0, 0))
++    monkeypatch.setattr(profiles, "_build_profile_rows_fast", lambda: [{
++        "name": "default",
++        "path": str(tmp_path),
++        "is_default": True,
++        "is_active": True,
++        "gateway_running": True,
++        "model": "gpt-test",
++        "provider": "test-provider",
++        "has_env": True,
++        "visible": True,
++        "skill_count": 0,
++        "enabled_skills": 0,
++        "total_skills": 0,
++    }])
++    monkeypatch.setattr(profiles, "_LIST_PROFILES_CACHE", None)
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL", "http://jen:8642")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY", "secret-value")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_DENHOLM_BASE_URL", "http://denholm:8643")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_DENHOLM_API_KEY", "secret-value")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_ROY_BASE_URL", "http://roy:8645")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_ROY_API_KEY", "secret-value")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_RICHMOND_BASE_URL", "http://richmond:8646")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_RICHMOND_API_KEY", "secret-value")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_BASE_URL", "http://the-elders:8647")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_API_KEY", "secret-value")
++
++    result = profiles.list_profiles_api()
++
++    names = {p["name"] for p in result}
++    assert {"default", "jen", "denholm", "roy", "richmond", "the-elders"}.issubset(names)
++    assert [p["name"] for p in result[:6]] == ["jen", "denholm", "roy", "richmond", "the-elders", "default"]
++    jen = next(p for p in result if p["name"] == "jen")
++    assert jen["remote_proxy"] is True
++    assert jen["base_url"] == "http://jen:8642"
++    assert "secret-value" not in repr(jen)
++
++def test_switch_profile_accepts_remote_proxy(monkeypatch, tmp_path):
++    import api.profiles as profiles
++
++    monkeypatch.setattr(profiles, "_DEFAULT_HERMES_HOME", tmp_path)
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL", "http://jen:8642")
++    monkeypatch.setenv("HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY", "secret-value")
++
++    import api.config as config
++
++    monkeypatch.setattr(config, "STREAMS", {})
++    monkeypatch.setattr(config, "reload_config", lambda: None)
++    monkeypatch.setattr(config, "DEFAULT_WORKSPACE", str(tmp_path))
++    monkeypatch.setattr(profiles, "list_profiles_api", lambda: [{"name": "jen", "remote_proxy": True, "is_active": True}])
++
++    result = profiles.switch_profile("jen", process_wide=False)
++    assert result["active"] == "jen"
++    assert result["profiles"][0]["name"] == "jen"
++
++
++
++def test_gateway_chat_uses_proxy_config(monkeypatch):
++    from api.gateway_chat import profile_proxy_for
++
++    env = {
++        "HERMES_WEBUI_GATEWAY_BASE_URL": "http://default:8642",
++        "HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL": "http://jen:8642",
++        "HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY_ENV": "JEN_GATEWAY_KEY",
++        "HERMES_WEBUI_PROFILE_PROXY_JEN_SESSION_KEY_PREFIX": "webui:jen",
++        "JEN_GATEWAY_KEY": "jen-secret",
++    }
++    selected_gateway = profile_proxy_for("jen", environ=env)
++    base_url = (selected_gateway or {}).get("base_url") or env["HERMES_WEBUI_GATEWAY_BASE_URL"]
++    api_key = (selected_gateway or {}).get("api_key") or ""
++    session_key_prefix = (selected_gateway or {}).get("session_key_prefix") or "webui"
++
++    assert base_url == "http://jen:8642"
++    assert api_key == "jen-secret"
++    assert f"{session_key_prefix}:abc" == "webui:jen:abc"
++
++def test_routes_overlay_preserves_upstream_session_sse_contract():
++    from pathlib import Path
++
++    routes = (Path(__file__).resolve().parents[1] / "api" / "routes.py").read_text(encoding="utf-8")
++
++    assert 'if parsed.path == "/api/session/stream"' in routes
++    assert "def _handle_session_sse_stream" in routes
++    assert "def start_session_turn" in routes
++    assert "len(item) >= 3" in routes
++    assert "_sse_with_id(handler, event, data, event_id)" in routes
++
++
++def test_routes_proxy_resolution_uses_session_profile_before_active_fallback():
++    from pathlib import Path
++
++    routes = (Path(__file__).resolve().parents[1] / "api" / "routes.py").read_text(encoding="utf-8")
++    start = routes.find("def _start_chat_stream_for_session(")
++    assert start != -1
++    body = routes[start:start + 7000]
++
++    assert 'active_profile_name = getattr(s, "profile", None)' in body
++    assert "active_profile_name = get_active_profile_name()" in body
++    assert "gateway_profile_proxy = profile_proxy_for(active_profile_name, cfg)" in body
++    assert 'worker_kwargs["gateway_config"] = gateway_profile_proxy' in body
++
++
++def test_remote_profile_proxies_are_returned_before_local_profiles(monkeypatch):
++    import api.profiles as profiles
++
++    rows = [
++        {"name": "default", "is_active": True},
++        {"name": "coder", "is_active": False},
++    ]
++
++    def fake_entries(_config=None):
++        return [
++            {"name": "jen", "label": "Jen", "remote_proxy": True, "profile_kind": "remote_gateway_proxy"},
++            {"name": "denholm", "label": "Denholm", "remote_proxy": True, "profile_kind": "remote_gateway_proxy"},
++        ]
++
++    monkeypatch.setattr(profiles, "get_active_profile_name", lambda: "default")
++    monkeypatch.setattr("api.config.get_config", lambda: {})
++    monkeypatch.setattr("api.gateway_chat.profile_proxy_public_entries", fake_entries)
++
++    ordered = profiles._with_remote_profile_proxies(rows)
++
++    assert [p["name"] for p in ordered[:4]] == ["jen", "denholm", "default", "coder"]
++    assert ordered[2]["is_active"] is True
+diff --git a/tests/test_remote_cron_proxy_guard.py b/tests/test_remote_cron_proxy_guard.py
+new file mode 100644
+index 00000000..c46fc87f
+--- /dev/null
++++ b/tests/test_remote_cron_proxy_guard.py
+@@ -0,0 +1,58 @@
++from pathlib import Path
++
++
++CRON_GET_ENDPOINTS = [
++    '/api/crons',
++    '/api/crons/output',
++    '/api/crons/history',
++    '/api/crons/run',
++    '/api/crons/recent',
++    '/api/crons/status',
++    '/api/crons/delivery-options',
++]
++
++CRON_POST_ENDPOINTS = [
++    '/api/crons/create',
++    '/api/crons/update',
++    '/api/crons/delete',
++    '/api/crons/run',
++    '/api/crons/pause',
++    '/api/crons/resume',
++]
++
++
++def _routes_source() -> str:
++    test_path = Path(__file__)
++    candidates = [
++        test_path.with_name('routes.py'),
++        test_path.parent.parent / 'api' / 'routes.py',
++    ]
++    for candidate in candidates:
++        if candidate.exists():
++            return candidate.read_text(encoding='utf-8')
++    raise AssertionError(f'routes.py not found in candidates: {candidates}')
++
++
++def test_remote_cron_proxy_payload_is_fail_closed_and_secret_safe():
++    source = _routes_source()
++    assert 'def _remote_cron_proxy_unsupported_payload' in source
++    assert '"error": "remote_cron_proxy_unsupported"' in source
++    assert '"profile_kind": "remote_gateway_proxy"' in source
++    assert '"remote_proxy": True' in source
++    assert '"backend": "unsupported_remote"' in source
++    assert 'Moss-local cron jobs were not read or modified' in source
++    payload_fn = source[source.find('def _remote_cron_proxy_unsupported_payload'):source.find('def _active_remote_cron_proxy')]
++    assert 'api_key' not in payload_fn
++
++
++def test_all_cron_routes_guard_before_local_cron_context():
++    source = _routes_source()
++    for endpoint in set(CRON_GET_ENDPOINTS + CRON_POST_ENDPOINTS):
++        marker = f'if parsed.path == "{endpoint}":'
++        idx = source.find(marker)
++        assert idx != -1, endpoint
++        block = source[idx:source.find('\n    if parsed.path == ', idx + 1)]
++        assert '_guard_remote_cron_proxy(handler)' in block, endpoint
++        guard_idx = block.find('_guard_remote_cron_proxy(handler)')
++        local_idx = block.find('cron_profile_context')
++        assert local_idx == -1 or guard_idx < local_idx, endpoint
+diff --git a/tests/test_webui_gateway_chat_backend.py b/tests/test_webui_gateway_chat_backend.py
+index fd5c3176..e242e289 100644
+--- a/tests/test_webui_gateway_chat_backend.py
++++ b/tests/test_webui_gateway_chat_backend.py
+@@ -101,6 +101,27 @@ def test_gateway_stream_usage_normalizes_token_names():
+     assert _gateway_stream_usage({}) == {}
+ 
+ 
++def test_gateway_stream_usage_preserves_context_metadata():
++    assert _gateway_stream_usage({
++        "usage": {
++            "prompt_tokens": 7,
++            "completion_tokens": 3,
++            "last_prompt_tokens": 11,
++            "context_length": 200,
++            "threshold_tokens": 150,
++            "cache_read_tokens": 2,
++        }
++    }) == {
++        "input_tokens": 7,
++        "output_tokens": 3,
++        "estimated_cost": 0,
++        "last_prompt_tokens": 11,
++        "context_length": 200,
++        "threshold_tokens": 150,
++        "cache_read_tokens": 2,
++    }
++
++
+ def test_gateway_tool_progress_event_translates_gateway_lifecycle_payloads():
+     assert _gateway_tool_progress_event(
+         {
