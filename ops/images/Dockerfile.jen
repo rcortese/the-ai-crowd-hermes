@@ -52,6 +52,14 @@ RUN rm -rf \
         /opt/hermes/plugins/video_gen/fal \
         /opt/hermes/plugins/video_gen/xai
 
+COPY ops/images/process-notification-boundary.patch /tmp/process-notification-boundary.patch
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends patch \
+    && cd /opt/hermes \
+    && patch -p1 < /tmp/process-notification-boundary.patch \
+    && PYTHONPYCACHEPREFIX=/tmp/hermes-build-pyc /opt/hermes/.venv/bin/python3 -m py_compile gateway/run.py \
+    && rm -rf /tmp/hermes-build-pyc /tmp/process-notification-boundary.patch /var/lib/apt/lists/*
+
 LABEL the-ai-crowd.agent="jen" \
       the-ai-crowd.role="productivity-operations" \
       the-ai-crowd.runtime="hermes-agent-productivity"
