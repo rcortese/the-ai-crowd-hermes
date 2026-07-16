@@ -1,0 +1,7 @@
+# Bootstrap-only override. Installs admission-fence capability without changing profile/auth routing.
+services:
+  moss:
+    image: "the-ai-crowd/moss-all-in-one@sha256:REPLACE_WITH_REVIEWED_BOOTSTRAP_IMAGE_ID"
+    environment:
+      HERMES_WEBUI_ADMISSION_FENCE: /opt/data/webui/admission-fence.json
+    # No profile, auth, cookie, volume, port, network, user, or command changes.
