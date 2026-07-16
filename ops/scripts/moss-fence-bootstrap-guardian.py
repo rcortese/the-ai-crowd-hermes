@@ -171,6 +171,25 @@ class Guardian:
                 raise GuardianError(f"invalid {key}")
             if key == "expected_container_id" and len(value) != 64:
                 raise GuardianError("invalid expected_container_id")
+        for key in ("bootstrap_source_contract_sha256", "bootstrap_build_manifest_sha256", "guardian_sha256"):
+            value = str(p.get(key, ""))
+            if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+                raise GuardianError(f"invalid {key}")
+        if sha256_file(Path(__file__).resolve(strict=True)) != p["guardian_sha256"]:
+            raise GuardianError("executing guardian hash mismatch")
+        build_manifest_path = require_regular(Path(str(p.get("bootstrap_build_manifest", ""))), self.state)
+        if sha256_file(build_manifest_path) != p["bootstrap_build_manifest_sha256"]:
+            raise GuardianError("bootstrap build manifest hash mismatch")
+        build_manifest = read_json(build_manifest_path, self.state)
+        expected_manifest = {
+            "schema": "moss-fence-bootstrap-build/v1",
+            "candidate_image_id": p["bootstrap_image_id"],
+            "live_base_image_id": p["expected_live_image_id"],
+            "source_contract_sha256": p["bootstrap_source_contract_sha256"],
+        }
+        for key, expected in expected_manifest.items():
+            if build_manifest.get(key) != expected:
+                raise GuardianError(f"bootstrap build manifest {key} mismatch")
         aliases = p.get("caddy_network_aliases")
         if not isinstance(aliases, list) or not aliases or any(not isinstance(item, str) or not item or len(item) > 128 for item in aliases):
             raise GuardianError("invalid Caddy network aliases")

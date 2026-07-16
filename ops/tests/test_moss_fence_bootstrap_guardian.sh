@@ -65,10 +65,13 @@ make_state(){
  mkdir -p "$state"
  printf 'services:\n  moss:\n    image: bootstrap\n' >"$state/bootstrap.override.yaml"
  printf 'services:\n  moss:\n    image: rollback\n' >"$state/rollback.override.yaml"
- python3 - "$state" "$container_id" "$live_image" "$bootstrap_image" "$tmp/deployment" <<'PY'
+ python3 - "$state" "$container_id" "$live_image" "$bootstrap_image" "$tmp/deployment" "$guardian" <<'PY'
 import hashlib,json,pathlib,sys
 state=pathlib.Path(sys.argv[1]); digest=lambda p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
 deployment=pathlib.Path(sys.argv[5])
+guardian=pathlib.Path(sys.argv[6])
+build={"schema":"moss-fence-bootstrap-build/v1","live_base_image_id":sys.argv[3],"source_contract_sha256":"e"*64,"candidate_tag":"fixture","candidate_image_id":sys.argv[4],"canonical_tag_mutated":False}
+(state/"bootstrap-build-manifest.json").write_text(json.dumps(build,indent=2,sort_keys=True)+"\n")
 p={
  "schema":"moss-fence-bootstrap-package/v1","container":"the-ai-crowd-moss-1","service":"moss",
  "deployment_root":str(deployment),"compose_file":str(deployment/"compose.yaml"),"env_file":str(deployment/".env"),
@@ -78,7 +81,9 @@ p={
  "bootstrap_override_sha256":digest(state/"bootstrap.override.yaml"),"rollback_override_sha256":digest(state/"rollback.override.yaml"),
  "compose_sha256":digest(deployment/"compose.yaml"),"env_sha256":digest(deployment/".env"),
  "bootstrap_render_sha256":hashlib.sha256(b"bootstrap-render\n").hexdigest(),"rollback_render_sha256":hashlib.sha256(b"rollback-render\n").hexdigest(),
- "source_commit":"ef2c9238ce4ba48622f5f87c783caf7be8c98793"
+ "bootstrap_source_commit":"ef2c9238ce4ba48622f5f87c783caf7be8c98793","bootstrap_source_contract_sha256":"e"*64,
+ "bootstrap_build_manifest":str(state/"bootstrap-build-manifest.json"),"bootstrap_build_manifest_sha256":digest(state/"bootstrap-build-manifest.json"),
+ "guardian_commit":"f"*40,"guardian_sha256":digest(guardian)
 }
 (state/"package.json").write_text(json.dumps(p,indent=2,sort_keys=True)+"\n")
 r={"schema":"moss-fence-bootstrap-authorization/v1","nonce":"bootstrap-test-1234567890","expires_at":"2099-01-01T00:00:00Z","package_sha256":digest(state/"package.json")}
@@ -115,6 +120,16 @@ PY
 grep -Fq 'network connect --alias moss --alias the-ai-crowd-moss-1 local-llm-net the-ai-crowd-moss-1' "$state3/calls"
 ! grep -Eq 'compose .* up ' "$state3/calls"
 [[ -f $tmp/test.lock ]]
+state4="$tmp/guardian-tamper"; make_state "$state4"; : >"$state4/calls"
+python3 - "$state4" <<'PY'
+import hashlib,json,pathlib,sys
+s=pathlib.Path(sys.argv[1]); p=json.loads((s/"package.json").read_text()); p["guardian_sha256"]="0"*64; (s/"package.json").write_text(json.dumps(p,indent=2,sort_keys=True)+"\n"); r=json.loads((s/"authorization.ready.json").read_text()); r["package_sha256"]=hashlib.sha256((s/"package.json").read_bytes()).hexdigest(); (s/"authorization.ready.json").write_text(json.dumps(r,indent=2,sort_keys=True)+"\n")
+PY
+set +e; run_guardian "$state4" env >/dev/null 2>&1; rc=$?; set -e
+[[ $rc == 1 && -f $state4/authorization.ready.json && ! -e $state4/authorization.consumed.json ]]
+state5="$tmp/manifest-tamper"; make_state "$state5"; : >"$state5/calls"; printf '\n' >>"$state5/bootstrap-build-manifest.json"
+set +e; run_guardian "$state5" env >/dev/null 2>&1; rc=$?; set -e
+[[ $rc == 1 && -f $state5/authorization.ready.json && ! -e $state5/authorization.consumed.json ]]
 ! grep -Fq -- '--force-drain' "$guardian"
 ! grep -Eq 'compose.*(stop|rm|down)' "$guardian"
 echo moss_fence_bootstrap_guardian_behavior_ok

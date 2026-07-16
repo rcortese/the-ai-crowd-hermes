@@ -16,6 +16,13 @@ COMPOSE = ROOT / "compose.yaml"
 ENV_FILE = ROOT / ".env"
 CONTAINER = "the-ai-crowd-moss-1"
 SERVICE = "moss"
+REPO = Path(__file__).resolve().parents[2]
+GUARDIAN_RELATIVE = "ops/scripts/moss-fence-bootstrap-guardian.py"
+BOOTSTRAP_CONTRACT_PATHS = (
+    "ops/hermes-webui-overrides/apply-moss-profile-admission-fence.py",
+    "ops/images/Dockerfile.moss-fence-bootstrap",
+    "ops/supervisor/moss-fence-bootstrap-supervisord.conf",
+)
 
 
 def digest(body: bytes) -> str:
@@ -99,7 +106,31 @@ def commit_id(value: str) -> str:
     return value
 
 
-def prepare(state: Path, bootstrap_image: str, bootstrap_source_commit: str, guardian_commit: str) -> dict[str, Any]:
+def git_blob(commit: str, relative: str) -> bytes:
+    return subprocess.check_output(["git", "-C", str(REPO), "show", f"{commit}:{relative}"])
+
+
+def source_contract(commit: str) -> str:
+    value = hashlib.sha256()
+    for relative in BOOTSTRAP_CONTRACT_PATHS:
+        value.update(relative.encode() + b"\0")
+        value.update(git_blob(commit, relative))
+    return value.hexdigest()
+
+
+def protected_manifest(path: Path) -> dict[str, Any]:
+    if not path.is_absolute() or path.is_symlink() or not path.is_file() or path.resolve(strict=True) != path:
+        raise ValueError("bootstrap build manifest must be a real absolute file")
+    metadata = path.stat()
+    if metadata.st_uid != 0 or metadata.st_mode & 0o022:
+        raise ValueError("bootstrap build manifest must be root-owned and protected")
+    body = json.loads(path.read_text())
+    if not isinstance(body, dict):
+        raise ValueError("bootstrap build manifest must be an object")
+    return body
+
+
+def prepare(state: Path, bootstrap_image: str, bootstrap_source_commit: str, guardian_commit: str, build_manifest_path: Path) -> dict[str, Any]:
     if not state.is_absolute() or state.is_symlink() or state.exists():
         raise ValueError("state must be a new absolute non-symlink path")
     parent = state.parent.resolve(strict=True)
@@ -108,6 +139,15 @@ def prepare(state: Path, bootstrap_image: str, bootstrap_source_commit: str, gua
     bootstrap_image = image_id(bootstrap_image)
     bootstrap_source_commit = commit_id(bootstrap_source_commit)
     guardian_commit = commit_id(guardian_commit)
+    contract_sha256 = source_contract(bootstrap_source_commit)
+    guardian_sha256 = digest(git_blob(guardian_commit, GUARDIAN_RELATIVE))
+    if guardian_sha256 != file_digest(REPO / GUARDIAN_RELATIVE):
+        raise ValueError("executing guardian bytes do not match guardian commit")
+    build_manifest = protected_manifest(build_manifest_path)
+    if build_manifest.get("schema") != "moss-fence-bootstrap-build/v1" or build_manifest.get("candidate_image_id") != bootstrap_image:
+        raise ValueError("bootstrap build manifest image mismatch")
+    if build_manifest.get("source_contract_sha256") != contract_sha256:
+        raise ValueError("bootstrap commit/source contract mismatch")
     raw = command(
         "docker", "inspect", CONTAINER, "--format",
         "{{.Id}}|{{.Image}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}",
@@ -116,6 +156,8 @@ def prepare(state: Path, bootstrap_image: str, bootstrap_source_commit: str, gua
         raise ValueError("live container not running/healthy")
     container_id, live_image = raw[:2]
     image_id(live_image)
+    if build_manifest.get("live_base_image_id") != live_image:
+        raise ValueError("bootstrap build manifest live-base mismatch")
     network = json.loads(
         command(
             "docker", "inspect", CONTAINER, "--format",
@@ -130,6 +172,8 @@ def prepare(state: Path, bootstrap_image: str, bootstrap_source_commit: str, gua
     try:
         bootstrap_override = state / "bootstrap.override.yaml"
         rollback_override = state / "rollback.override.yaml"
+        packaged_build_manifest = state / "bootstrap-build-manifest.json"
+        atomic_json(packaged_build_manifest, build_manifest)
         atomic_text(
             bootstrap_override,
             "services:\n  moss:\n    image: \"" + bootstrap_image + "\"\n    environment:\n      HERMES_WEBUI_ADMISSION_FENCE: /opt/data/webui/admission-fence.json\n",
@@ -156,7 +200,11 @@ def prepare(state: Path, bootstrap_image: str, bootstrap_source_commit: str, gua
             "bootstrap_render_sha256": digest(render(bootstrap_override)),
             "rollback_render_sha256": digest(render(rollback_override)),
             "bootstrap_source_commit": bootstrap_source_commit,
+            "bootstrap_source_contract_sha256": contract_sha256,
+            "bootstrap_build_manifest": str(packaged_build_manifest),
+            "bootstrap_build_manifest_sha256": file_digest(packaged_build_manifest),
             "guardian_commit": guardian_commit,
+            "guardian_sha256": guardian_sha256,
         }
         package_path = state / "package.json"
         atomic_json(package_path, package)
@@ -190,12 +238,13 @@ def main() -> int:
     parser.add_argument("--bootstrap-image-id", required=True)
     parser.add_argument("--bootstrap-source-commit", required=True)
     parser.add_argument("--guardian-commit", required=True)
+    parser.add_argument("--bootstrap-build-manifest", type=Path, required=True)
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
     if not args.execute:
         print("refusing package write without --execute")
         return 2
-    result = prepare(args.state, args.bootstrap_image_id, args.bootstrap_source_commit, args.guardian_commit)
+    result = prepare(args.state, args.bootstrap_image_id, args.bootstrap_source_commit, args.guardian_commit, args.bootstrap_build_manifest)
     print(json.dumps(result, sort_keys=True))
     return 0
 
