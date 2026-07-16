@@ -109,6 +109,13 @@ class Guardian:
         self.sleep = float(os.getenv("MOSS_BOOTSTRAP_POLL_SECONDS", "1"))
         self.idle_confirm = float(os.getenv("MOSS_BOOTSTRAP_IDLE_CONFIRM_SECONDS", "5"))
         self.timeout = float(os.getenv("MOSS_BOOTSTRAP_TIMEOUT_SECONDS", "180"))
+        self.lock_path = LOCK_PATH
+        test_lock = os.getenv("MOSS_BOOTSTRAP_TEST_LOCK_PATH")
+        if test_lock:
+            candidate_lock = Path(test_lock)
+            if not str(self.state).startswith("/tmp/") or not candidate_lock.is_absolute() or candidate_lock.parent.resolve(strict=True) != self.state.parent:
+                raise GuardianError("test lock override is allowed only beside a /tmp state")
+            self.lock_path = candidate_lock
 
     def status(self, state: str, **extra: Any) -> None:
         atomic_json(self.status_path, {"schema": "moss-fence-bootstrap-status/v1", "state": state, **extra})
@@ -148,6 +155,14 @@ class Guardian:
                 raise GuardianError(f"invalid {key}")
             if key == "expected_container_id" and len(value) != 64:
                 raise GuardianError("invalid expected_container_id")
+        aliases = p.get("caddy_network_aliases")
+        if not isinstance(aliases, list) or not aliases or any(not isinstance(item, str) or not item or len(item) > 128 for item in aliases):
+            raise GuardianError("invalid Caddy network aliases")
+        if aliases != sorted(set(aliases)):
+            raise GuardianError("Caddy network aliases must be unique and sorted")
+        network_id = str(p.get("caddy_network_id", ""))
+        if len(network_id) != 64 or any(char not in "0123456789abcdef" for char in network_id):
+            raise GuardianError("invalid Caddy network ID")
         for name in ("bootstrap_override", "rollback_override"):
             path = require_regular(Path(str(p.get(name, ""))), self.state)
             if sha256_file(path) != p.get(f"{name}_sha256"):
@@ -198,7 +213,17 @@ class Guardian:
             raise GuardianError("unexpected live inspect shape")
         return tuple(parts)  # type: ignore[return-value]
 
-    def assert_cas(self, *, require_healthy: bool) -> None:
+    def network_topology(self) -> tuple[str, list[str]]:
+        raw = self.docker(
+            "inspect", CANONICAL_CONTAINER,
+            "--format", f"{{{{json (index .NetworkSettings.Networks \"{CADDY_NETWORK}\")}}}}",
+        ).stdout.strip()
+        body = json.loads(raw)
+        if not isinstance(body, dict) or not body.get("NetworkID") or not isinstance(body.get("Aliases"), list):
+            raise GuardianError("Caddy network is not attached")
+        return str(body["NetworkID"]), sorted(str(item) for item in body["Aliases"])
+
+    def assert_cas(self, *, require_healthy: bool, require_network: bool = True) -> None:
         container_id, image_id, state, health = self.inspect_live()
         if container_id != self.package["expected_container_id"] or image_id != self.package["expected_live_image_id"]:
             raise GuardianError("live container CAS mismatch")
@@ -207,6 +232,10 @@ class Guardian:
         actual = self.docker("image", "inspect", self.package["bootstrap_image_id"], "--format", "{{.Id}}").stdout.strip()
         if actual != self.package["bootstrap_image_id"]:
             raise GuardianError("bootstrap image CAS mismatch")
+        if require_network:
+            network_id, aliases = self.network_topology()
+            if network_id != self.package["caddy_network_id"] or aliases != self.package["caddy_network_aliases"]:
+                raise GuardianError("Caddy network topology CAS mismatch")
 
     def webui_health(self) -> dict[str, Any]:
         result = self.docker(
@@ -274,7 +303,11 @@ class Guardian:
         if self.webui_stopped:
             self.docker("exec", CANONICAL_CONTAINER, "supervisorctl", "-c", SUPERVISOR_CONFIG, "start", "moss-webui", check=False)
         if self.network_disconnected:
-            self.docker("network", "connect", "--alias", "moss", CADDY_NETWORK, CANONICAL_CONTAINER, check=False)
+            command = ["network", "connect"]
+            for alias in self.package["caddy_network_aliases"]:
+                command.extend(("--alias", alias))
+            command.extend((CADDY_NETWORK, CANONICAL_CONTAINER))
+            self.docker(*command, check=False)
         if self.drain_written:
             self.clear_gateway_drain()
 
@@ -285,8 +318,10 @@ class Guardian:
                 _, image, state, health = self.inspect_live()
                 body = self.webui_health()
                 gateway = self.gateway_status()
+                network_id, aliases = self.network_topology()
+                network_ok = network_id == self.package["caddy_network_id"] and aliases == self.package["caddy_network_aliases"]
                 fence_ok = body.get("admission_fenced") is False if require_fence_field else True
-                if image == expected_image and state == "running" and health == "healthy" and body.get("status") == "ok" and fence_ok and gateway.get("gateway_state") in {"running", "starting"}:
+                if image == expected_image and state == "running" and health == "healthy" and body.get("status") == "ok" and fence_ok and network_ok and gateway.get("gateway_state") in {"running", "starting"}:
                     return
             except (GuardianError, ValueError, TypeError, json.JSONDecodeError):
                 pass
@@ -312,8 +347,8 @@ class Guardian:
     def activate(self) -> None:
         self.validate_package()
         self.validate_authorization()
-        LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        lock_fd = os.open(LOCK_PATH, os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_fd = os.open(self.lock_path, os.O_WRONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
         try:
             try:
                 fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -327,7 +362,7 @@ class Guardian:
                 self.write_gateway_drain()
                 self.wait_gateway_drained()
                 self.fence_bootstrap_ingress()
-                self.assert_cas(require_healthy=False)
+                self.assert_cas(require_healthy=False, require_network=False)
                 self.transition_started = True
                 override = Path(self.package["bootstrap_override"])
                 result = self.compose(override, "up", "-d", "--no-deps", "--force-recreate", "--wait", "--wait-timeout", "180", CANONICAL_SERVICE, check=False)

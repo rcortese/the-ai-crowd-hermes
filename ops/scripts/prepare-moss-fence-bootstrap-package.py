@@ -116,6 +116,16 @@ def prepare(state: Path, bootstrap_image: str, bootstrap_source_commit: str, gua
         raise ValueError("live container not running/healthy")
     container_id, live_image = raw[:2]
     image_id(live_image)
+    network = json.loads(
+        command(
+            "docker", "inspect", CONTAINER, "--format",
+            '{{json (index .NetworkSettings.Networks "local-llm-net")}}',
+        )
+    )
+    if not isinstance(network, dict) or not network.get("NetworkID") or not isinstance(network.get("Aliases"), list) or not network["Aliases"]:
+        raise ValueError("Caddy network attachment is required")
+    caddy_network_id = str(network["NetworkID"])
+    caddy_network_aliases = sorted(set(str(item) for item in network["Aliases"]))
     state.mkdir(mode=0o700)
     try:
         bootstrap_override = state / "bootstrap.override.yaml"
@@ -135,6 +145,8 @@ def prepare(state: Path, bootstrap_image: str, bootstrap_source_commit: str, gua
             "expected_container_id": container_id,
             "expected_live_image_id": live_image,
             "bootstrap_image_id": bootstrap_image,
+            "caddy_network_id": caddy_network_id,
+            "caddy_network_aliases": caddy_network_aliases,
             "bootstrap_override": str(bootstrap_override),
             "rollback_override": str(rollback_override),
             "bootstrap_override_sha256": file_digest(bootstrap_override),
