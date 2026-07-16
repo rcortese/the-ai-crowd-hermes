@@ -3,12 +3,13 @@
 # Admission occurs only after a stable idle window; ingress is fenced on the
 # same network that the Caddy edge uses, and readiness proves every boundary.
 set -Eeuo pipefail
-usage() { printf '%s\n' 'usage: moss-promotion-guardian.sh --state ABSOLUTE_DIR --execute'; }
-state= execute=0
+usage() { printf '%s\n' 'usage: moss-promotion-guardian.sh --state ABSOLUTE_DIR --execute [--force-drain]'; }
+state= execute=0 force_drain=0
 while (($#)); do
   case $1 in
     --state) (($# >= 2)) || { usage >&2; exit 64; }; state=$2; shift 2 ;;
     --execute) execute=1; shift ;;
+    --force-drain) force_drain=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 64 ;;
   esac
@@ -107,9 +108,16 @@ rollback() {
   terminal_status rollback_ready
 }
 write_status guardian_started
-if ! wait_for_initial_idle; then terminal_status admission_blocked:active_or_ambiguous; exit 2; fi
+if (( force_drain )); then
+  # Explicit operator drain skips only initial idle admission; all other gates remain mandatory.
+  printf '%s\n' force-drain >"$state/admission-mode"
+  write_status force_drain_authorized
+else
+  printf '%s\n' normal-idle >"$state/admission-mode"
+  if ! wait_for_initial_idle; then terminal_status admission_blocked:active_or_ambiguous; exit 2; fi
+fi
 fence_ingress
-if ! admit_after_fence; then terminal_status admission_blocked:post_fence_activity; exit 2; fi
+if (( ! force_drain )) && ! admit_after_fence; then terminal_status admission_blocked:post_fence_activity; exit 2; fi
 assert_cas
 printf '%s\n' "$rollback_image" >"$state/rollback-image"
 write_status activation_uncertain

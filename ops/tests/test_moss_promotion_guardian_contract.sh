@@ -12,7 +12,10 @@ had_lock=0; [[ -e $lock ]] && had_lock=1
 cleanup_lock() { [[ $had_lock == 1 ]] || rm -f "$lock"; }
 trap 'cleanup_lock; rm -rf "$tmp"' EXIT
 [[ -x $guardian ]]
-! grep -Eq 'compose.* stop moss|run_canonical_compose stop|force-drain' "$guardian" "$runner"
+! grep -Eq 'compose.* stop moss|run_canonical_compose stop' "$guardian" "$runner"
+grep -Fq -- '--force-drain' "$guardian"
+grep -Fq 'force_drain_authorized' "$guardian"
+grep -Fq 'if (( ! force_drain )) && ! admit_after_fence; then' "$guardian"
 grep -Fq 'readonly ingress_network=local-llm-net' "$guardian"
 grep -Fq 'proxy_container=network-caddy-1' "$guardian"
 grep -Fq 'proxy_backend_ready' "$guardian"
@@ -43,7 +46,10 @@ CURL
 chmod 0755 "$tmp/fakebin/docker" "$tmp/fakebin/curl"
 : > "$tmp/calls"
 timeout 45 env FAKE_CALLS="$tmp/calls" FAKE_CANDIDATE="$candidate" FAKE_ROLLBACK="$rollback" PATH="$tmp/fakebin:$PATH" "$guardian" --state "$tmp/state" --execute >/dev/null
-[[ $(<"$tmp/state/status") == promote_complete ]]
+[[ $(<"$tmp/state/status") == promote_complete && $(<"$tmp/state/admission-mode") == normal-idle ]]
+: > "$tmp/calls"
+timeout 45 env FAKE_CALLS="$tmp/calls" FAKE_CANDIDATE="$candidate" FAKE_ROLLBACK="$rollback" PATH="$tmp/fakebin:$PATH" "$guardian" --state "$tmp/state" --execute --force-drain >/dev/null
+[[ $(<"$tmp/state/status") == promote_complete && $(<"$tmp/state/admission-mode") == force-drain ]]
 stop_line=$(grep -n 'supervisorctl.*stop moss-gateway' "$tmp/calls" | cut -d: -f1); fence_line=$(grep -n 'network disconnect local-llm-net' "$tmp/calls" | cut -d: -f1); up_line=$(grep -n 'compose .* up -d --no-deps --force-recreate --wait --wait-timeout 180 moss' "$tmp/calls" | cut -d: -f1)
 [[ $stop_line -lt $fence_line && $fence_line -lt $up_line ]]
 grep -q 'exec network-caddy-1' "$tmp/calls"
