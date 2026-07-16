@@ -1,0 +1,21 @@
+{
+  "upstream_target_commit": "9a1acbff2af8e3e2c923667bbf68224b38fe7b73",
+  "upstream_target_tree": "565c42c6e9f84df4d6d0f4f26376efb58ec67b31",
+  "patched_source_tree": "b0a12e61c842c19eea42bb31a4818fa5432ac658",
+  "patch_sha256": "d97e9c7cc02c4a0ea5bfe69d9c3aef0b75529553e72051eb87cbe24c821380cb",
+  "patch_bytes": 52738,
+  "patch_paths": [
+    "api/agent_health.py",
+    "api/gateway_chat.py",
+    "api/profiles.py",
+    "api/routes.py",
+    "static/ui.js",
+    "tests/test_agent_health_remote.py",
+    "tests/test_issue716_agent_heartbeat.py",
+    "tests/test_mobile_layout.py",
+    "tests/test_optionz_liveview_perf.py",
+    "tests/test_profile_proxy_jen.py",
+    "tests/test_remote_cron_proxy_guard.py",
+    "tests/test_webui_gateway_chat_backend.py"
+  ]
+}

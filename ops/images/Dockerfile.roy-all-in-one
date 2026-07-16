@@ -3,8 +3,8 @@ FROM ${ROY_BASE_IMAGE}
 
 USER root
 
-ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=0bcfe3a079def0d2d9185183570049bd12bf8622
+ARG HERMES_WEBUI_REPO=https://github.com/nesquena/hermes-webui.git
+ARG HERMES_WEBUI_REV=9a1acbff2af8e3e2c923667bbf68224b38fe7b73
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -21,14 +21,31 @@ RUN cd /opt/hermes \
         hermes_cli/config.py \
         gateway/run.py
 
+COPY ops/hermes-webui-overrides/webui-v0.52.41-ai-crowd-minimal.patch \
+     ops/hermes-webui-overrides/webui-v0.52.41-ai-crowd-minimal.manifest.json \
+     ops/scripts/reapply-webui-v05241-ai-crowd-candidate.sh \
+     /tmp/webui-port/
+
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
     && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
+    && /tmp/webui-port/reapply-webui-v05241-ai-crowd-candidate.sh \
+        --repo /opt/hermes-webui \
+        --patch /tmp/webui-port/webui-v0.52.41-ai-crowd-minimal.patch \
+        --manifest /tmp/webui-port/webui-v0.52.41-ai-crowd-minimal.manifest.json \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
-    && /opt/hermes/.venv/bin/python3 -m py_compile api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py \
+    && /opt/hermes/.venv/bin/python3 -m py_compile api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py api/agent_health.py \
     && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
         tests/test_webui_gateway_chat_backend.py \
+        tests/test_profile_proxy_jen.py \
+        tests/test_remote_cron_proxy_guard.py \
+        tests/test_agent_health_remote.py \
+        tests/test_issue716_agent_heartbeat.py \
+        tests/test_mobile_layout.py \
+        tests/test_optionz_liveview_perf.py \
+        tests/test_stage364_opus_live_sse_event_id.py \
+        tests/test_session_channel_option_x.py \
         tests/test_updates.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
