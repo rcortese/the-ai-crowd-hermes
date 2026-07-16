@@ -6,6 +6,9 @@ tmp=$(mktemp -d)
 cleanup(){ rm -rf "$tmp"; }
 trap cleanup EXIT
 mkdir -p "$tmp/fakebin"
+mkdir -p "$tmp/deployment"
+printf 'services:\n  moss: {}\n' >"$tmp/deployment/compose.yaml"
+printf 'TEST_ONLY=1\n' >"$tmp/deployment/.env"
 cat >"$tmp/fakebin/docker" <<'FAKE'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -62,17 +65,18 @@ make_state(){
  mkdir -p "$state"
  printf 'services:\n  moss:\n    image: bootstrap\n' >"$state/bootstrap.override.yaml"
  printf 'services:\n  moss:\n    image: rollback\n' >"$state/rollback.override.yaml"
- python3 - "$state" "$container_id" "$live_image" "$bootstrap_image" <<'PY'
+ python3 - "$state" "$container_id" "$live_image" "$bootstrap_image" "$tmp/deployment" <<'PY'
 import hashlib,json,pathlib,sys
 state=pathlib.Path(sys.argv[1]); digest=lambda p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()
+deployment=pathlib.Path(sys.argv[5])
 p={
  "schema":"moss-fence-bootstrap-package/v1","container":"the-ai-crowd-moss-1","service":"moss",
- "deployment_root":"/mnt/user/appdata/the-ai-crowd","compose_file":"/mnt/user/appdata/the-ai-crowd/compose.yaml","env_file":"/mnt/user/appdata/the-ai-crowd/.env",
+ "deployment_root":str(deployment),"compose_file":str(deployment/"compose.yaml"),"env_file":str(deployment/".env"),
  "expected_container_id":sys.argv[2],"expected_live_image_id":sys.argv[3],"bootstrap_image_id":sys.argv[4],
  "caddy_network_id":"d"*64,"caddy_network_aliases":["moss","the-ai-crowd-moss-1"],
  "bootstrap_override":str(state/"bootstrap.override.yaml"),"rollback_override":str(state/"rollback.override.yaml"),
  "bootstrap_override_sha256":digest(state/"bootstrap.override.yaml"),"rollback_override_sha256":digest(state/"rollback.override.yaml"),
- "compose_sha256":digest("/mnt/user/appdata/the-ai-crowd/compose.yaml"),"env_sha256":digest("/mnt/user/appdata/the-ai-crowd/.env"),
+ "compose_sha256":digest(deployment/"compose.yaml"),"env_sha256":digest(deployment/".env"),
  "bootstrap_render_sha256":hashlib.sha256(b"bootstrap-render\n").hexdigest(),"rollback_render_sha256":hashlib.sha256(b"rollback-render\n").hexdigest(),
  "source_commit":"ef2c9238ce4ba48622f5f87c783caf7be8c98793"
 }
@@ -83,7 +87,7 @@ PY
 }
 run_guardian(){
  local state=$1; shift
- env PATH="$tmp/fakebin:$PATH" FAKE_CALLS="$state/calls" FAKE_PHASE="$state/phase" FAKE_DRAINED="$state/drained" FAKE_DISCONNECTED="$state/disconnected" AUTH_CONSUMED="$state/authorization.consumed.json" FAKE_CONTAINER_ID="$container_id" FAKE_LIVE_IMAGE="$live_image" FAKE_BOOTSTRAP_IMAGE="$bootstrap_image" MOSS_BOOTSTRAP_TEST_LOCK_PATH="$tmp/test.lock" MOSS_BOOTSTRAP_POLL_SECONDS=0 MOSS_BOOTSTRAP_IDLE_CONFIRM_SECONDS=0 MOSS_BOOTSTRAP_TIMEOUT_SECONDS=2 "$@" "$guardian" --state "$state" --execute
+ env PATH="$tmp/fakebin:$PATH" FAKE_CALLS="$state/calls" FAKE_PHASE="$state/phase" FAKE_DRAINED="$state/drained" FAKE_DISCONNECTED="$state/disconnected" AUTH_CONSUMED="$state/authorization.consumed.json" FAKE_CONTAINER_ID="$container_id" FAKE_LIVE_IMAGE="$live_image" FAKE_BOOTSTRAP_IMAGE="$bootstrap_image" MOSS_BOOTSTRAP_TEST_MODE=1 MOSS_BOOTSTRAP_TEST_DEPLOYMENT_ROOT="$tmp/deployment" MOSS_BOOTSTRAP_TEST_LOCK_PATH="$tmp/test.lock" MOSS_BOOTSTRAP_POLL_SECONDS=0 MOSS_BOOTSTRAP_IDLE_CONFIRM_SECONDS=0 MOSS_BOOTSTRAP_TIMEOUT_SECONDS=2 "$@" "$guardian" --state "$state" --execute
 }
 state1="$tmp/success"; make_state "$state1"; : >"$state1/calls"
 run_guardian "$state1" env

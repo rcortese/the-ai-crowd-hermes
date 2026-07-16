@@ -36,6 +36,13 @@ def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
 
 
+def required_owner(path: Path) -> int:
+    resolved = path.resolve(strict=True)
+    if os.getenv("MOSS_BOOTSTRAP_TEST_MODE") == "1" and (resolved == Path("/tmp") or Path("/tmp") in resolved.parents):
+        return os.getuid()
+    return 0
+
+
 def require_regular(path: Path, parent: Path | None = None) -> Path:
     if not path.is_absolute() or path.is_symlink() or not path.is_file():
         raise GuardianError(f"not a regular absolute file: {path}")
@@ -43,8 +50,8 @@ def require_regular(path: Path, parent: Path | None = None) -> Path:
     if resolved != path:
         raise GuardianError(f"symlink component in file path: {path}")
     metadata = path.stat()
-    if metadata.st_uid != 0 or metadata.st_mode & 0o022:
-        raise GuardianError(f"file must be root-owned and not group/world-writable: {path}")
+    if metadata.st_uid != required_owner(path) or metadata.st_mode & 0o022:
+        raise GuardianError(f"file has unsafe owner/mode: {path}")
     if parent is not None and parent.resolve(strict=True) not in resolved.parents:
         raise GuardianError(f"file outside state: {path}")
     return resolved
@@ -54,8 +61,8 @@ def require_dir(path: Path) -> Path:
     if not path.is_absolute() or path.is_symlink() or not path.is_dir() or path.resolve(strict=True) != path:
         raise GuardianError(f"not a real absolute directory: {path}")
     metadata = path.stat()
-    if metadata.st_uid != 0 or metadata.st_mode & 0o022:
-        raise GuardianError(f"directory must be root-owned and not group/world-writable: {path}")
+    if metadata.st_uid != required_owner(path) or metadata.st_mode & 0o022:
+        raise GuardianError(f"directory has unsafe owner/mode: {path}")
     return path
 
 
@@ -109,6 +116,15 @@ class Guardian:
         self.sleep = float(os.getenv("MOSS_BOOTSTRAP_POLL_SECONDS", "1"))
         self.idle_confirm = float(os.getenv("MOSS_BOOTSTRAP_IDLE_CONFIRM_SECONDS", "5"))
         self.timeout = float(os.getenv("MOSS_BOOTSTRAP_TIMEOUT_SECONDS", "180"))
+        self.deployment_root = DEPLOYMENT_ROOT
+        test_root = os.getenv("MOSS_BOOTSTRAP_TEST_DEPLOYMENT_ROOT")
+        if test_root:
+            candidate_root = Path(test_root)
+            if not str(self.state).startswith("/tmp/") or not candidate_root.is_absolute() or candidate_root.parent.resolve(strict=True) != self.state.parent:
+                raise GuardianError("test deployment root is allowed only beside a /tmp state")
+            self.deployment_root = candidate_root.resolve(strict=True)
+        self.compose_file = self.deployment_root / "compose.yaml"
+        self.env_file = self.deployment_root / ".env"
         self.lock_path = LOCK_PATH
         test_lock = os.getenv("MOSS_BOOTSTRAP_TEST_LOCK_PATH")
         if test_lock:
@@ -131,8 +147,8 @@ class Guardian:
 
     def compose(self, override: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         return self.docker(
-            "compose", "--project-directory", str(DEPLOYMENT_ROOT), "--env-file", str(CANONICAL_ENV),
-            "-f", str(CANONICAL_COMPOSE), "-f", str(override), *args, check=check,
+            "compose", "--project-directory", str(self.deployment_root), "--env-file", str(self.env_file),
+            "-f", str(self.compose_file), "-f", str(override), *args, check=check,
         )
 
     def validate_package(self) -> None:
@@ -142,9 +158,9 @@ class Guardian:
         fixed = {
             "container": CANONICAL_CONTAINER,
             "service": CANONICAL_SERVICE,
-            "deployment_root": str(DEPLOYMENT_ROOT),
-            "compose_file": str(CANONICAL_COMPOSE),
-            "env_file": str(CANONICAL_ENV),
+            "deployment_root": str(self.deployment_root),
+            "compose_file": str(self.compose_file),
+            "env_file": str(self.env_file),
         }
         for key, expected in fixed.items():
             if p.get(key) != expected:
@@ -167,9 +183,9 @@ class Guardian:
             path = require_regular(Path(str(p.get(name, ""))), self.state)
             if sha256_file(path) != p.get(f"{name}_sha256"):
                 raise GuardianError(f"{name} hash mismatch")
-        if sha256_file(CANONICAL_COMPOSE) != p.get("compose_sha256"):
+        if sha256_file(self.compose_file) != p.get("compose_sha256"):
             raise GuardianError("compose hash mismatch")
-        if sha256_file(CANONICAL_ENV) != p.get("env_sha256"):
+        if sha256_file(self.env_file) != p.get("env_sha256"):
             raise GuardianError("env hash mismatch")
         for mode in ("bootstrap", "rollback"):
             override = Path(str(p[f"{mode}_override"]))
