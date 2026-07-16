@@ -1,0 +1,14 @@
+# Candidate-only override. Copy to the private deployment state; never edit compose.yaml.
+services:
+  moss:
+    image: "the-ai-crowd/moss-all-in-one@sha256:REPLACE_WITH_REVIEWED_IMMUTABLE_IMAGE_ID"
+    environment:
+      AGENT_NAME: moss
+      AGENT_ROOT: /agents/moss
+      AGENT_PUBLIC: /agents/moss/public
+      AGENT_PRIVATE: /agents/moss/private
+      HERMES_PROFILE: moss
+      HERMES_AUTH_HOME: /opt/data/provider-auth
+      HERMES_WEBUI_PROFILE_COOKIE_NAME: hermes_profile_v2
+      HERMES_WEBUI_ADMISSION_FENCE: /opt/data/webui/admission-fence.json
+    # Deliberately no volumes or bind changes: canonical mounts remain authoritative.

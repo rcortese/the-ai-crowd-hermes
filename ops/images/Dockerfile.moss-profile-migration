@@ -1,0 +1,15 @@
+ARG LIVE_BASE_IMAGE=the-ai-crowd/moss-all-in-one:profile-migration-base-required
+FROM ${LIVE_BASE_IMAGE}
+ARG LIVE_BASE_IMAGE
+
+USER root
+COPY ops/hermes-webui-overrides/apply-moss-profile-admission-fence.py /tmp/apply-moss-profile-admission-fence.py
+RUN test -n "${LIVE_BASE_IMAGE}" \
+    && /opt/hermes/.venv/bin/python3 /tmp/apply-moss-profile-admission-fence.py /opt/hermes-webui \
+    && /opt/hermes/.venv/bin/python3 -m py_compile \
+        /opt/hermes-webui/server.py \
+        /opt/hermes-webui/api/routes.py \
+        /opt/hermes-webui/api/admission_fence.py \
+    && rm -f /tmp/apply-moss-profile-admission-fence.py \
+    && chown -R 99:100 /opt/hermes-webui
+COPY ops/supervisor/moss-all-in-one-supervisord.conf /etc/supervisor/conf.d/moss-all-in-one.conf
