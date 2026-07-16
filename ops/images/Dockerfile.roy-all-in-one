@@ -21,6 +21,14 @@ RUN cd /opt/hermes \
         hermes_cli/config.py \
         gateway/run.py
 
+COPY ops/images/process-notification-boundary.patch /tmp/process-notification-boundary.patch
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends patch \
+    && cd /opt/hermes \
+    && patch -p1 < /tmp/process-notification-boundary.patch \
+    && PYTHONPYCACHEPREFIX=/tmp/hermes-build-pyc /opt/hermes/.venv/bin/python3 -m py_compile gateway/run.py \
+    && rm -rf /tmp/hermes-build-pyc /tmp/process-notification-boundary.patch /var/lib/apt/lists/*
+
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
