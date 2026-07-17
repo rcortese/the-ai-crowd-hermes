@@ -97,6 +97,7 @@ services:
       local_llm: null
     env_file:
     - ./env/fleet.env
+    - ./env/moss-webui.env
     build:
       context: .
       dockerfile: ops/images/Dockerfile.moss-all-in-one
