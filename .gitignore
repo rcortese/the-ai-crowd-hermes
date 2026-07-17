@@ -41,7 +41,22 @@ venv/
 /logs/
 /ops/candidates/
 /build-contexts/
+/ops/build-contexts/
+/ops/evidence/
+/ops/review-packets/
+/ops/restore-real-production-*.log
+/ops/restore-real-production-*.log.supervisor
 /compose.yaml.bak-*
+
+# Host-local snapshots and registered/nested worktrees
+/.env.pre-remove-*
+/compose.yaml.pre-remove-*
+/.worktrees/
+/ops/worktrees/
+/worktrees/
+
+# Large local integration fixtures require an explicit artifact/LFS review
+/test-fixtures/
 
 # Generated self-replacing deployment state (host-local; may contain private trial state)
 /ops/dev/
