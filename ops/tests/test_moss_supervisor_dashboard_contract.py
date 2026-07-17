@@ -18,6 +18,6 @@ programs = {
 
 assert programs == {"moss-gateway", "moss-webui"}, programs
 assert "moss-dashboard" not in programs
-assert parser["program:moss-gateway"]["command"].endswith("hermes gateway run")
+assert parser["program:moss-gateway"]["command"] == "/opt/hermes/.venv/bin/hermes -p moss gateway run"
 assert parser["program:moss-webui"]["command"] == "/opt/hermes/.venv/bin/python /opt/hermes-webui/server.py"
 print("moss-supervisor-dashboard-contract: PASS")
