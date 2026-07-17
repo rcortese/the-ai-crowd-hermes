@@ -1,0 +1,79 @@
+diff --git a/api/profiles.py b/api/profiles.py
+index 0db9ec79..f615933d 100644
+--- a/api/profiles.py
++++ b/api/profiles.py
+@@ -1886,11 +1886,21 @@ def _with_remote_profile_proxies(rows: list[dict]) -> list[dict]:
+         proxies = profile_proxy_public_entries(get_config())
+     except Exception:
+         proxies = []
+-    # Remote profile proxies are cross-persona chat targets. Keep them at the
+-    # top of the WebUI profile selector ("personas first"), then show local
+-    # Moss profiles after them. profile_proxy_public_entries() already orders
+-    # personas within the proxy group.
+-    merged = [*proxies, *rows]
++    # Persona proxies are the canonical WebUI targets. Suppress same-named
++    # legacy local profiles so a selector key cannot resolve ambiguously.
++    proxy_names = {str(p.get('name') or '') for p in proxies}
++    moss = [p for p in rows if p.get('name') == 'moss']
++    default = [p for p in rows if p.get('name') == 'default']
++    local_modes = [
++        p for p in rows
++        if p.get('name') not in proxy_names | {'moss', 'default'}
++    ]
++    merged = [
++        *moss,
++        *sorted(proxies, key=lambda p: str(p.get('name') or '').casefold()),
++        *default,
++        *sorted(local_modes, key=lambda p: str(p.get('name') or '').casefold()),
++    ]
+     return [{**p, 'is_active': p.get('name') == active} for p in merged]
+
+
+diff --git a/tests/test_profile_proxy_jen.py b/tests/test_profile_proxy_jen.py
+index 80bd5d43..f07251ec 100644
+--- a/tests/test_profile_proxy_jen.py
++++ b/tests/test_profile_proxy_jen.py
+@@ -75,7 +75,7 @@ def test_list_profiles_includes_remote_proxy(monkeypatch, tmp_path):
+
+     names = {p["name"] for p in result}
+     assert {"default", "jen", "denholm", "roy", "richmond", "the-elders"}.issubset(names)
+-    assert [p["name"] for p in result[:6]] == ["jen", "denholm", "roy", "richmond", "the-elders", "default"]
++    assert [p["name"] for p in result[:6]] == ["denholm", "jen", "richmond", "roy", "the-elders", "default"]
+     jen = next(p for p in result if p["name"] == "jen")
+     assert jen["remote_proxy"] is True
+     assert jen["base_url"] == "http://jen:8642"
+@@ -146,12 +146,16 @@ def test_routes_proxy_resolution_uses_session_profile_before_active_fallback():
+     assert 'worker_kwargs["gateway_config"] = gateway_profile_proxy' in body
+
+
+-def test_remote_profile_proxies_are_returned_before_local_profiles(monkeypatch):
++def test_profile_selector_orders_moss_personas_default_and_local_modes(monkeypatch):
+     import api.profiles as profiles
+
+     rows = [
+-        {"name": "default", "is_active": True},
++        {"name": "triage", "is_active": False},
++        {"name": "jen", "is_active": False},
++        {"name": "default", "is_active": False},
++        {"name": "moss", "is_active": True},
+         {"name": "coder", "is_active": False},
++        {"name": "denholm", "is_active": False},
+     ]
+
+     def fake_entries(_config=None):
+@@ -160,11 +164,12 @@ def test_remote_profile_proxies_are_returned_before_local_profiles(monkeypatch):
+             {"name": "denholm", "label": "Denholm", "remote_proxy": True, "profile_kind": "remote_gateway_proxy"},
+         ]
+
+-    monkeypatch.setattr(profiles, "get_active_profile_name", lambda: "default")
++    monkeypatch.setattr(profiles, "get_active_profile_name", lambda: "moss")
+     monkeypatch.setattr("api.config.get_config", lambda: {})
+     monkeypatch.setattr("api.gateway_chat.profile_proxy_public_entries", fake_entries)
+
+     ordered = profiles._with_remote_profile_proxies(rows)
+
+-    assert [p["name"] for p in ordered[:4]] == ["jen", "denholm", "default", "coder"]
+-    assert ordered[2]["is_active"] is True
++    assert [p["name"] for p in ordered] == ["moss", "denholm", "jen", "default", "coder", "triage"]
++    assert ordered[0]["is_active"] is True
++    assert len({p["name"] for p in ordered}) == len(ordered)
