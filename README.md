@@ -1,96 +1,135 @@
 # The AI Crowd Hermes
 
-Public scaffold for running The AI Crowd agents on Hermes Agent with per-agent homes, images, tool inventories, capability examples, and validation gates.
+The AI Crowd Hermes é um laboratório público para rodar um pequeno grupo de assistentes especializados sobre Hermes Agent.
 
-## What this repository is
+A ideia é simples: cada assistente tem uma função clara, um espaço próprio de execução, limites explícitos de autoridade e uma forma padronizada de pedir ajuda, transferir trabalho e devolver resultado para outro assistente ou para o operador.
 
-- A public, reproducible scaffold for Hermes-based agent containers.
-- A safe architecture and validation workspace for Moss in the Hermes runtime.
-- A template that defines public contracts, examples, and policy boundaries.
+Este repositório guarda a parte pública e reproduzível desse sistema: contratos, imagens, Compose, exemplos, schemas, políticas e testes. A parte privada — credenciais, memória, histórico, tokens, rotas reais, chaves e detalhes de infraestrutura — fica fora do git público.
 
-## What this repository is not
+## O que este projeto faz
 
-- It is not a private deployment checkout.
-- It is not full OpenClaw runtime parity.
-- It does not contain credentials, provider/OAuth state, session history, private memory, real hostnames, private network details, SSH keys, Docker socket mounts, or reverse-proxy credentials.
+- Define assistentes com responsabilidades diferentes, em vez de um único agente genérico.
+- Roda esses assistentes como serviços separados, com homes, workspaces e contratos próprios.
+- Mantém um canal compartilhado para handoffs, incidentes, artefatos e coordenação entre assistentes.
+- Usa schemas e testes para validar mensagens, exemplos, permissões, mounts e limites de segurança.
+- Separa claramente o que pode ser público do que pertence a uma implantação privada.
+- Oferece um ponto de partida prático para evoluir um sistema de assistência pessoal com especialistas colaborando entre si.
 
-## Current status
+## Assistentes modelados aqui
 
-- MVP stack: `moss` is the default-enabled scaffold service; this is not a production-live/cutover declaration. `richmond` and `the-elders` remain profile-gated.
-- Moss public architecture, contracts, capability/mount policy, schemas, examples, and validation scripts are present.
-- Public hardening covers digest-pinned base images, backup/restore contracts, release process, health checks, and drift detection; live cutover still requires private deployment smoke, backup evidence, and explicit approval.
-- Deployment-specific DNS, paths, reverse-proxy routes, credentials, provider auth, and per-agent runtime configs live outside this repository.
+| Assistente | Papel |
+|---|---|
+| Moss | Operações técnicas, infraestrutura, runtime, incidentes e execução técnica. |
+| Jen | Produtividade, tarefas, agenda e fluxos pessoais. |
+| Denholm | Produto, coerência entre agentes, decisões e direcionamento. |
+| Roy | Assistência pessoal direta para um usuário configurado, com recebimento, organização e encaminhamento prático de pedidos do dia a dia. |
+| Richmond | Stewardship de arquivo e organização de materiais. |
+| The Elders | Respostas preparadas a partir de pacotes aprovados e escopo restrito. |
 
-## Start here
+Os papéis são intencionais. Quando um assunto pertence a outro assistente, o sistema deve encaminhar com contexto suficiente, em vez de misturar responsabilidades.
 
-1. Read the documentation index: [`docs/README.md`](docs/README.md).
-2. Review the public architecture: [`docs/architecture/system-overview.md`](docs/architecture/system-overview.md).
-3. Review deployment posture: [`docs/PRODUCTION.md`](docs/PRODUCTION.md), [`docs/HARDENING.md`](docs/HARDENING.md), and [`docs/VALIDATION.md`](docs/VALIDATION.md).
-4. Run the public-safe validation entrypoint:
+## Como a colaboração funciona
 
-   ```bash
-   ./tests/run-all.sh
-   ```
+O projeto inclui um contrato canônico de handoff em `schemas/the-ai-crowd-handoff.schema.json` e uma implementação pública em `shared/protocol/`.
 
-## Layout
+Um handoff registra:
+
+- quem está pedindo;
+- quem deve receber;
+- qual domínio é responsável;
+- quem decide;
+- quem executa;
+- qual é o objetivo;
+- quais artefatos acompanham o pedido;
+- qual retorno é esperado;
+- qual classe de privacidade se aplica.
+
+Hoje o canal público validado é baseado em arquivos compartilhados sob `/mnt/hermes-shared/handoffs`. O Compose também inclui NATS como infraestrutura de mensageria para evolução do barramento interno, sem exigir que o README prometa uma implantação privada específica.
+
+## Estrutura do repositório
 
 ```text
-ops/
-  images/                 # Public Docker image definitions
-  manifests/              # Installed-tool inventories and capability examples
-  policies/               # Capability, mount, and private-overlay policy
-agents/
-  public/
-    moss/                 # Moss public contract, wrappers, tests, templates
-    richmond/             # Richmond public contract, profile-gated
-    the-elders/           # The Elders public contract, profile-gated
-  private/                # Ignored private workspace slots per agent
-runtime/                  # Ignored per-agent runtime homes, e.g. runtime/moss-home
-state/shared/             # Ignored shared handoff state for deployments
-schemas/                  # Public JSON schema contracts
-examples/                 # Public sample cards/handoffs/review gates
-docs/                     # Runbooks, architecture, operations, decisions
-tests/                    # Public-safe validation and smoke scripts
+agents/public/          Contratos públicos de cada assistente
+agents/private/         Espaços privados ignorados pelo git
+runtime/                Homes locais de runtime ignoradas pelo git
+shared/protocol/        Biblioteca e CLI de handoff entre assistentes
+schemas/                Schemas JSON para contratos e exemplos
+examples/               Exemplos públicos de handoff, kanban e review gates
+ops/images/             Dockerfiles dos assistentes
+ops/manifests/          Inventários de ferramentas e exemplos de capacidade
+ops/policies/           Políticas de mounts, capacidades e overlays privados
+docs/                   Arquitetura, validação, produção e runbooks
+tests/                  Testes públicos e verificações de segurança
+compose.yaml            Stack local/base dos serviços
 ```
 
-## Runbooks and indexes
+## Runtime atual
 
-- Documentation index: [`docs/README.md`](docs/README.md)
-- Production MVP template: [`docs/PRODUCTION.md`](docs/PRODUCTION.md)
-- Rollback template: [`docs/ROLLBACK.md`](docs/ROLLBACK.md)
-- Hardening backlog: [`docs/HARDENING.md`](docs/HARDENING.md)
-- Validation checks: [`docs/VALIDATION.md`](docs/VALIDATION.md)
-- Backup and restore: [`docs/operations/backup-restore.md`](docs/operations/backup-restore.md)
-- Release process: [`docs/operations/release-process.md`](docs/operations/release-process.md)
-- Drift detection: [`docs/operations/drift-detection.md`](docs/operations/drift-detection.md)
-- Cutover checklist: [`docs/operations/cutover-checklist.md`](docs/operations/cutover-checklist.md)
-- Capability lanes: [`docs/operations/capability-lanes.md`](docs/operations/capability-lanes.md)
-- Private mount boundary: [`docs/operations/private-mount-boundary.md`](docs/operations/private-mount-boundary.md)
-- OpenClaw transition support: [`docs/operations/openclaw-transition.md`](docs/operations/openclaw-transition.md)
-- Migration viability: [`docs/migration-viability.md`](docs/migration-viability.md)
+O `compose.yaml` descreve uma stack com:
 
-## Deploy template
+- serviços Hermes separados para Moss, Jen, Denholm, Roy, Richmond e The Elders;
+- homes de runtime por assistente em `runtime/<assistente>-home`;
+- contratos públicos montados como somente leitura;
+- workspaces privados montados como leitura/escrita;
+- estado compartilhado para handoffs;
+- healthchecks por serviço;
+- NATS para suporte de mensageria interna;
+- redes separadas para tráfego interno, proxy privado e LLM local.
 
-Use a private deployment checkout and provide environment-specific paths, DNS, credentials, environment files, and reverse-proxy configuration outside git. The canonical deployment uses a single `compose.yaml`; do not require a second Compose file for normal operation.
+Moss também possui uma imagem all-in-one para o runtime operacional, com dashboard, gateway, WebUI e webhook no mesmo serviço. Os outros assistentes rodam com contratos e gateways próprios conforme sua função.
 
-`moss` joins an external reverse-proxy network through the public-safe `private_proxy` network definition. The default external Docker network name is `network_default`; deployments that use a different proxy network can set `THE_AI_CROWD_PROXY_NETWORK` in their ignored `.env` file without adding another Compose file.
+## Comece por aqui
+
+Para entender o projeto:
+
+1. Leia o índice de documentação: `docs/README.md`.
+2. Leia a visão de arquitetura: `docs/architecture/system-overview.md`.
+3. Leia o modelo de containers: `docs/architecture/agent-container-model.md`.
+4. Leia a fronteira público/privado: `docs/architecture/public-private-boundary.md`.
+5. Leia os contratos dos assistentes em `agents/public/<assistente>/`.
+
+Para validar a parte pública:
 
 ```bash
-cd <deployment-checkout>
+./tests/run-all.sh
+```
+
+Esse comando executa validações de contratos, schemas, exemplos, políticas de mounts, scans contra vazamento de estado privado e renderização básica do Compose. Ele é pensado para ser seguro em um checkout público e não deve exigir credenciais privadas.
+
+## Rodando localmente
+
+Uma implantação real precisa de arquivos privados fora do git público, especialmente em `state/secrets/`, `agents/private/` e `runtime/`.
+
+Fluxo básico esperado em um checkout de implantação:
+
+```bash
 docker compose config
 docker compose up -d --build moss
 docker compose ps
 ```
 
-Optional profiles, not yet production-enabled:
+Para subir outros assistentes, revise antes os arquivos privados, secrets, variáveis de ambiente, redes externas e políticas de acesso exigidas pela sua instalação.
 
-```bash
-COMPOSE_PROFILES=richmond docker compose up -d --build richmond
-COMPOSE_PROFILES=the-elders docker compose up -d --build the-elders
-```
+## Limites importantes
 
-## Important boundaries
+Este repositório não contém e não deve conter:
 
-`moss` gets a broader ops image, but installed tools do not imply authority. `richmond` gets a constrained ArchiveOps-oriented image. `the-elders` is intentionally packet-only/minimal.
+- credenciais;
+- tokens de provedores;
+- estado OAuth;
+- histórico de sessões;
+- memória privada;
+- chaves SSH;
+- hostnames reais;
+- detalhes de rede privada;
+- rotas de proxy reais;
+- mounts amplos do host;
+- Docker socket liberado por padrão.
 
-The Hermes dashboard binds inside Docker with `--insecure` for container networking. Production exposure must be handled by private deployment config. Do not add host `ports:`, public DNS, reverse-proxy routes, credentials, SSH keys, Docker socket mounts, or host-control mounts in this scaffold without a separate security review.
+Ferramenta instalada não é permissão concedida. Uma capacidade só deve ser considerada ativa quando houver configuração privada, credencial, mount, wrapper, política e evidência de validação compatíveis.
+
+## Para quem este repositório é útil
+
+Este projeto é útil para quem quer experimentar uma arquitetura de assistentes pessoais especializados, com coordenação prática entre agentes, limites verificáveis e um caminho limpo entre protótipo público e implantação privada.
+
+Ele não tenta ser um produto fechado. É um scaffold vivo: pequeno o bastante para auditar, explícito o bastante para evoluir e cuidadoso o bastante para não confundir demonstração pública com acesso real a dados privados.

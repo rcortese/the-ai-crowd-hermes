@@ -2,6 +2,7 @@
 set -euo pipefail
 
 python3 - <<'PY'
+import re
 from pathlib import Path
 
 root = Path('.')
@@ -21,37 +22,46 @@ text_by_path = {p: p.read_text(encoding='utf-8') for p in roy_files}
 combined = '\n'.join(text_by_path.values()).lower()
 
 required = [
-    'viviane',
     'personal assistant',
+    'configured trusted user',
     'brazilian portuguese',
-    'telegram',
+    'configured chat channel',
     'one batch',
     'process each invoice independently',
     'never silently ignore earlier images',
     'never silently keep only the last',
     'google sheets',
     '44-digit access key',
-    'ask viviane which spreadsheet',
+    'ask which spreadsheet',
     'do not claim a google write',
 ]
 for phrase in required:
     if phrase not in combined:
         raise SystemExit(f'roy_contract_failed: missing required phrase: {phrase!r}')
 
-legacy_forbidden = [
+forbidden_phrases = [
     'live-input and intake triage specialist',
     'roy turns live input into a safe routing packet',
     'roy classifies inbound material and prepares handoffs',
     'treat telegram as an intake surface',
     'handoff — concise packet',
 ]
-for phrase in legacy_forbidden:
+for phrase in forbidden_phrases:
     if phrase in combined:
-        raise SystemExit(f'roy_contract_failed: legacy wording still present: {phrase!r}')
+        raise SystemExit(f'roy_contract_failed: forbidden public wording still present: {phrase!r}')
+
+forbidden_patterns = [
+    (r'@[a-z0-9_]{6,}', 'real channel handle'),
+    (r'legacy\s+' + r'open' + r'claw|\bopen' + r'claw\b', 'legacy migration wording'),
+    (r'\b[a-z]+\s+is\s+the\s+only\s+intended\s+day-to-day\s+user\b', 'named day-to-day user'),
+]
+for pattern, label in forbidden_patterns:
+    if re.search(pattern, combined, re.IGNORECASE):
+        raise SystemExit(f'roy_contract_failed: forbidden public {label} still present')
 
 soul = text_by_path[root / 'agents/public/roy/SOUL.md'].lower()
 if 'bad style:' not in soul or 'handoff' not in soul:
-    raise SystemExit('roy_contract_failed: SOUL must explicitly teach Roy not to say handoff to Viviane')
+    raise SystemExit('roy_contract_failed: SOUL must explicitly teach Roy not to say handoff to the user')
 
 operating = text_by_path[root / 'agents/public/roy/docs/operating-model.md'].lower()
 for phrase in ['count every received image', 'preserve all attachments', 'one outcome per file', 'saved', 'duplicate', 'needs_clearer_image']:
