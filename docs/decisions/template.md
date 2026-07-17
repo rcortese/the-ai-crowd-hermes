@@ -7,11 +7,13 @@
 - **Effective date:** `pending acceptance`
 - **Tier:** `<T1|T2|T3>`
 - **Scope:** `<shared or persona-local scope>`
+- **Decision scope key:** `<stable exact key for mechanical duplicate detection>`
 - **Accountable owner:** `<owner>`
 - **Technical steward:** `<steward or not-applicable>`
 - **Reserved authority:** `<authority and outcome or not-applicable>`
 - **Materially affected owners:** `<owners or none>`
 - **Acceptance outcomes:** `<explicit outcome for every required owner>`
+- **Independent review:** `<reviewer and outcome for T3; not-applicable otherwise>`
 - **Supersedes:** `<IDs or none>`
 - **Superseded by:** `<ID or none>`
 

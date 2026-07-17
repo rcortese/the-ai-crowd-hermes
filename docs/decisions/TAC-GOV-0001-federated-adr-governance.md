@@ -7,11 +7,13 @@
 - **Effective date:** 2026-07-14
 - **Tier:** `T2`
 - **Scope:** shared The AI Crowd governance contract
+- **Decision scope key:** `shared.adr-governance`
 - **Accountable owner:** Denholm (shared product/contract stewardship)
 - **Technical steward:** Moss (schema, template, index, and validator only)
 - **Reserved authority:** Rodolfo — `approved` by explicit operator instruction on 2026-07-14
 - **Materially affected owners:** Denholm, Jen, Moss, Richmond, Roy, The Elders
 - **Acceptance outcomes:** Denholm — `consent`; Jen — `consent`; Moss — `consent` limited to technical stewardship; Richmond — `consent`; Roy — `consent`; The Elders — `consent`
+- **Independent review:** `not-applicable` (T2)
 - **Ratified normative artifact:** SHA-256 `e66f371606aa1aed0989e94687c554570b79e152fd2784fd3a7626cd38cf8e73`; all outcomes recorded 2026-07-14
 - **Supersedes:** none
 - **Superseded by:** none
