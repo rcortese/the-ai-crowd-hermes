@@ -43,6 +43,7 @@ RUN cd /opt/hermes \
 COPY ops/hermes-webui-overrides/moss-agent-health-auth.patch /tmp/moss-agent-health-auth.patch
 COPY ops/hermes-webui-overrides/moss-profile-selector-order.patch /tmp/moss-profile-selector-order.patch
 COPY ops/hermes-webui-overrides/moss-remote-proxy-routing.patch /tmp/moss-remote-proxy-routing.patch
+COPY ops/hermes-webui-overrides/moss-terminal-state-false-no-response.patch /tmp/moss-terminal-state-false-no-response.patch
 
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
@@ -55,7 +56,9 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && git apply /tmp/moss-profile-selector-order.patch \
     && git apply --check /tmp/moss-remote-proxy-routing.patch \
     && git apply /tmp/moss-remote-proxy-routing.patch \
-    && test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf '%s\n' api/agent_health.py api/gateway_chat.py api/profiles.py api/routes.py static/ui.js tests/test_agent_health_remote.py tests/test_issue716_agent_heartbeat.py tests/test_profile_proxy_jen.py | LC_ALL=C sort)" \
+    && git apply --check /tmp/moss-terminal-state-false-no-response.patch \
+    && git apply /tmp/moss-terminal-state-false-no-response.patch \
+    && test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf '%s\n' api/agent_health.py api/gateway_chat.py api/profiles.py api/routes.py api/streaming.py static/ui.js tests/test_agent_health_remote.py tests/test_issue5141_terminal_failure_transcript_evaluator.py tests/test_issue716_agent_heartbeat.py tests/test_profile_proxy_jen.py | LC_ALL=C sort)" \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
     && cd /opt/hermes \
     && if [ -f tests/hermes_cli/test_auth_commands.py ]; then \
@@ -76,6 +79,7 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
         tests/test_remote_cron_proxy_guard.py \
         tests/test_webui_gateway_chat_backend.py \
         tests/test_stage364_opus_live_sse_event_id.py \
+        tests/test_issue5141_terminal_failure_transcript_evaluator.py \
         tests/test_session_channel_option_x.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \

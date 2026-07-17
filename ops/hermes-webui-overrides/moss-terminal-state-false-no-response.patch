@@ -1,0 +1,78 @@
+diff --git a/api/streaming.py b/api/streaming.py
+index 3425f1cb..9ded04eb 100644
+--- a/api/streaming.py
++++ b/api/streaming.py
+@@ -5325,8 +5325,18 @@ def _turn_transcript_lacks_final_assistant_answer(
+     merged_messages = list(merged_messages or [])
+     previous_display = list(previous_display or [])
+     current_user_idx = _find_current_user_turn(merged_messages, msg_text)
+-    if current_user_idx is None or current_user_idx < len(previous_display):
+-        # The active turn lives after the durable transcript boundary. If the
++    checkpointed_current_user = bool(
++        current_user_idx is not None
++        and current_user_idx == len(previous_display) - 1
++        and previous_display
++        and _message_identity(merged_messages[current_user_idx])
++        == _message_identity(previous_display[-1])
++    )
++    if current_user_idx is None or (
++        current_user_idx < len(previous_display) and not checkpointed_current_user
++    ):
++        # The active turn lives after the durable transcript boundary unless an
++        # eager checkpoint already persisted it as the final display row. If the
+         # merged display only exposes an older user row, materialize the pending
+         # prompt so a replayed assistant row cannot satisfy the wrong turn.
+         pending_user = {
+diff --git a/tests/test_issue5141_terminal_failure_transcript_evaluator.py b/tests/test_issue5141_terminal_failure_transcript_evaluator.py
+index 48da1e72..f58ff862 100644
+--- a/tests/test_issue5141_terminal_failure_transcript_evaluator.py
++++ b/tests/test_issue5141_terminal_failure_transcript_evaluator.py
+@@ -90,6 +90,48 @@ def test_turn_evaluator_materializes_pending_user_after_display_boundary():
+     ) is True
+ 
+ 
++def test_historical_same_text_user_is_not_treated_as_eager_checkpoint():
++    """An older matching prompt cannot satisfy the current turn boundary."""
++    previous_display = [
++        {"role": "user", "content": "follow up"},
++        {"role": "assistant", "content": "older answer"},
++    ]
++    merged = list(previous_display)
++
++    assert streaming._turn_transcript_lacks_final_assistant_answer(
++        merged,
++        previous_display,
++        "follow up",
++        source="webui",
++    ) is True
++
++
++def test_eager_checkpointed_current_user_with_final_answer_is_not_silent_failure():
++    """A durable current-user checkpoint must remain the current turn boundary."""
++    previous_display = [{"role": "user", "content": "follow up"}]
++    previous_context = []
++    result_messages = [
++        {"role": "user", "content": "follow up"},
++        {"role": "assistant", "content": "done"},
++    ]
++
++    merged = streaming._merge_display_messages_after_agent_result(
++        previous_display,
++        previous_context,
++        result_messages,
++        "follow up",
++        source="webui",
++    )
++
++    assert [message["role"] for message in merged] == ["user", "assistant"]
++    assert streaming._turn_transcript_lacks_final_assistant_answer(
++        merged,
++        previous_display,
++        "follow up",
++        source="webui",
++    ) is False
++
++
+ def test_merged_wrapper_delegates_to_turn_evaluator():
+     calls = []
+ 
