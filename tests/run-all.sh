@@ -51,8 +51,8 @@ if ! docker compose version >/dev/null 2>&1; then
   fi
 fi
 
-run env BACKUP_ROOT=/PUBLIC_PLACEHOLDER/backups "${compose_cmd[@]}" -f compose.yaml config >/dev/null
-HERMES_EXAMPLE_PROJECTS_ROOT=/PUBLIC_PLACEHOLDER/projects BACKUP_ROOT=/PUBLIC_PLACEHOLDER/backups \
+run "${compose_cmd[@]}" -f compose.yaml config >/dev/null
+HERMES_EXAMPLE_PROJECTS_ROOT=/PUBLIC_PLACEHOLDER/projects \
   run "${compose_cmd[@]}" -f compose.yaml -f compose.project-mount.example.yaml config >/dev/null
 
 echo "run_all_ok"
