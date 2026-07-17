@@ -18,6 +18,8 @@ run tests/image-pin.sh
 run tests/health-check.sh
 run tests/drift-detection.sh
 run tests/validate-schemas.sh
+run tests/validate-adrs.contract.sh
+run tests/validate-adrs.py
 run tests/release-scan.sh
 run tests/private-state-policy.sh
 run tests/private-mount-boundary.sh
@@ -49,8 +51,8 @@ if ! docker compose version >/dev/null 2>&1; then
   fi
 fi
 
-run "${compose_cmd[@]}" -f compose.yaml config >/dev/null
-HERMES_EXAMPLE_PROJECTS_ROOT=/PUBLIC_PLACEHOLDER/projects \
+run env BACKUP_ROOT=/PUBLIC_PLACEHOLDER/backups "${compose_cmd[@]}" -f compose.yaml config >/dev/null
+HERMES_EXAMPLE_PROJECTS_ROOT=/PUBLIC_PLACEHOLDER/projects BACKUP_ROOT=/PUBLIC_PLACEHOLDER/backups \
   run "${compose_cmd[@]}" -f compose.yaml -f compose.project-mount.example.yaml config >/dev/null
 
 echo "run_all_ok"

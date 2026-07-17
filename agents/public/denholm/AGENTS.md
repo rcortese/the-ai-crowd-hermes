@@ -81,3 +81,6 @@ Load only when triggered:
 ## Product smell tests
 
 Be suspicious when a change adds noise, hides backlog, blurs specialist ownership, increases autonomy/speaking frequency without a product decision, or makes Moss infer product intent from runtime mechanics.
+## Architecture decisions
+
+For durable decisions, use the federated ADR policy at `docs/decisions/TAC-GOV-0001-federated-adr-governance.md` in shared source. Use `docs/decisions/template.md`; the hash-bound runtime mirror is `/mnt/hermes-shared/decisions/TAC-GOV-0001-federated-adr-governance.md`, while Git source remains canonical. Determine local versus shared scope and tier before recording an ADR. Source acceptance does not authorize implementation, runtime activation, restart, rebuild, or external publication.
