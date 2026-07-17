@@ -41,6 +41,29 @@ if grep -Eq "\[permfix\] drift_count=[1-9][0-9]*|\[permfix\] shared_kanban_drift
 fi
 echo "agent_permission_policy_ok"
 
+for forbidden in \
+  "    - '9123'"; do
+  if grep -Fq "$forbidden" compose.yaml; then
+    echo "health_check_failed: Roy isolation forbids compose surface: $forbidden" >&2
+    exit 1
+  fi
+done
+
+if ! grep -Fq 'HERMES_WEBUI_PROFILE_PROXY_ROY_BASE_URL:' compose.yaml; then
+  echo 'health_check_failed: Moss must retain the one-way operator proxy to Roy' >&2
+  exit 1
+fi
+
+if awk '/^  roy:/{in_roy=1; next} in_roy && /^  [a-zA-Z0-9_-]+:/{in_roy=0} in_roy' compose.yaml | grep -Fq 'HERMES_WEBUI_PROFILE_PROXY_'; then
+  echo 'health_check_failed: Roy must not advertise profile proxies to other personas' >&2
+  exit 1
+fi
+
+if ! grep -Fq 'HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/roy' compose.yaml; then
+  echo 'health_check_failed: Roy must use isolated HERMES_KANBAN_HOME=/mnt/hermes-shared/kanban/roy' >&2
+  exit 1
+fi
+
 for forbidden in 'HERMES_DASHBOARD' 'command: ["hermes", "dashboard"'; do
   if grep -Fq "$forbidden" compose.yaml; then
     echo "health_check_failed: compose must not own Hermes runtime command/env: $forbidden" >&2
