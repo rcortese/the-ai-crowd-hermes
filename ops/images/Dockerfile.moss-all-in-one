@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 ARG MOSS_BASE_IMAGE=the-ai-crowd/moss:local
 FROM ${MOSS_BASE_IMAGE}
 
@@ -17,8 +18,8 @@ RUN apt-get update \
 
 # Clash Royale scheduled screening uses Playwright from Moss cron.
 # Keep the Node package and browser in the image, not in ephemeral runtime state.
-COPY agents/private/moss/projects/clash-royale-war-bot/package.json \
-     agents/private/moss/projects/clash-royale-war-bot/package-lock.json \
+COPY --from=clash_royale_build_input package.json \
+     package-lock.json \
      /opt/clash-royale-war-bot-node/
 RUN cd /opt/clash-royale-war-bot-node \
     && npm ci --omit=dev \
