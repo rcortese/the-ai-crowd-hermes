@@ -50,10 +50,10 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && test "$(git rev-parse HEAD)" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
     && test "${HERMES_WEBUI_REV}" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
     && git apply --check /tmp/moss-agent-health-auth.patch \
-    && git apply --check /tmp/moss-profile-selector-order.patch \
-    && git apply --check /tmp/moss-remote-proxy-routing.patch \
     && git apply /tmp/moss-agent-health-auth.patch \
+    && git apply --check /tmp/moss-profile-selector-order.patch \
     && git apply /tmp/moss-profile-selector-order.patch \
+    && git apply --check /tmp/moss-remote-proxy-routing.patch \
     && git apply /tmp/moss-remote-proxy-routing.patch \
     && test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf '%s\n' api/agent_health.py api/gateway_chat.py api/profiles.py api/routes.py static/ui.js tests/test_agent_health_remote.py tests/test_issue716_agent_heartbeat.py tests/test_profile_proxy_jen.py | LC_ALL=C sort)" \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
