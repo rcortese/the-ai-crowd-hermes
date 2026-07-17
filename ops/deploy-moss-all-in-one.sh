@@ -113,7 +113,7 @@ docker exec "$CONTAINER" sh -lc '
   if [ -e /opt/hermes-webui/api/_version.py ]; then printf "webui="; cat /opt/hermes-webui/api/_version.py; fi
   wget -qO- http://127.0.0.1:8644/health >/dev/null
   wget -qO- http://127.0.0.1:8787/health >/dev/null
-  wget -qO- http://127.0.0.1:9119/api/status >/dev/null
+  wget -qO- http://127.0.0.1:8787/api/dashboard/status >/dev/null
 '
 
 log 'validating host-visible gateway endpoint'
