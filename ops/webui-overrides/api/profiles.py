@@ -186,10 +186,10 @@ def _resolve_base_hermes_home() -> Path:
       3. ~/.hermes (always-correct default)
 
     The bug this prevents: if HERMES_HOME has already been mutated to
-    /home/user/.hermes/profiles/webui (by init_profile_state at startup),
+    $HOME/.hermes/profiles/webui (by init_profile_state at startup),
     reading it here would make _DEFAULT_HERMES_HOME point to that subdir,
     causing switch_profile('webui') to look for
-    /home/user/.hermes/profiles/webui/profiles/webui — which doesn't exist.
+    $HOME/.hermes/profiles/webui/profiles/webui — which doesn't exist.
 
     HERMES_BASE_HOME normally points at the base home already, but isolated
     single-profile WebUI deployments can provide /base/profiles/<name> there as

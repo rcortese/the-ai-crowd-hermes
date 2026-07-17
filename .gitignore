@@ -13,6 +13,7 @@
 *.env
 !.env.example
 /agents/private/
+/private/
 /runtime/
 /state/
 /secrets/

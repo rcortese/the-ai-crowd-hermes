@@ -81,7 +81,7 @@ services:
       - ./agents/public/moss:/agents/moss/public:ro
       - ./agents/private/moss:/agents/moss/private:rw
       - ./state/shared:/mnt/hermes-shared
-      - /mnt/user/backups/the-ai-crowd:/mnt/user/backups/the-ai-crowd:rw
+      - ${HERMES_BACKUP_ROOT:-/backup}:/backup:rw
     networks:
       internal:
       private_proxy:

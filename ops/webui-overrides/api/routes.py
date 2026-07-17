@@ -16580,7 +16580,7 @@ def _handle_file_open_vscode(handler, body):
 
         vscode:
           command: code          # executable on PATH; defaults to "code"
-          host_path_prefix: /home/user/projects       # Docker host path
+          host_path_prefix: $HOME/projects       # Docker host path
           container_path_prefix: /app/workspace       # matching container path
 
     If ``host_path_prefix`` and ``container_path_prefix`` are both set,

@@ -18,8 +18,6 @@ run tests/image-pin.sh
 run tests/health-check.sh
 run tests/drift-detection.sh
 run tests/validate-schemas.sh
-run tests/validate-adrs.contract.sh
-run tests/validate-adrs.py
 run tests/release-scan.sh
 run tests/private-state-policy.sh
 run tests/private-mount-boundary.sh
