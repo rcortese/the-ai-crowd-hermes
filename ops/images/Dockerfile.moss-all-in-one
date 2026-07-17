@@ -40,10 +40,19 @@ RUN cd /opt/hermes \
         plugins/kanban/dashboard/plugin_api.py
 
 
+COPY ops/hermes-webui-overrides/moss-agent-health-auth.patch /tmp/moss-agent-health-auth.patch
+COPY ops/hermes-webui-overrides/moss-profile-selector-order.patch /tmp/moss-profile-selector-order.patch
+
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
-    && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
+    && test "$(git rev-parse HEAD)" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
+    && test "${HERMES_WEBUI_REV}" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
+    && git apply --check /tmp/moss-agent-health-auth.patch \
+    && git apply --check /tmp/moss-profile-selector-order.patch \
+    && git apply /tmp/moss-agent-health-auth.patch \
+    && git apply /tmp/moss-profile-selector-order.patch \
+    && test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf '%s\n' api/agent_health.py api/profiles.py static/ui.js tests/test_agent_health_remote.py tests/test_issue716_agent_heartbeat.py tests/test_profile_proxy_jen.py | LC_ALL=C sort)" \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
     && cd /opt/hermes \
     && if [ -f tests/hermes_cli/test_auth_commands.py ]; then \
@@ -55,8 +64,10 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
         /opt/hermes/.venv/bin/python3 -c 'import importlib; [importlib.import_module(m) for m in ("hermes_cli.auth", "hermes_cli.config", "agent.credential_pool", "gateway.run")]; print("agent_import_smoke_ok")'; \
        fi \
     && cd /opt/hermes-webui \
-    && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py \
+    && /opt/hermes/.venv/bin/python3 -m py_compile api/agent_health.py api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py api/gateway_chat.py api/profiles.py \
     && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
+        tests/test_agent_health_remote.py \
+        tests/test_issue716_agent_heartbeat.py \
         tests/test_kanban_bridge.py \
         tests/test_profile_proxy_jen.py \
         tests/test_remote_cron_proxy_guard.py \

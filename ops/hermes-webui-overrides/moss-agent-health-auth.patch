@@ -1,0 +1,461 @@
+diff --git a/api/agent_health.py b/api/agent_health.py
+index 5128c050..f558fca3 100644
+--- a/api/agent_health.py
++++ b/api/agent_health.py
+@@ -348,7 +348,19 @@ def _remote_gateway_base_url() -> str | None:
+     return None
+
+
+-def _http_probe(url: str, timeout_s: float) -> tuple[bool, int | None, str | None, bytes | None]:
++def _gateway_api_key() -> str:
++    """Return the configured gateway key without exposing it to probe results."""
++    specific_key = os.environ.get("HERMES_WEBUI_GATEWAY_API_KEY", "").strip()
++    if specific_key:
++        return specific_key
++    return os.environ.get("API_SERVER_KEY", "").strip()
++
++
++def _http_probe(
++    url: str,
++    timeout_s: float,
++    api_key: str = "",
++) -> tuple[bool, int | None, str | None, bytes | None]:
+     """GET ``url`` and return (ok, status_code, error_name, body).
+
+     ``ok`` is True only for a 2xx response. 5xx and network errors are not OK.
+@@ -357,6 +369,9 @@ def _http_probe(url: str, timeout_s: float) -> tuple[bool, int | None, str | Non
+     ``body`` is the raw response bytes for 2xx responses, None otherwise.
+     """
+     req = urllib_request.Request(url, method="GET")
++    if api_key:
++        # urllib does not copy unredirected headers to redirected requests.
++        req.add_unredirected_header("Authorization", f"Bearer {api_key}")
+     try:
+         with urllib_request.urlopen(req, timeout=timeout_s) as resp:  # noqa: S310 - trusted env var URL
+             status = getattr(resp, "status", None) or resp.getcode()
+@@ -390,10 +405,15 @@ def _probe_remote_gateway(base_url: str, *, now: float | None = None) -> dict[st
+             # actually re-hitting the gateway.
+             return {**cached, "checked_at": _checked_at()}
+
++    api_key = _gateway_api_key()
+     last_status: int | None = None
+     last_error: str | None = None
+     for path in _REMOTE_PROBE_PATHS:
+-        ok, status, err, body = _http_probe(base_url + path, _REMOTE_PROBE_TIMEOUT_S)
++        ok, status, err, body = _http_probe(
++            base_url + path,
++            _REMOTE_PROBE_TIMEOUT_S,
++            api_key,
++        )
+         if ok:
+             details: dict[str, Any] = {
+                 "state": "alive",
+@@ -408,6 +428,24 @@ def _probe_remote_gateway(base_url: str, *, now: float | None = None) -> dict[st
+                         details["gateway_state"] = data["gateway_state"]
+                 except (json.JSONDecodeError, UnicodeDecodeError):
+                     pass
++            if path == "/health/detailed" and "gateway_state" in details:
++                details["telemetry_state"] = "detailed"
++            elif path == "/health/detailed":
++                details.update(
++                    {
++                        "reason": "remote_gateway_detailed_unverified",
++                        "telemetry_state": "detailed_unverified",
++                        "degraded": True,
++                    }
++                )
++            else:
++                details.update(
++                    {
++                        "reason": "remote_gateway_basic_fallback",
++                        "telemetry_state": "basic_fallback",
++                        "degraded": True,
++                    }
++                )
+             # An over-cap body (len > limit, i.e. the +1 sentinel byte was read)
+             # is treated as "alive but no parseable gateway_state" — we still
+             # report the gateway as up, just without the detailed state.
+diff --git a/static/ui.js b/static/ui.js
+index e4513f55..c56fef1d 100644
+--- a/static/ui.js
++++ b/static/ui.js
+@@ -8068,10 +8068,18 @@ function _showAgentHealthAlert(payload){
+   const banner=$('agentHealthBanner');
+   const title=$('agentHealthTitle');
+   const details=$('agentHealthDetails');
++  const restartBtn=$('btnRestartGateway');
+   if(!banner) return;
+-  if(title) title.textContent='Hermes agent is not responding';
+-  const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
+-  if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
++  const degraded=payload&&payload.alive===true&&payload.details&&payload.details.degraded===true;
++  if(restartBtn){restartBtn.hidden=!!degraded;restartBtn.disabled=!!degraded;}
++  if(degraded){
++    if(title) title.textContent='Gateway telemetry is degraded';
++    if(details) details.textContent='The gateway is reachable, but detailed telemetry is unavailable. Restart is disabled because reachability is healthy.';
++  }else{
++    if(title) title.textContent='Hermes agent is not responding';
++    const state=payload&&payload.details&&payload.details.gateway_state?` State: ${payload.details.gateway_state}.`:'';
++    if(details) details.textContent=`Gateway heartbeat failed.${state} Messages may not be delivered until it comes back.`;
++  }
+   banner.hidden=false;
+   banner.classList.add('visible');
+ }
+@@ -8110,6 +8118,11 @@ async function pollAgentHealth(){
+   if(Date.now() - _lastGatewayRestartTime < 15000) return;
+   try{
+     const payload=await api('/api/health/agent',{timeoutToast:false});
++    if(payload.alive === true && payload.details && payload.details.degraded === true){
++      _agentHealthLastState='degraded';
++      _showAgentHealthAlert(payload);
++      return;
++    }
+     if(payload.alive === true){
+       _agentHealthLastState='alive';
+       _setAgentHealthDismissed(false);
+diff --git a/tests/test_agent_health_remote.py b/tests/test_agent_health_remote.py
+index 25ba9f15..26aa9f85 100644
+--- a/tests/test_agent_health_remote.py
++++ b/tests/test_agent_health_remote.py
+@@ -2,13 +2,20 @@
+ from __future__ import annotations
+
+ import json
++import logging
++import threading
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+ from unittest import mock
++from urllib import error as urllib_error
+
+ import pytest
+
+ from api import agent_health
+
+
++_SENTINEL_KEY = "sentinel-health-auth-key-do-not-leak"
++
++
+ @pytest.fixture(autouse=True)
+ def _clear_cache():
+     agent_health._reset_remote_probe_cache_for_tests()
+@@ -48,7 +55,8 @@ def test_remote_gateway_healthy_when_200(monkeypatch):
+         payload = agent_health.build_agent_health_payload()
+
+     assert payload["alive"] is True
+-    assert payload["details"]["reason"] == "remote_gateway"
++    assert payload["details"]["reason"] == "remote_gateway_detailed_unverified"
++    assert payload["details"]["degraded"] is True
+     assert payload["details"]["status_code"] == 200
+     assert calls and calls[0].startswith("http://gateway:8080/")
+
+@@ -98,7 +106,8 @@ def test_remote_probe_result_cached_for_5s(monkeypatch):
+
+     assert first["alive"] is True
+     assert second["alive"] is True
+-    assert second["details"]["reason"] == "remote_gateway"
++    assert second["details"]["reason"] == "remote_gateway_detailed_unverified"
++    assert second["details"]["degraded"] is True
+     # Second call must NOT have hit the network.
+     assert call_count["n"] == 1
+     # checked_at is refreshed even on cache hit so the UI shows a current time.
+@@ -241,3 +250,179 @@ def test_oversized_remote_body_does_not_hang_and_skips_parse(monkeypatch):
+     assert captured_amt and all(a is not None for a in captured_amt)
+     assert payload["alive"] is True
+     assert "gateway_state" not in payload["details"]
++
++
++@pytest.mark.parametrize(
++    ("specific", "fleet", "expected"),
++    [
++        (" specific-key ", "", "specific-key"),
++        ("", " fleet-key ", "fleet-key"),
++        (" specific-key ", " fleet-key ", "specific-key"),
++        ("  ", "  ", ""),
++    ],
++)
++def test_gateway_api_key_precedence_and_stripping(monkeypatch, specific, fleet, expected):
++    monkeypatch.setenv("HERMES_WEBUI_GATEWAY_API_KEY", specific)
++    monkeypatch.setenv("API_SERVER_KEY", fleet)
++
++    assert agent_health._gateway_api_key() == expected
++
++
++@pytest.mark.parametrize("api_key", ["specific-key", "fleet-key"])
++def test_http_probe_adds_exact_unredirected_bearer_header(api_key):
++    seen = {}
++
++    def fake_urlopen(req, timeout=None):
++        seen["authorization"] = req.get_header("Authorization")
++        seen["unredirected"] = dict(req.unredirected_hdrs)
++        return _FakeResp(200, b'{"gateway_state":"running"}')
++
++    with mock.patch.object(agent_health.urllib_request, "urlopen", fake_urlopen):
++        ok, status, error, _body = agent_health._http_probe(
++            "http://gateway:8648/health/detailed", 2.0, api_key
++        )
++
++    assert (ok, status, error) == (True, 200, None)
++    assert seen["authorization"] == f"Bearer {api_key}"
++    assert seen["unredirected"]["Authorization"] == f"Bearer {api_key}"
++
++
++def test_http_probe_omits_authorization_when_key_is_empty():
++    seen = {}
++
++    def fake_urlopen(req, timeout=None):
++        seen["authorization"] = req.get_header("Authorization")
++        seen["unredirected"] = dict(req.unredirected_hdrs)
++        return _FakeResp(200)
++
++    with mock.patch.object(agent_health.urllib_request, "urlopen", fake_urlopen):
++        agent_health._http_probe("http://gateway:8648/health", 2.0, "")
++
++    assert seen["authorization"] is None
++    assert "Authorization" not in seen["unredirected"]
++
++
++def test_unredirected_authorization_is_not_forwarded_cross_origin():
++    received = {"authorization": None}
++
++    class DestinationHandler(BaseHTTPRequestHandler):
++        def do_GET(self):  # noqa: N802 - stdlib handler contract
++            received["authorization"] = self.headers.get("Authorization")
++            body = b'{"gateway_state":"running"}'
++            self.send_response(200)
++            self.send_header("Content-Type", "application/json")
++            self.send_header("Content-Length", str(len(body)))
++            self.end_headers()
++            self.wfile.write(body)
++
++        def log_message(self, *_args):
++            return
++
++    destination = ThreadingHTTPServer(("127.0.0.1", 0), DestinationHandler)
++    destination_url = f"http://127.0.0.1:{destination.server_port}/destination"
++
++    class RedirectHandler(BaseHTTPRequestHandler):
++        def do_GET(self):  # noqa: N802 - stdlib handler contract
++            self.send_response(302)
++            self.send_header("Location", destination_url)
++            self.end_headers()
++
++        def log_message(self, *_args):
++            return
++
++    redirect = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
++    threads = [
++        threading.Thread(target=destination.serve_forever, daemon=True),
++        threading.Thread(target=redirect.serve_forever, daemon=True),
++    ]
++    for thread in threads:
++        thread.start()
++    try:
++        result = agent_health._http_probe(
++            f"http://127.0.0.1:{redirect.server_port}/health/detailed",
++            2.0,
++            _SENTINEL_KEY,
++        )
++    finally:
++        redirect.shutdown()
++        destination.shutdown()
++        redirect.server_close()
++        destination.server_close()
++        for thread in threads:
++            thread.join(timeout=2)
++
++    assert result[:3] == (True, 200, None)
++    assert received["authorization"] is None
++
++
++def test_detailed_health_with_gateway_state_is_not_degraded(monkeypatch):
++    monkeypatch.setattr(agent_health, "_gateway_api_key", lambda: "specific-key")
++    monkeypatch.setattr(
++        agent_health,
++        "_http_probe",
++        lambda url, timeout, key: (True, 200, None, b'{"gateway_state":"running"}'),
++    )
++
++    payload = agent_health._probe_remote_gateway("http://gateway:8648", now=10.0)
++
++    assert payload["alive"] is True
++    assert payload["details"]["gateway_state"] == "running"
++    assert payload["details"]["telemetry_state"] == "detailed"
++    assert payload["details"].get("degraded") is not True
++
++
++def test_detailed_health_without_gateway_state_is_explicitly_degraded(monkeypatch):
++    monkeypatch.setattr(agent_health, "_gateway_api_key", lambda: "specific-key")
++    monkeypatch.setattr(
++        agent_health,
++        "_http_probe",
++        lambda url, timeout, key: (True, 200, None, b'{"status":"ok"}'),
++    )
++
++    payload = agent_health._probe_remote_gateway("http://gateway:8648", now=20.0)
++
++    assert payload["alive"] is True
++    assert payload["details"]["telemetry_state"] == "detailed_unverified"
++    assert payload["details"]["degraded"] is True
++    assert payload["details"]["reason"] == "remote_gateway_detailed_unverified"
++
++
++def test_detailed_401_then_public_health_200_is_basic_fallback(monkeypatch):
++    calls = []
++    monkeypatch.setattr(agent_health, "_gateway_api_key", lambda: "specific-key")
++
++    def fake_probe(url, timeout, key):
++        calls.append((url, key))
++        if url.endswith("/health/detailed"):
++            return False, 401, "HTTPError", None
++        return True, 200, None, b'{"status":"ok"}'
++
++    monkeypatch.setattr(agent_health, "_http_probe", fake_probe)
++
++    payload = agent_health._probe_remote_gateway("http://gateway:8648", now=30.0)
++
++    assert calls[:2] == [
++        ("http://gateway:8648/health/detailed", "specific-key"),
++        ("http://gateway:8648/health", "specific-key"),
++    ]
++    assert payload["alive"] is True
++    assert payload["details"]["telemetry_state"] == "basic_fallback"
++    assert payload["details"]["degraded"] is True
++    assert payload["details"]["reason"] == "remote_gateway_basic_fallback"
++
++
++def test_total_failure_preserves_down_semantics_and_does_not_leak_key(monkeypatch, caplog):
++    monkeypatch.setenv("HERMES_WEBUI_GATEWAY_API_KEY", _SENTINEL_KEY)
++
++    def fail(_req, timeout=None):
++        raise urllib_error.URLError(f"failure containing {_SENTINEL_KEY}")
++
++    caplog.set_level(logging.DEBUG)
++    with mock.patch.object(agent_health.urllib_request, "urlopen", fail):
++        payload = agent_health._probe_remote_gateway("http://gateway:8648", now=40.0)
++
++    assert payload["alive"] is False
++    assert payload["details"]["state"] == "down"
++    assert payload["details"]["reason"] == "remote_gateway_unreachable"
++    assert _SENTINEL_KEY not in json.dumps(payload)
++    assert _SENTINEL_KEY not in caplog.text
+diff --git a/tests/test_issue716_agent_heartbeat.py b/tests/test_issue716_agent_heartbeat.py
+index 25024c76..2018f1ac 100644
+--- a/tests/test_issue716_agent_heartbeat.py
++++ b/tests/test_issue716_agent_heartbeat.py
+@@ -4,9 +4,13 @@ from __future__ import annotations
+
+ import json
+ import pathlib
++import shutil
++import subprocess
+ import sys
+ import types
+
++import pytest
++
+ REPO_ROOT = pathlib.Path(__file__).parent.parent
+
+ UI_JS = (REPO_ROOT / "static" / "ui.js").read_text(encoding="utf-8")
+@@ -212,3 +216,102 @@ def test_agent_health_backend_does_not_use_shell_or_expose_raw_process_fields():
+     for private_field in ("argv", "command", "executable", "env"):
+         assert f'details["{private_field}"]' not in src
+         assert f"details['{private_field}']" not in src
++
++
++def _extract_js_function(source: str, name: str) -> str:
++    marker = f"function {name}("
++    marker_start = source.index(marker)
++    async_prefix = "async "
++    start = marker_start - len(async_prefix) if source[max(0, marker_start - len(async_prefix)) : marker_start] == async_prefix else marker_start
++    brace = source.index("{", start)
++    depth = 0
++    quote = None
++    escaped = False
++    for index in range(brace, len(source)):
++        char = source[index]
++        if quote:
++            if escaped:
++                escaped = False
++            elif char == "\\":
++                escaped = True
++            elif char == quote:
++                quote = None
++            continue
++        if char in ("'", '"', "`"):
++            quote = char
++        elif char == "{":
++            depth += 1
++        elif char == "}":
++            depth -= 1
++            if depth == 0:
++                return source[start : index + 1]
++    raise AssertionError(f"unterminated JavaScript function: {name}")
++
++
++@pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
++def test_agent_health_frontend_executes_degraded_before_healthy_branch():
++    functions = "\n".join(
++        _extract_js_function(UI_JS, name)
++        for name in ("_hideAgentHealthAlert", "_showAgentHealthAlert", "pollAgentHealth")
++    )
++    harness = f"""
++const nodes = {{}};
++function makeNode(id) {{
++  const classes = new Set();
++  return nodes[id] = {{
++    id, hidden: false, disabled: false, textContent: '',
++    classList: {{add: value => classes.add(value), remove: value => classes.delete(value), contains: value => classes.has(value)}}
++  }};
++}}
++for (const id of ['agentHealthBanner', 'agentHealthTitle', 'agentHealthDetails', 'btnRestartGateway']) makeNode(id);
++function $(id) {{ return nodes[id] || null; }}
++const localStorage = {{getItem: () => null, setItem: () => {{}}, removeItem: () => {{}}}};
++const document = {{visibilityState: 'visible'}};
++let _agentHealthLastState = 'unknown';
++let _lastGatewayRestartTime = 0;
++function _agentHealthDismissed() {{ return false; }}
++function _setAgentHealthDismissed(_value) {{}}
++{functions}
++
++async function classify(payload) {{
++  api = async () => payload;
++  await pollAgentHealth();
++  return {{
++    state: _agentHealthLastState,
++    bannerHidden: nodes.agentHealthBanner.hidden,
++    bannerVisible: nodes.agentHealthBanner.classList.contains('visible'),
++    title: nodes.agentHealthTitle.textContent,
++    details: nodes.agentHealthDetails.textContent,
++    restartHidden: nodes.btnRestartGateway.hidden,
++    restartDisabled: nodes.btnRestartGateway.disabled,
++  }};
++}}
++
++(async () => {{
++  const detailed = await classify({{alive: true, details: {{telemetry_state: 'detailed', gateway_state: 'running'}}}});
++  const degraded = await classify({{alive: true, details: {{degraded: true, telemetry_state: 'basic_fallback'}}}});
++  const down = await classify({{alive: false, details: {{state: 'down'}}}});
++  console.log(JSON.stringify({{detailed, degraded, down}}));
++}})().catch(error => {{ console.error(error); process.exit(1); }});
++"""
++    result = subprocess.run(
++        ["node", "-e", harness],
++        check=True,
++        capture_output=True,
++        text=True,
++    )
++    states = json.loads(result.stdout)
++
++    assert states["detailed"]["bannerHidden"] is True
++    assert states["detailed"]["bannerVisible"] is False
++    assert states["degraded"]["state"] == "degraded"
++    assert states["degraded"]["bannerHidden"] is False
++    assert states["degraded"]["bannerVisible"] is True
++    assert "reachable" in states["degraded"]["details"].lower()
++    assert "detailed telemetry" in states["degraded"]["details"].lower()
++    assert states["degraded"]["restartHidden"] is True
++    assert states["degraded"]["restartDisabled"] is True
++    assert states["down"]["state"] == "down"
++    assert states["down"]["bannerVisible"] is True
++    assert states["down"]["restartHidden"] is False
++    assert states["down"]["restartDisabled"] is False
