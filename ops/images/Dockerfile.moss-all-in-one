@@ -42,6 +42,7 @@ RUN cd /opt/hermes \
 
 COPY ops/hermes-webui-overrides/moss-agent-health-auth.patch /tmp/moss-agent-health-auth.patch
 COPY ops/hermes-webui-overrides/moss-profile-selector-order.patch /tmp/moss-profile-selector-order.patch
+COPY ops/hermes-webui-overrides/moss-remote-proxy-routing.patch /tmp/moss-remote-proxy-routing.patch
 
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
@@ -50,9 +51,11 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && test "${HERMES_WEBUI_REV}" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
     && git apply --check /tmp/moss-agent-health-auth.patch \
     && git apply --check /tmp/moss-profile-selector-order.patch \
+    && git apply --check /tmp/moss-remote-proxy-routing.patch \
     && git apply /tmp/moss-agent-health-auth.patch \
     && git apply /tmp/moss-profile-selector-order.patch \
-    && test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf '%s\n' api/agent_health.py api/profiles.py static/ui.js tests/test_agent_health_remote.py tests/test_issue716_agent_heartbeat.py tests/test_profile_proxy_jen.py | LC_ALL=C sort)" \
+    && git apply /tmp/moss-remote-proxy-routing.patch \
+    && test "$(git diff --name-only | LC_ALL=C sort)" = "$(printf '%s\n' api/agent_health.py api/gateway_chat.py api/profiles.py api/routes.py static/ui.js tests/test_agent_health_remote.py tests/test_issue716_agent_heartbeat.py tests/test_profile_proxy_jen.py | LC_ALL=C sort)" \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
     && cd /opt/hermes \
     && if [ -f tests/hermes_cli/test_auth_commands.py ]; then \
