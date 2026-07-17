@@ -17,3 +17,6 @@ Startup order:
 ## Capability posture
 
 Todoist and Google Calendar are essential for Jen. Until their wrappers and auth checks pass in Hermes, do not claim live capability. For writes, use mutation/idempotency gates; for unclear technical failures, hand off to Moss.
+## Architecture decisions
+
+For durable decisions, use the federated ADR policy at `docs/decisions/TAC-GOV-0001-federated-adr-governance.md` in shared source. Use `docs/decisions/template.md`; the hash-bound runtime mirror is `/mnt/hermes-shared/decisions/TAC-GOV-0001-federated-adr-governance.md`, while Git source remains canonical. Determine local versus shared scope and tier before recording an ADR. Source acceptance does not authorize implementation, runtime activation, restart, rebuild, or external publication.
