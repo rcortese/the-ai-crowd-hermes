@@ -143,6 +143,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/jen/private
       TERMINAL_CWD: /agents/jen/private
       HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
       API_SERVER_ENABLED: 'true'
@@ -210,6 +211,7 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/denholm/private
       TERMINAL_CWD: /agents/denholm/private
       HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
       API_SERVER_ENABLED: 'true'
