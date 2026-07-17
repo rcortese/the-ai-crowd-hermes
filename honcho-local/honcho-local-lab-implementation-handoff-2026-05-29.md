@@ -2,7 +2,7 @@
 
 Task: t_c382c974
 Date: 2026-05-29
-Host: <docker-host> / Unraid
+Host: <docker-host> / private container platform
 Target path: <stack-root>/honcho-local
 
 ## Result

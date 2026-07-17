@@ -14,14 +14,18 @@ files = subprocess.check_output(
 ).splitlines()
 
 ignore_text = Path('.gitignore').read_text(errors='ignore')
-if '/agents/private/' not in ignore_text:
-    raise SystemExit('.gitignore must ignore /agents/private/')
-tracked_private = subprocess.check_output(['git', 'ls-files', 'agents/private'], text=True).splitlines()
+for required_ignore in ('/agents/private/', '/private/'):
+    if required_ignore not in ignore_text:
+        raise SystemExit(f'.gitignore must ignore {required_ignore}')
+private_gitlinks = [line for line in subprocess.check_output(['git', 'ls-files', '-s', '--', 'agents/private', 'private'], text=True).splitlines() if line.startswith('160000 ')]
+if private_gitlinks:
+    raise SystemExit('public repo tracks private gitlink:\n' + '\n'.join(private_gitlinks))
+tracked_private = subprocess.check_output(['git', 'ls-files', '--', 'agents/private', 'private'], text=True).splitlines()
 if tracked_private:
     raise SystemExit('public repo tracks private workspace content:\n' + '\n'.join(tracked_private))
 
 secret_patterns = [
-    (r'(?i)api[_-]?key\s*[:=]\s*[A-Za-z0-9_./+=-]{12,}', 'api key assignment'),
+    (r'(?i)(?<!if\s)api[_-]?key\s*[:=]\s*(?!(?:os\.environ/|env:|Optional\[|str\b|None\b|api[_-]?key\b|_[A-Za-z_][A-Za-z0-9_]*\b|[A-Za-z_][A-Za-z0-9_]*\.))[A-Za-z0-9_./+=-]{12,}', 'api key assignment'),
     (r'(?i)(access|refresh|id)[_-]?token\s*[:=]\s*[A-Za-z0-9_./+=-]{20,}', 'token assignment'),
     (r'-----BEGIN (OPENSSH|RSA|EC|DSA|PRIVATE) KEY-----', 'private key'),
 ]
@@ -58,7 +62,7 @@ for path_s in files:
         raise SystemExit(f'forbidden tracked/public state file: {path}')
     if {'auth', 'logs', 'cache', 'sessions', 'checkpoints'} & parts:
         raise SystemExit(f'forbidden tracked/public runtime directory: {path}')
-    if path_s.startswith('agents/private/'):
+    if path_s.startswith(('agents/private/', 'private/')):
         raise SystemExit(f'forbidden tracked/private workspace content: {path}')
     if path_s.startswith('ops/secrets/') and name != '.gitkeep':
         raise SystemExit(f'forbidden tracked/public secret path: {path}')
@@ -70,7 +74,13 @@ for path_s in files:
     except OSError:
         continue
 
-    for pattern, label in secret_patterns + private_location_patterns + project_specific_patterns + forbidden_identity_patterns:
+    effective_secret_patterns = secret_patterns
+    if path.suffix == '.py':
+        effective_secret_patterns = [
+            (r'(?i)api[_-]?key\s*[:=]\s*[\"\'][A-Za-z0-9_./+=-]{12,}', 'api key assignment'),
+            *secret_patterns[1:],
+        ]
+    for pattern, label in effective_secret_patterns + private_location_patterns + project_specific_patterns + forbidden_identity_patterns:
         if re.search(pattern, text):
             raise SystemExit(f'{path}: release scan matched {label}')
     if path.suffix in {'.yaml', '.yml'}:

@@ -32,4 +32,4 @@ Do not assume OpenClaw gateway tools, cron jobs, session/subagent mechanics, los
 If a capability is not visible through files, tools, environment, mounts, wrappers, or documented private config, treat it as unavailable.
 ## Architecture decisions
 
-For durable decisions, use the federated ADR policy at `docs/decisions/TAC-GOV-0001-federated-adr-governance.md` in shared source. Use `docs/decisions/template.md`; the hash-bound runtime mirror is `/mnt/hermes-shared/decisions/TAC-GOV-0001-federated-adr-governance.md`, while Git source remains canonical. Determine local versus shared scope and tier before recording an ADR. Source acceptance does not authorize implementation, runtime activation, restart, rebuild, or external publication.
+For durable decisions, distinguish publishable scaffold documentation from private shared governance before recording a decision. Do not place governance source, runtime mirrors, or operational evidence in this public scaffold. Source acceptance does not authorize implementation, runtime activation, restart, rebuild, or external publication.

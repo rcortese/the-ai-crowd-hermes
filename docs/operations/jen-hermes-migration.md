@@ -134,7 +134,7 @@ Target: migrate Jen from OpenClaw to Hermes-native container with Todoist, gog/C
 
 ### Validation notes
 
-- OpenClaw backup before cutover: `/home/rcortese/.openclaw/openclaw.json.before-jen-hermes-telegram-cutover-20260524T160459`.
+- OpenClaw backup before cutover: `private-reference:pre-cutover-config-backup`.
 - Hermes Jen env backup before token activation: `/opt/data/.env.before-telegram-cutover`.
 - OpenClaw account state after restart: `jen=false`, `roy=true`, `denholm=true`, `default=false`.
 - Hermes Jen gateway status: running manually in `the-ai-crowd-jen-1`; Telegram connected in polling mode.
@@ -145,7 +145,7 @@ Target: migrate Jen from OpenClaw to Hermes-native container with Todoist, gog/C
 ### Rollback
 
 1. Stop the Hermes Jen gateway process in `the-ai-crowd-jen-1`.
-2. Restore `/home/rcortese/.openclaw/openclaw.json.before-jen-hermes-telegram-cutover-20260524T160459` or set only `channels.telegram.accounts.jen.enabled=true`.
+2. Restore `private-reference:pre-cutover-config-backup` or set only `channels.telegram.accounts.jen.enabled=true`.
 3. Restart `openclaw-gateway.service`.
 4. Verify `@the_ai_crowd_jen_bot` is again handled by OpenClaw and that Roy/Denholm remain enabled.
 

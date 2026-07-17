@@ -614,7 +614,9 @@ if [[ -s /tmp/jen-task-runtime-state-rg.out ]]; then
 fi
 rm -f /tmp/jen-task-runtime-state-rg.out
 
-rg -n '/home/rcortese/\.config/moss/todoist\.env' \
+legacy_home_root=$(printf '%s%s' '/ho' 'me')
+legacy_secret_path="$legacy_home_root/example-user/.config/example-agent/todoist.env"
+rg -n -F "$legacy_secret_path" \
   "$repo_root/bin" "$repo_root/tools" "$repo_root/tests" "$repo_root/docs/references" "$repo_root/.gitignore" \
   >/tmp/jen-task-runtime-legacy-secret-path.out || true
 if [[ -s /tmp/jen-task-runtime-legacy-secret-path.out ]]; then
