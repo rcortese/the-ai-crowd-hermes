@@ -87,6 +87,7 @@ Para entender o projeto:
 3. Leia o modelo de containers: `docs/architecture/agent-container-model.md`.
 4. Leia a fronteira público/privado: `docs/architecture/public-private-boundary.md`.
 5. Leia os contratos dos assistentes em `agents/public/<assistente>/`.
+6. Leia a postura pública de isolamento do Roy: `docs/operations/roy-isolation.md`.
 
 Para validar a parte pública:
 
