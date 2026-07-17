@@ -650,6 +650,28 @@ mutation_draft_task_project_move() {
   '
 }
 
+mutation_draft_task_parent_move() {
+  local task_id="$1"
+  local parent_id="$2"
+  local pre_state_json="$3"
+  jq -nc --arg task_id "$task_id" --arg parent_id "$parent_id" --argjson pre_state "$pre_state_json" '
+    {
+      user_request_ref: ("jen-task-runtime:move-task-parent:" + $task_id + ":" + $parent_id),
+      operation_type: "update",
+      target_system: "todoist",
+      canonical_object_type: "task",
+      external_object_id: $task_id,
+      pre_state: $pre_state,
+      mutation_payload: {parent_id:$parent_id},
+      preview: {
+        human_summary: "Move Todoist task under a parent task",
+        fields_changed: ["parent_id"],
+        expected_effect: "Todoist task parent/subtask move"
+      }
+    }
+  '
+}
+
 mutation_record_payload() {
   local plan_json="$1"
   local status="$2"
@@ -2242,6 +2264,155 @@ move_task_command() {
 
 
 
+move_task_parent_command() {
+  local task_id="" parent_id=""
+  while (($#)); do
+    case "$1" in
+      --task-id)
+        require_option_value move-task-parent "${2:-}"
+        task_id="$2"
+        shift 2
+        ;;
+      --parent-id|--parent-task-id)
+        require_option_value move-task-parent "${2:-}"
+        parent_id="$2"
+        shift 2
+        ;;
+      *)
+        emit_failed move-task-parent invalid_argument
+        ;;
+    esac
+  done
+
+  if [[ -z "$task_id" || -z "$parent_id" ]]; then
+    emit_failed move-task-parent invalid_argument
+  fi
+
+  if [[ "$task_id" == "$parent_id" ]]; then
+    emit_failed move-task-parent invalid_argument
+  fi
+
+  local ts pre_stdout pre_stderr pre_status pre_state draft_json prepare_json decision gateway_plan mutation_extra failure_class runtime_json
+  ts="$(now_utc)"
+  pre_stdout=$(mktemp)
+  pre_stderr=$(mktemp)
+  pre_status=0
+  adapter_run "$pre_stdout" "$pre_stderr" task "$task_id" || pre_status=$?
+  if [[ "$pre_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$pre_stderr" "$pre_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed move-task-parent state_write_failed
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed move-task-parent "$failure_class"
+  fi
+  if ! jq -e --arg task_id "$task_id" '.id == $task_id' "$pre_stdout" >/dev/null 2>&1; then
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed move-task-parent verification_failed
+  fi
+
+  local parent_stdout parent_stderr parent_status child_project_id parent_project_id current_parent_id
+  parent_stdout=$(mktemp)
+  parent_stderr=$(mktemp)
+  parent_status=0
+  adapter_run "$parent_stdout" "$parent_stderr" task "$parent_id" || parent_status=$?
+  if [[ "$parent_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$parent_stderr" "$parent_status")"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$parent_stdout" "$parent_stderr"
+    emit_failed move-task-parent "$failure_class"
+  fi
+  if ! jq -e --arg parent_id "$parent_id" '.id == $parent_id' "$parent_stdout" >/dev/null 2>&1; then
+    cleanup_files "$pre_stdout" "$pre_stderr" "$parent_stdout" "$parent_stderr"
+    emit_failed move-task-parent verification_failed
+  fi
+  child_project_id="$(jq -r '.project_id // empty' "$pre_stdout")"
+  parent_project_id="$(jq -r '.project_id // empty' "$parent_stdout")"
+  if [[ -z "$child_project_id" || -z "$parent_project_id" || "$child_project_id" != "$parent_project_id" ]]; then
+    cleanup_files "$pre_stdout" "$pre_stderr" "$parent_stdout" "$parent_stderr"
+    emit_failed move-task-parent invalid_argument
+  fi
+  cleanup_files "$parent_stdout" "$parent_stderr"
+
+  current_parent_id="$(jq -r '.parent_id // empty' "$pre_stdout")"
+  pre_state="$(jq -c '{id,content,project_id,section_id,parent_id,labels,due,deadline,priority,updated_at}' "$pre_stdout")"
+
+  draft_json="$(mutation_draft_task_parent_move "$task_id" "$parent_id" "$pre_state")"
+  if ! prepare_json="$(mutation_helper_run prepare - <<<"$draft_json")"; then
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    emit_failed move-task-parent request_failure
+  fi
+  decision="$(jq -r '.decision' <<<"$prepare_json")"
+  gateway_plan="$(jq -c '.gateway_plan' <<<"$prepare_json")"
+  mutation_extra="$(jq -c '{mutation:{gateway_plan:.gateway_plan,idempotency:.idempotency}}' <<<"$prepare_json")"
+
+  case "$decision" in
+    duplicate_verified)
+      local stored_output
+      stored_output="$(jq -c '.idempotency.record.result.output // empty | if type == "object" then .mutation.idempotency.check_status = "duplicate" | .mutation.idempotency.decision = "duplicate_verified" else . end' <<<"$prepare_json")"
+      if [[ -n "$stored_output" && "$stored_output" != "null" ]]; then
+        cleanup_files "$pre_stdout" "$pre_stderr"
+        json_out "$stored_output"
+        return 0
+      fi
+      emit_failed move-task-parent request_failure "$mutation_extra"
+      ;;
+    blocked) emit_failed move-task-parent mutation_blocked "$mutation_extra" ;;
+    awaiting_confirmation) emit_failed move-task-parent mutation_confirmation_required "$mutation_extra" ;;
+    collision) emit_failed move-task-parent idempotency_collision "$mutation_extra" ;;
+    unsafe_replay_state|retry_partial) emit_failed move-task-parent unsafe_replay_state "$mutation_extra" ;;
+    execute) ;;
+    *) emit_failed move-task-parent request_failure "$mutation_extra" ;;
+  esac
+
+  if [[ "$current_parent_id" == "$parent_id" ]]; then
+    local idempotent_output idempotent_result
+    runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+    state_write_runtime "$runtime_json" || emit_failed move-task-parent state_write_failed "$mutation_extra"
+    idempotent_output="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command move-task-parent --arg status ok --arg operation move-task-parent --arg parent_id "$parent_id" --argjson task "$(cat "$pre_stdout")" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:true,idempotent:true,parent_id:$parent_id,task:$task} + $mutation')"
+    idempotent_result="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$idempotent_output" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
+    mutation_record_status "$gateway_plan" verified "$idempotent_result" || emit_failed move-task-parent state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr"
+    json_out "$idempotent_output"
+    return 0
+  fi
+
+  local move_stdout move_stderr adapter_status result_json output_json
+  move_stdout=$(mktemp)
+  move_stderr=$(mktemp)
+  adapter_status=0
+  adapter_run "$move_stdout" "$move_stderr" move-task-parent "$task_id" "$parent_id" || adapter_status=$?
+  if [[ "$adapter_status" != 0 ]]; then
+    failure_class="$(map_adapter_error_class "$move_stderr" "$adapter_status")"
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed move-task-parent state_write_failed "$mutation_extra"
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failure_class "$failure_class" '{runtime_schema:$runtime_schema,failed_step:"move-task-parent",failure_class:$failure_class}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed move-task-parent state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$move_stdout" "$move_stderr"
+    emit_failed move-task-parent "$failure_class" "$mutation_extra"
+  fi
+
+  local actual_id actual_parent_id
+  actual_id="$(jq -r '.id // empty' "$move_stdout" 2>/dev/null || true)"
+  actual_parent_id="$(jq -r '.parent_id // empty' "$move_stdout" 2>/dev/null || true)"
+  if [[ "$actual_id" != "$task_id" || "$actual_parent_id" != "$parent_id" ]]; then
+    failure_class=verification_failed
+    runtime_json="$(runtime_with_updates --arg fc "$failure_class" --arg ts "$ts" '.last_failure_class = $fc | .last_failure_at = $ts')"
+    state_write_runtime "$runtime_json" || emit_failed move-task-parent state_write_failed "$mutation_extra"
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg failure_class "$failure_class" --arg actual_id "$actual_id" --arg expected_id "$task_id" --arg actual_parent_id "$actual_parent_id" --arg expected_parent_id "$parent_id" '{runtime_schema:$runtime_schema,failed_step:"move-task-parent-verify",failure_class:$failure_class,actual_id:$actual_id,expected_id:$expected_id,actual_parent_id:$actual_parent_id,expected_parent_id:$expected_parent_id}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed move-task-parent state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$move_stdout" "$move_stderr"
+    emit_failed move-task-parent "$failure_class" "$mutation_extra"
+  fi
+
+  runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
+  state_write_runtime "$runtime_json" || emit_failed move-task-parent state_write_failed "$mutation_extra"
+  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command move-task-parent --arg status ok --arg operation move-task-parent --argjson verified true --arg parent_id "$parent_id" --argjson task "$(cat "$move_stdout")" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,parent_id:$parent_id,task:$task} + $mutation')"
+  result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$output_json" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
+  mutation_record_status "$gateway_plan" verified "$result_json" || emit_failed move-task-parent state_write_failed "$mutation_extra"
+  cleanup_files "$pre_stdout" "$pre_stderr" "$move_stdout" "$move_stderr"
+  json_out "$output_json"
+}
+
+
 
 ensure_observation_baseline_command() {
   local ts limit ttl_hours force=false baseline_json baseline_valid=false refreshed=false reason=fresh stdout_file stderr_file
@@ -2983,6 +3154,7 @@ main() {
     update-priority) update_priority_command "$@" ;;
     update-description) update_description_command "$@" ;;
     move-task) move_task_command "$@" ;;
+    move-task-parent) move_task_parent_command "$@" ;;
     read-recent-completed) read_recent_completed_command "$@" ;;
     read-recent-activity) read_recent_activity_command "$@" ;;
     read-activity-log) read_activity_log_command "$@" ;;
