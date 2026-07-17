@@ -41,7 +41,19 @@ required_base_persona_dockerfiles = {
     "ops/images/Dockerfile.roy",
     "ops/images/Dockerfile.the-elders",
 }
+# Final all-in-one images may be built directly from stale :local tags. They
+# must carry the patch prerequisite themselves before running the contract.
+required_patch_persona_dockerfiles = required_base_persona_dockerfiles | {
+    "ops/images/Dockerfile.moss-all-in-one",
+    "ops/images/Dockerfile.roy-all-in-one",
+}
 interpreter = "/opt/hermes/.venv/bin/python3"
+
+expected_safe_root_policy = {
+    "jen": "/opt/data:/agents/jen/private",
+    "denholm": "/opt/data:/agents/denholm/private",
+    "the-elders": None,
+}
 
 
 moss_build_manifests = {
@@ -136,7 +148,8 @@ def has_contract_copy(source):
 
 
 def has_patch_prerequisite(source):
-    gate = source.find("RUN command -v patch")
+    # The executable check may appear after RUN or later in an && chain.
+    gate = source.find("command -v patch")
     if gate < 0:
         return True
     install = source.find("apt-get install -y --no-install-recommends patch")
@@ -186,6 +199,20 @@ def verify_persona_services(services, dockerfile_sources, expected_map):
             raise ValueError(f"missing executable write-safe-root contract gate: {dockerfile}")
         if not has_patch_prerequisite(source):
             raise ValueError(f"missing patch prerequisite before source-backed gate: {dockerfile}")
+
+
+def verify_safe_root_policy(services):
+    for service, expected in expected_safe_root_policy.items():
+        rendered = services[service]
+        environment = rendered.get("environment") or {}
+        actual = environment.get("HERMES_WRITE_SAFE_ROOT")
+        if actual != expected:
+            raise ValueError(
+                f"unexpected HERMES_WRITE_SAFE_ROOT for {service}: "
+                f"got={actual!r}, expected={expected!r}"
+            )
+    if services["the-elders"].get("read_only") is not True:
+        raise ValueError("the-elders must remain read_only")
 
 
 def assert_rejected(name, services, sources, expected_map):
@@ -317,8 +344,8 @@ verify_moss_build_manifests(repo)
 for dockerfile, source in dockerfile_sources.items():
     verify_no_private_overlay_copy(source)
 
-verify_patch_prerequisites(dockerfile_sources, required_base_persona_dockerfiles)
-for dockerfile in sorted(required_base_persona_dockerfiles):
+verify_patch_prerequisites(dockerfile_sources, required_patch_persona_dockerfiles)
+for dockerfile in sorted(required_patch_persona_dockerfiles):
     mutated_sources = dict(dockerfile_sources)
     mutated_sources[dockerfile] = mutated_sources[dockerfile].replace(
         "apt-get install -y --no-install-recommends patch",
@@ -328,9 +355,10 @@ for dockerfile in sorted(required_base_persona_dockerfiles):
     assert_patch_prerequisite_rejected(
         f"patch prerequisite missing: {dockerfile}",
         mutated_sources,
-        required_base_persona_dockerfiles,
+        required_patch_persona_dockerfiles,
     )
 
+verify_safe_root_policy(services)
 try:
     verify_persona_services(services, dockerfile_sources, expected_service_dockerfiles)
 except ValueError as exc:

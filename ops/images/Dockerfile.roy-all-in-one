@@ -3,10 +3,19 @@ FROM ${ROY_BASE_IMAGE}
 
 USER root
 
-# Execute the shared write-safe-root compatibility contract in this final image.
+# The final image can be built independently of a refreshed :local base tag.
+# Apply the same source-backed guard before its contract executes.
+COPY ops/hermes-agent-overrides/write-safe-root-invalid-config-fail-closed.patch /tmp/write-safe-root.patch
 COPY ops/images/write-safe-root-contract.py /opt/hermes/write-safe-root-contract.py
-RUN /opt/hermes/.venv/bin/python3 /opt/hermes/write-safe-root-contract.py \
-    && rm -f /opt/hermes/write-safe-root-contract.py
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends patch \
+    && rm -rf /var/lib/apt/lists/* \
+    && command -v patch >/dev/null \
+    && cd /opt/hermes \
+    && patch -p1 < /tmp/write-safe-root.patch \
+    && /opt/hermes/.venv/bin/python3 -m py_compile agent/file_safety.py tools/file_operations.py agent/copilot_acp_client.py \
+    && /opt/hermes/.venv/bin/python3 /opt/hermes/write-safe-root-contract.py \
+    && rm -f /tmp/write-safe-root.patch /opt/hermes/write-safe-root-contract.py
 
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
 ARG HERMES_WEBUI_REV=0bcfe3a079def0d2d9185183570049bd12bf8622
