@@ -18,7 +18,7 @@ index 6af66914..89ead899 100644
 +        }
 +    if webui_gateway_chat_enabled(config_data, environ):
 +        return {"ok": True, "execution_target": "local_gateway", "gateway_config": None}
-+    return {"ok": True, "execution_target": "local_legacy", "gateway_config": None}
++    return {"ok": True, "execution_target": "local_direct", "gateway_config": None}
 +
 +
  def profile_proxy_public_entries(config_data=None, environ: dict[str, str] | None = None) -> list[dict]:
@@ -113,7 +113,7 @@ index f07251ec..bb40d082 100644
 +def test_local_profile_respects_legacy_or_explicit_gateway_mode():
 +    from api.gateway_chat import resolve_chat_execution_target
 +
-+    assert resolve_chat_execution_target("moss", {}, {"HERMES_WEBUI_CHAT_BACKEND": "legacy-direct"})["execution_target"] == "local_legacy"
++    assert resolve_chat_execution_target("moss", {}, {"HERMES_WEBUI_CHAT_BACKEND": "legacy-direct"})["execution_target"] == "local_direct"
 +    assert resolve_chat_execution_target("moss", {}, {"HERMES_WEBUI_CHAT_BACKEND": "gateway"})["execution_target"] == "local_gateway"
 +
 +
