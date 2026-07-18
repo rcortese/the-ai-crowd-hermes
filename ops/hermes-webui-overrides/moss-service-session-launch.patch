@@ -1,0 +1,438 @@
+From 47ea612d71cddbfdab7c5c1117a4ad98e11471bb Mon Sep 17 00:00:00 2001
+From: Rodolfo Cortese <23123652+rcortese@users.noreply.github.com>
+Date: Fri, 17 Jul 2026 22:38:35 -0300
+Subject: [PATCH] feat: add restricted service session launcher
+
+---
+ .env.example                         |   5 +
+ README.md                            |   1 +
+ api/routes.py                        |  11 ++
+ api/service_session_launch.py        | 182 +++++++++++++++++++++++++++
+ docs/service-session-launch.md       |  58 +++++++++
+ server.py                            |  11 +-
+ tests/test_service_session_launch.py |  76 +++++++++++
+ 7 files changed, 343 insertions(+), 1 deletion(-)
+ create mode 100644 api/service_session_launch.py
+ create mode 100644 docs/service-session-launch.md
+ create mode 100644 tests/test_service_session_launch.py
+
+diff --git a/.env.example b/.env.example
+index 27cd9b3d9ca6ab0ac25213d8194a1b8d9996b515..c3da9db32690a58e3a7280a921c2b06df6e4b311 100644
+--- a/.env.example
++++ b/.env.example
+@@ -32,3 +32,8 @@
+ 
+ # Display name for the assistant in the UI (default: Hermes)
+ # HERMES_WEBUI_BOT_NAME=Hermes
++
++# Optional, 32+ character service secret for the narrow internal persistent
++# session launcher. Keep it in runtime secret management; do not commit it.
++# The only exposed route is POST /api/internal/session-launch.
++# HERMES_WEBUI_SESSION_LAUNCH_TOKEN=
+diff --git a/README.md b/README.md
+index 4e17ead083d443ac4b3695536ab8c4ece4c8058c..3ac95f347e270d81748da394fe0090c007518b76 100644
+--- a/README.md
++++ b/README.md
+@@ -612,6 +612,7 @@ The WebUI is still coupled to Hermes Agent internals for runtime execution, prov
+ **Deploying & operating**
+ - [`docs/remote-access.md`](docs/remote-access.md) — SSH tunnel, Tailscale, and phone access (incl. a community ARM64-Android field report)
+ - [`docs/advanced-chat-setup.md`](docs/advanced-chat-setup.md) — optional dynamic recall-prefill and Gateway-backed browser chat for self-hosted deployments
++- [`docs/service-session-launch.md`](docs/service-session-launch.md) — narrow service capability for persistent session launch without a browser cookie
+ - [`docs/docker.md`](docs/docker.md) — Docker compose setup, common failures, and bind-mount migration
+ - [`docs/supervisor.md`](docs/supervisor.md) — launchd, systemd, supervisord, runit, and s6 process-supervisor setup
+ - [`docs/wsl-autostart.md`](docs/wsl-autostart.md) — WSL2 auto-start at Windows login
+diff --git a/api/routes.py b/api/routes.py
+index aa80f3bc349fa2082b48b095133b3e34b7d0cbae..3cd2f6b88db8cfdb7f8b8ac4d9cbf729f55a44ea 100644
+--- a/api/routes.py
++++ b/api/routes.py
+@@ -5153,6 +5153,12 @@ def _check_same_origin_browser_request(handler, *, require_provenance: bool = Fa
+ 
+ def _csrf_exempt_path(path: str) -> bool:
+     """Paths that cannot or must not carry a session CSRF token."""
++    from api.service_session_launch import is_service_launch_path
++
++    if is_service_launch_path(path):
++        # This endpoint has no browser cookie authority.  It independently
++        # validates its service capability after JSON parsing.
++        return True
+     return path in {
+         "/api/auth/login",
+         "/api/auth/passkey/options",
+@@ -12910,6 +12916,11 @@ def handle_post(handler, parsed) -> bool:
+             diag.finish()
+         return True
+ 
++    if parsed.path == "/api/internal/session-launch":
++        from api.service_session_launch import handle_service_session_launch
++
++        return handle_service_session_launch(handler, body)
++
+     if parsed.path == "/api/escape/authorize":
+         return _handle_escape_authorize(handler, parsed, body)
+ 
+diff --git a/api/service_session_launch.py b/api/service_session_launch.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2ac111b7f3b2d1048289422859ae22f410df45f6
+--- /dev/null
++++ b/api/service_session_launch.py
+@@ -0,0 +1,182 @@
++"""Narrow service capability for creating a persistent WebUI session and turn.
++
++This is intentionally not a general HTTP proxy and is distinct from browser
++cookie authentication.  The capability is disabled unless its service secret is
++provided by the runtime environment.
++"""
++from __future__ import annotations
++
++import hmac
++import logging
++import os
++import re
++from contextlib import contextmanager
++
++from api.helpers import j
++
++logger = logging.getLogger(__name__)
++
++PATH = "/api/internal/session-launch"
++HEADER = "X-Hermes-Service-Token"
++TOKEN_ENV = "HERMES_WEBUI_SESSION_LAUNCH_TOKEN"
++_MAX_PROMPT_CHARS = 24_000
++_MAX_MODEL_CHARS = 256
++_PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
++_ALLOWED_FIELDS = frozenset({"profile", "workspace", "model", "reasoning", "initial_prompt"})
++
++
++def is_service_launch_path(path: str) -> bool:
++    return path == PATH
++
++
++def _configured_token() -> str:
++    return os.environ.get(TOKEN_ENV, "").strip()
++
++
++def _authorized(handler) -> bool:
++    expected = _configured_token()
++    presented = str(handler.headers.get(HEADER, "") or "")
++    # An absent/short secret is a configuration error, never a permissive mode.
++    return len(expected) >= 32 and hmac.compare_digest(expected, presented)
++
++
++def _error(handler, message: str, status: int):
++    return j(handler, {"error": message}, status=status)
++
++
++def _validate_body(body: object) -> tuple[dict | None, str | None]:
++    if not isinstance(body, dict):
++        return None, "JSON object required"
++    unknown = set(body) - _ALLOWED_FIELDS
++    if unknown:
++        return None, "unsupported field"
++
++    profile = str(body.get("profile") or "").strip()
++    workspace = str(body.get("workspace") or "").strip()
++    prompt = str(body.get("initial_prompt") or "").strip()
++    model = body.get("model")
++    reasoning = body.get("reasoning")
++    if not profile or not _PROFILE_RE.fullmatch(profile):
++        return None, "valid profile is required"
++    if not workspace:
++        return None, "workspace is required"
++    if not prompt or len(prompt) > _MAX_PROMPT_CHARS:
++        return None, "initial_prompt is required and must not exceed 24000 characters"
++    if model is not None and (not isinstance(model, str) or not model.strip() or len(model.strip()) > _MAX_MODEL_CHARS):
++        return None, "model must be a non-empty string of at most 256 characters"
++    # Hermes currently resolves reasoning from the selected profile/model config.
++    # Accept only the explicit value which accurately represents that behavior.
++    if reasoning not in (None, "", "profile_default"):
++        return None, "reasoning must be profile_default"
++    return {
++        "profile": profile,
++        "workspace": workspace,
++        "model": model.strip() if isinstance(model, str) else None,
++        "initial_prompt": prompt,
++    }, None
++
++
++def _profile_exists(profile: str) -> bool:
++    from api.profiles import list_profiles_api
++    return any(str(row.get("name") or "") == profile for row in list_profiles_api())
++
++
++def _verify_active_stream(session_id: str, stream_id: str) -> bool:
++    """Prove this launch's stream is the session's currently active stream.
++
++    This deliberately does not report a global stream count: a caller needs an
++    identity-bound receipt for the session it just launched.
++    """
++    from api.models import STREAMS, STREAMS_LOCK, get_session
++
++    try:
++        session = get_session(session_id)
++    except KeyError:
++        return False
++    if not hmac.compare_digest(str(getattr(session, "active_stream_id", "") or ""), stream_id):
++        return False
++    with STREAMS_LOCK:
++        return stream_id in STREAMS
++
++
++@contextmanager
++def _request_profile(profile: str):
++    from api.profiles import clear_request_profile, set_request_profile
++    set_request_profile(profile)
++    try:
++        yield
++    finally:
++        clear_request_profile()
++
++
++def handle_service_session_launch(handler, body: object) -> bool:
++    """Create, persist, and start a service-authorized WebUI conversation.
++
++    Responses and logs deliberately exclude the initial prompt and service token.
++    """
++    if not _authorized(handler):
++        _error(handler, "service authorization required", 401)
++        return True
++    data, error = _validate_body(body)
++    if error:
++        _error(handler, error, 400)
++        return True
++    assert data is not None
++    if not _profile_exists(data["profile"]):
++        _error(handler, "profile not found", 404)
++        return True
++
++    try:
++        from api.models import new_session
++        from api.routes import _session_model_state_from_request, resolve_trusted_workspace, start_session_turn
++
++        workspace = str(resolve_trusted_workspace(data["workspace"]))
++        model, provider = _session_model_state_from_request(data["model"], None)
++        with _request_profile(data["profile"]):
++            session = new_session(
++                workspace=workspace,
++                model=model,
++                model_provider=provider,
++                profile=data["profile"],
++            )
++            # Persist before start: a worker or process failure must not leave a
++            # launched session that vanishes from the WebUI sidebar.
++            session.save()
++            result = start_session_turn(
++                session.session_id,
++                data["initial_prompt"],
++                source="service_session_launch",
++            )
++        status = int(result.get("_status", 200) or 200)
++        if status >= 400:
++            _error(handler, str(result.get("error") or "session launch failed"), status)
++            return True
++        stream_id = str(result.get("stream_id") or "")
++        if not stream_id:
++            _error(handler, "session launch did not create a stream", 502)
++            return True
++        if not _verify_active_stream(session.session_id, stream_id):
++            _error(handler, "session launch stream could not be verified active", 502)
++            return True
++        j(handler, {
++            "session_id": session.session_id,
++            "stream_id": stream_id,
++            "verified_state": {
++                "session_id": session.session_id,
++                "stream_id": stream_id,
++                "active": True,
++            },
++            "profile": data["profile"],
++            "workspace": workspace,
++            "model": model,
++            "reasoning": "profile_default",
++        }, status=201)
++        return True
++    except ValueError as exc:
++        _error(handler, str(exc), 400)
++        return True
++    except Exception:
++        # No request body/token/prompt in diagnostics.
++        logger.exception("service session launch failed")
++        _error(handler, "session launch failed", 500)
++        return True
+diff --git a/docs/service-session-launch.md b/docs/service-session-launch.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..52bb91a9c7f74623fca918dc50437ae44b495093
+--- /dev/null
++++ b/docs/service-session-launch.md
+@@ -0,0 +1,58 @@
++# Internal service session launcher
++
++`POST /api/internal/session-launch` is an administrator-controlled capability
++for creating a **persistent** WebUI conversation and its initial agent stream
++without a browser cookie. It is intended for a narrowly scoped local broker,
++not for browser clients or general HTTP automation.
++
++## Enablement
++
++The route is disabled unless the WebUI process receives
++`HERMES_WEBUI_SESSION_LAUNCH_TOKEN` with at least 32 characters. Keep that
++secret in the deployment's secret manager or service environment; never put it
++in a repository, browser storage, prompt, URL, or log.
++
++The caller supplies it only in `X-Hermes-Service-Token`. The route does not
++accept arbitrary URLs, methods, headers, target session IDs, or cleanup flags.
++It is deliberately separate from `webui_validation_probe`, whose sessions are
++ephemeral and must be deleted.
++
++## Request contract
++
++The JSON object admits only these fields:
++
++- `profile` — an existing profile ID;
++- `workspace` — a trusted registered workspace path;
++- `model` — optional model ID;
++- `reasoning` — omitted or `profile_default` (reasoning is currently resolved
++  by the selected profile/model configuration);
++- `initial_prompt` — required initial user message, maximum 24,000 characters.
++
++No prompt or service token is put in the response or launcher logs.
++
++## Response and verification
++
++On success, the endpoint returns HTTP 201 with a sanitized receipt:
++
++```json
++{
++  "session_id": "…",
++  "stream_id": "…",
++  "verified_state": {
++    "session_id": "…",
++    "stream_id": "…",
++    "active": true
++  }
++}
++```
++
++`active: true` is not a global stream count. The server verifies that the
++returned session's `active_stream_id` equals the returned stream ID and that
++this stream is present in the live stream registry. A failure to establish that
++identity-bound state is returned as an error, not a successful launch.
++
++## Deployment
++
++Deploy through the normal WebUI candidate/promotion path. Before restarting a
++live WebUI process, drain and recheck active streams. Do not use browser cookies
++or manually copied credentials as a substitute for the service capability.
+diff --git a/server.py b/server.py
+index 29a8c2205e18a9c4e71fdd570596a02907a6cf20..a4b660010af45e5b464c925f8235c9e8564881e7 100644
+--- a/server.py
++++ b/server.py
+@@ -101,6 +101,7 @@ from urllib.parse import urlparse
+ logger = logging.getLogger(__name__)
+ 
+ from api.auth import check_auth
++from api.service_session_launch import is_service_launch_path
+ from api.config import HOST, PORT, STATE_DIR, SESSION_DIR, DEFAULT_WORKSPACE
+ from api.helpers import (
+     j,
+@@ -407,7 +408,15 @@ class Handler(BaseHTTPRequestHandler):
+             _is_csp_report_post = (
+                 parsed.path == "/api/csp-report" and self.command == "POST"
+             )
+-            if not _is_csp_report_post and not check_auth(self, parsed): return
++            # The internal session launcher owns a separate, narrowly-scoped
++            # service capability.  It is authorized again inside its handler;
++            # never let it inherit or mint a browser session cookie.
++            if (
++                not _is_csp_report_post
++                and not is_service_launch_path(parsed.path)
++                and not check_auth(self, parsed)
++            ):
++                return
+             result = route_func(self, parsed)
+             if result is False:
+                 return j(self, {'error': 'not found'}, status=404)
+diff --git a/tests/test_service_session_launch.py b/tests/test_service_session_launch.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..8eeee5ecfffc2bff0c5c687055724ff167f6289c
+--- /dev/null
++++ b/tests/test_service_session_launch.py
+@@ -0,0 +1,76 @@
++"""Regression coverage for the narrow internal persistent-session launcher."""
++from __future__ import annotations
++
++import importlib
++from types import SimpleNamespace
++
++
++def _module(monkeypatch):
++    monkeypatch.setenv("HERMES_WEBUI_SESSION_LAUNCH_TOKEN", "t" * 32)
++    import api.service_session_launch as launch
++    return importlib.reload(launch)
++
++
++def test_service_token_is_fail_closed_and_constant_shape(monkeypatch):
++    launch = _module(monkeypatch)
++    assert launch._authorized(SimpleNamespace(headers={launch.HEADER: "t" * 32}))
++    assert not launch._authorized(SimpleNamespace(headers={launch.HEADER: "wrong"}))
++
++    monkeypatch.delenv("HERMES_WEBUI_SESSION_LAUNCH_TOKEN", raising=False)
++    launch = importlib.reload(launch)
++    assert not launch._authorized(SimpleNamespace(headers={launch.HEADER: "t" * 32}))
++
++
++def test_body_contract_rejects_generic_http_surface(monkeypatch):
++    launch = _module(monkeypatch)
++    valid, error = launch._validate_body({
++        "profile": "moss",
++        "workspace": "/agents/moss/private",
++        "model": "openai/gpt-5.5",
++        "reasoning": "profile_default",
++        "initial_prompt": "hello",
++    })
++    assert error is None
++    assert valid["profile"] == "moss"
++    assert "headers" not in valid
++
++    valid, error = launch._validate_body({
++        "profile": "moss",
++        "workspace": "/agents/moss/private",
++        "initial_prompt": "hello",
++        "url": "https://not-an-api-proxy.invalid",
++    })
++    assert valid is None
++    assert error == "unsupported field"
++
++
++def test_reasoning_is_honest_about_current_profile_default(monkeypatch):
++    launch = _module(monkeypatch)
++    valid, error = launch._validate_body({
++        "profile": "moss",
++        "workspace": "/agents/moss/private",
++        "reasoning": "high",
++        "initial_prompt": "hello",
++    })
++    assert valid is None
++    assert error == "reasoning must be profile_default"
++
++
++def test_active_receipt_is_bound_to_requested_session_and_stream(monkeypatch):
++    launch = _module(monkeypatch)
++    import api.models as models
++
++    session = SimpleNamespace(active_stream_id="stream-1")
++    monkeypatch.setattr(models, "get_session", lambda sid: session if sid == "session-1" else (_ for _ in ()).throw(KeyError(sid)))
++    monkeypatch.setattr(models, "STREAMS", {"stream-1": object()})
++    assert launch._verify_active_stream("session-1", "stream-1")
++    assert not launch._verify_active_stream("session-1", "other-stream")
++    assert not launch._verify_active_stream("other-session", "stream-1")
++
++
++def test_only_the_internal_path_bypasses_browser_auth():
++    from api.service_session_launch import is_service_launch_path
++
++    assert is_service_launch_path("/api/internal/session-launch")
++    assert not is_service_launch_path("/api/session/new")
++    assert not is_service_launch_path("/api/chat/start")
+-- 
+2.47.3
+
