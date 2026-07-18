@@ -101,7 +101,7 @@ services:
     build:
       context: .
       dockerfile: ops/images/Dockerfile.moss-all-in-one
-    image: the-ai-crowd/moss-all-in-one:local
+    image: the-ai-crowd/moss-all-in-one:${THE_AI_CROWD_IMAGE_TAG}
     working_dir: /agents/moss/private
     volumes:
     - ./runtime/moss-home:/opt/data
@@ -173,7 +173,7 @@ services:
     build:
       context: .
       dockerfile: ops/images/Dockerfile.jen
-    image: the-ai-crowd/jen:local
+    image: the-ai-crowd/jen:${THE_AI_CROWD_IMAGE_TAG}
     working_dir: /agents/jen/private
     volumes:
     - ./runtime/jen-home:/opt/data
@@ -231,7 +231,7 @@ services:
     build:
       context: .
       dockerfile: ops/images/Dockerfile.denholm
-    image: the-ai-crowd/denholm:local
+    image: the-ai-crowd/denholm:${THE_AI_CROWD_IMAGE_TAG}
     working_dir: /agents/denholm/private
     command:
     - gateway
@@ -318,7 +318,7 @@ services:
     build:
       context: .
       dockerfile: ops/images/Dockerfile.roy-all-in-one
-    image: the-ai-crowd/roy-all-in-one:local
+    image: the-ai-crowd/roy-all-in-one:${THE_AI_CROWD_IMAGE_TAG}
     working_dir: /agents/roy/private
     volumes:
     - ./runtime/roy-home:/opt/data
@@ -376,7 +376,7 @@ services:
     build:
       context: .
       dockerfile: ops/images/Dockerfile.richmond
-    image: the-ai-crowd/richmond:local
+    image: the-ai-crowd/richmond:${THE_AI_CROWD_IMAGE_TAG}
     working_dir: /agents/richmond/private
     command:
     - gateway
@@ -432,7 +432,7 @@ services:
     build:
       context: .
       dockerfile: ops/images/Dockerfile.the-elders
-    image: the-ai-crowd/the-elders:local
+    image: the-ai-crowd/the-elders:${THE_AI_CROWD_IMAGE_TAG}
     working_dir: /agents/the-elders/private
     command:
     - gateway
