@@ -62,7 +62,11 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && rm -rf /opt/hermes-webui/.git
 
 COPY ops/webui-overrides/ /tmp/hermes-webui-overrides/
+COPY ops/hermes-webui-overrides/moss-service-session-launch.patch /tmp/moss-service-session-launch.patch
 RUN cp -a /tmp/hermes-webui-overrides/. /opt/hermes-webui/ \
+    && cd /opt/hermes-webui \
+    && git apply --check /tmp/moss-service-session-launch.patch \
+    && git apply /tmp/moss-service-session-launch.patch \
     && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
        HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-jen-proxy-tests \
        HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/moss/private \
@@ -70,6 +74,8 @@ RUN cp -a /tmp/hermes-webui-overrides/. /opt/hermes-webui/ \
         /opt/hermes-webui/api/gateway_chat.py \
         /opt/hermes-webui/api/profiles.py \
         /opt/hermes-webui/api/routes.py \
+        /opt/hermes-webui/api/service_session_launch.py \
+        /opt/hermes-webui/server.py \
     && cd /opt/hermes-webui \
     && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
        HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-jen-proxy-tests \
@@ -80,7 +86,8 @@ RUN cp -a /tmp/hermes-webui-overrides/. /opt/hermes-webui/ \
         tests/test_remote_cron_proxy_guard.py \
         tests/test_stage364_opus_live_sse_event_id.py \
         tests/test_session_channel_option_x.py \
-    && rm -rf /tmp/hermes-webui-overrides \
+        tests/test_service_session_launch.py \
+    && rm -rf /tmp/hermes-webui-overrides /tmp/moss-service-session-launch.patch \
     && chown -R 99:100 /opt/hermes-webui
 
 
