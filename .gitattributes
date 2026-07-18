@@ -1,0 +1,3 @@
+# Unified-diff payloads retain upstream whitespace verbatim so their context applies exactly.
+ops/hermes-webui-overrides/moss-service-session-launch.patch whitespace=-trailing-space,-blank-at-eof
+ops/hermes-webui-overrides/moss-terminal-state-false-no-response.patch whitespace=-trailing-space,-blank-at-eof
