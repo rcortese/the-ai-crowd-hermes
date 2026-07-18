@@ -30,7 +30,9 @@ services:
     build:
       context: .
       dockerfile: ops/images/Dockerfile.moss-all-in-one
-    image: the-ai-crowd/moss-all-in-one:local
+    # Production releases may pin Moss to a local immutable Docker image ID.
+    # Leave MOSS_IMAGE_REF unset for the ordinary host-built/local fleet path.
+    image: ${MOSS_IMAGE_REF:-the-ai-crowd/moss-all-in-one:local}
     working_dir: /agents/moss/private
     environment:
       <<: *hermes-env
