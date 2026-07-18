@@ -1,10 +1,10 @@
-ARG MOSS_BASE_IMAGE=the-ai-crowd/moss:local
+ARG MOSS_BASE_IMAGE
 FROM ${MOSS_BASE_IMAGE}
 
 USER root
 
-ARG HERMES_WEBUI_REPO=https://github.com/nesquena/hermes-webui.git
-ARG HERMES_WEBUI_REV=f7e144d59fbf2e4feca8e31cb05d98a05401467f
+ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
+ARG HERMES_WEBUI_REV=9099d8e72c844cc6cd2acb80e6fbddd2e305aa03
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -16,9 +16,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Clash Royale scheduled screening uses Playwright from Moss cron.
-# Keep the Node package and browser in the image, not in ephemeral runtime state.
-COPY agents/private/moss/projects/clash-royale-war-bot/package.json \
-     agents/private/moss/projects/clash-royale-war-bot/package-lock.json \
+# The private Node input is supplied as a hash-verified named build context;
+# it is not assumed to live inside the exported deployment source tree.
+COPY --from=clash_royale_build_input package.json \
+     package-lock.json \
      /opt/clash-royale-war-bot-node/
 RUN cd /opt/clash-royale-war-bot-node \
     && npm ci --omit=dev \
@@ -32,6 +33,7 @@ RUN cd /opt/hermes \
     && test -x /opt/hermes/.venv/bin/hermes \
     && /opt/hermes/.venv/bin/hermes --version \
     && /opt/hermes/.venv/bin/python3 -m py_compile \
+        hermes_cli/auth.py \
         hermes_cli/config.py \
         hermes_cli/kanban_db.py \
         hermes_cli/kanban.py \
@@ -39,10 +41,28 @@ RUN cd /opt/hermes \
         plugins/kanban/dashboard/plugin_api.py
 
 
+COPY ops/hermes-webui-overrides/moss-agent-health-auth.patch /tmp/moss-agent-health-auth.patch
+COPY ops/hermes-webui-overrides/moss-profile-selector-order.patch /tmp/moss-profile-selector-order.patch
+COPY ops/hermes-webui-overrides/moss-remote-proxy-routing.patch /tmp/moss-remote-proxy-routing.patch
+COPY ops/hermes-webui-overrides/moss-terminal-state-false-no-response.patch /tmp/moss-terminal-state-false-no-response.patch
+COPY ops/hermes-webui-overrides/moss-service-session-launch.patch /tmp/moss-service-session-launch.patch
+
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
-    && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
+    && test "$(git rev-parse HEAD)" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
+    && test "${HERMES_WEBUI_REV}" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
+    && git apply --check /tmp/moss-agent-health-auth.patch \
+    && git apply /tmp/moss-agent-health-auth.patch \
+    && git apply --check /tmp/moss-profile-selector-order.patch \
+    && git apply /tmp/moss-profile-selector-order.patch \
+    && git apply --check /tmp/moss-remote-proxy-routing.patch \
+    && git apply /tmp/moss-remote-proxy-routing.patch \
+    && git apply --check /tmp/moss-terminal-state-false-no-response.patch \
+    && git apply /tmp/moss-terminal-state-false-no-response.patch \
+    && git apply --check /tmp/moss-service-session-launch.patch \
+    && git apply /tmp/moss-service-session-launch.patch \
+    && test "$( { git diff --name-only; git ls-files --others --exclude-standard; } | LC_ALL=C sort -u)" = "$(printf '%s\n' .env.example README.md api/agent_health.py api/gateway_chat.py api/profiles.py api/routes.py api/service_session_launch.py api/streaming.py docs/service-session-launch.md server.py static/ui.js tests/test_agent_health_remote.py tests/test_issue5141_terminal_failure_transcript_evaluator.py tests/test_issue716_agent_heartbeat.py tests/test_profile_proxy_jen.py tests/test_service_session_launch.py | LC_ALL=C sort)" \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
     && cd /opt/hermes \
     && if [ -f tests/hermes_cli/test_auth_commands.py ]; then \
@@ -54,42 +74,23 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
         /opt/hermes/.venv/bin/python3 -c 'import importlib; [importlib.import_module(m) for m in ("hermes_cli.auth", "hermes_cli.config", "agent.credential_pool", "gateway.run")]; print("agent_import_smoke_ok")'; \
        fi \
     && cd /opt/hermes-webui \
-    && /opt/hermes/.venv/bin/python3 -m py_compile api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/streaming.py \
-    && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q tests/test_kanban_bridge.py \
+    && /opt/hermes/.venv/bin/python3 -m py_compile api/agent_health.py api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/service_session_launch.py api/streaming.py api/gateway_chat.py api/profiles.py server.py \
+    && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
+        tests/test_agent_health_remote.py \
+        tests/test_issue716_agent_heartbeat.py \
+        tests/test_kanban_bridge.py \
+        tests/test_profile_proxy_jen.py \
+        tests/test_remote_cron_proxy_guard.py \
+        tests/test_webui_gateway_chat_backend.py \
+        tests/test_stage364_opus_live_sse_event_id.py \
+        tests/test_issue5141_terminal_failure_transcript_evaluator.py \
+        tests/test_session_channel_option_x.py \
+        tests/test_service_session_launch.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
-    && rm -rf /opt/hermes-webui/.git
-
-COPY ops/webui-overrides/ /tmp/hermes-webui-overrides/
-COPY ops/hermes-webui-overrides/moss-service-session-launch.patch /tmp/moss-service-session-launch.patch
-RUN cp -a /tmp/hermes-webui-overrides/. /opt/hermes-webui/ \
-    && cd /opt/hermes-webui \
-    && git apply --check /tmp/moss-service-session-launch.patch \
-    && git apply /tmp/moss-service-session-launch.patch \
-    && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
-       HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-jen-proxy-tests \
-       HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/moss/private \
-       /opt/hermes/.venv/bin/python3 -m py_compile \
-        /opt/hermes-webui/api/gateway_chat.py \
-        /opt/hermes-webui/api/profiles.py \
-        /opt/hermes-webui/api/routes.py \
-        /opt/hermes-webui/api/service_session_launch.py \
-        /opt/hermes-webui/server.py \
-    && cd /opt/hermes-webui \
-    && HERMES_WEBUI_AGENT_DIR=/opt/hermes \
-       HERMES_WEBUI_STATE_DIR=/tmp/hermes-webui-jen-proxy-tests \
-       HERMES_WEBUI_DEFAULT_WORKSPACE=/agents/moss/private \
-       /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
-        tests/test_profile_proxy_jen.py \
-        tests/test_webui_gateway_chat_backend.py \
-        tests/test_remote_cron_proxy_guard.py \
-        tests/test_stage364_opus_live_sse_event_id.py \
-        tests/test_session_channel_option_x.py \
-        tests/test_service_session_launch.py \
-    && rm -rf /tmp/hermes-webui-overrides /tmp/moss-service-session-launch.patch \
+    && rm -rf /opt/hermes-webui/.git \
     && chown -R 99:100 /opt/hermes-webui
-
 
 # Build guard: the all-in-one image must use one Python runtime only.
 RUN test ! -e /opt/hermes-webui/venv \

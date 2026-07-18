@@ -1,0 +1,138 @@
+diff --git a/api/gateway_chat.py b/api/gateway_chat.py
+index 6af66914..89ead899 100644
+--- a/api/gateway_chat.py
++++ b/api/gateway_chat.py
+@@ -75,6 +75,21 @@ def profile_proxy_entries(config_data=None, environ: dict[str, str] | None = Non
+ def profile_proxy_for(name: str, config_data=None, environ: dict[str, str] | None = None) -> dict | None:
+     return profile_proxy_entries(config_data, environ).get(str(name or "").strip().lower())
+
++
++def resolve_chat_execution_target(name: str, config_data=None, environ: dict[str, str] | None = None) -> dict:
++    """Choose a chat worker without allowing a configured persona proxy to fall local."""
++    proxy = profile_proxy_for(name, config_data, environ)
++    if proxy is not None:
++        return {
++            "ok": True,
++            "execution_target": "remote_gateway",
++            "gateway_config": dict(proxy),
++        }
++    if webui_gateway_chat_enabled(config_data, environ):
++        return {"ok": True, "execution_target": "local_gateway", "gateway_config": None}
++    return {"ok": True, "execution_target": "local_direct", "gateway_config": None}
++
++
+ def profile_proxy_public_entries(config_data=None, environ: dict[str, str] | None = None) -> list[dict]:
+     public = []
+     for item in profile_proxy_entries(config_data, environ).values():
+@@ -719,6 +734,7 @@ def _run_gateway_chat_streaming(
+         base_url = (selected_gateway or {}).get("base_url") or _gateway_base_url(cfg)
+         api_key = (selected_gateway or {}).get("api_key") or _gateway_api_key()
+         session_key_prefix = (selected_gateway or {}).get("session_key_prefix") or "webui"
++        remote_profile = str((selected_gateway or {}).get("remote_profile") or "").strip()
+         known_context_length = _gateway_resolve_context_length(
+             model,
+             model_provider,
+@@ -744,6 +760,8 @@ def _run_gateway_chat_streaming(
+                 body_extras["reasoning_effort"] = reasoning_effort
+             if _gw_overrides.get("service_tier"):
+                 body_extras["service_tier"] = _gw_overrides["service_tier"]
++            if remote_profile:
++                body_extras["profile"] = remote_profile
+             try:
+                 final_text, usage = _run_gateway_runs_api_streaming(
+                     session_id, msg_text, model, workspace, stream_id,
+@@ -815,6 +833,8 @@ def _run_gateway_chat_streaming(
+                 body["reasoning_effort"] = reasoning_effort
+             if _gw_overrides.get("service_tier"):
+                 body["service_tier"] = _gw_overrides["service_tier"]
++            if remote_profile:
++                body["profile"] = remote_profile
+             req = urllib.request.Request(
+                 url,
+                 data=json.dumps(body).encode("utf-8"),
+diff --git a/api/routes.py b/api/routes.py
+index aa80f3bc..cc24f00b 100644
+--- a/api/routes.py
++++ b/api/routes.py
+@@ -19298,20 +19298,15 @@ def _start_chat_stream_for_session(
+         STREAM_GOAL_RELATED[stream_id] = True
+     diag.stage("worker_thread_start") if diag else None
+     cfg = get_config()
+-    backend_is_gateway = webui_gateway_chat_enabled(cfg)
++    from api.gateway_chat import resolve_chat_execution_target
++
++    selected_profile = getattr(s, "profile", None) or get_active_profile_name()
++    execution_target = resolve_chat_execution_target(selected_profile, cfg)
++    backend_is_gateway = execution_target["execution_target"] in {"remote_gateway", "local_gateway"}
+     worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming
+     worker_kwargs = {"model_provider": model_provider}
+-    if backend_is_gateway:
+-        try:
+-            from api.gateway_chat import profile_proxy_for
+-            active_profile_name = getattr(s, "profile", None)
+-            if not active_profile_name:
+-                active_profile_name = get_active_profile_name()
+-            gateway_profile_proxy = profile_proxy_for(active_profile_name, cfg)
+-        except Exception:
+-            gateway_profile_proxy = None
+-        if gateway_profile_proxy is not None:
+-            worker_kwargs["gateway_config"] = gateway_profile_proxy
++    if backend_is_gateway and execution_target.get("gateway_config") is not None:
++        worker_kwargs["gateway_config"] = execution_target["gateway_config"]
+     if not backend_is_gateway:
+         worker_kwargs["goal_related"] = goal_related
+     if moa_config and not backend_is_gateway:
+diff --git a/tests/test_profile_proxy_jen.py b/tests/test_profile_proxy_jen.py
+index f07251ec..bb40d082 100644
+--- a/tests/test_profile_proxy_jen.py
++++ b/tests/test_profile_proxy_jen.py
+@@ -132,7 +132,33 @@ def test_routes_overlay_preserves_upstream_session_sse_contract():
+     assert "_sse_with_id(handler, event, data, event_id)" in routes
+
+
+-def test_routes_proxy_resolution_uses_session_profile_before_active_fallback():
++def test_remote_proxy_resolves_to_gateway_under_legacy_direct():
++    from api.gateway_chat import resolve_chat_execution_target
++
++    env = {
++        "HERMES_WEBUI_CHAT_BACKEND": "legacy-direct",
++        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_BASE_URL": "http://denholm:8643",
++        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_API_KEY": "test-key",
++        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_REMOTE_PROFILE": "default",
++        "HERMES_WEBUI_PROFILE_PROXY_DENHOLM_SESSION_KEY_PREFIX": "webui:moss:denholm",
++    }
++
++    target = resolve_chat_execution_target("denholm", {}, env)
++
++    assert target["execution_target"] == "remote_gateway"
++    assert target["gateway_config"]["base_url"] == "http://denholm:8643"
++    assert target["gateway_config"]["remote_profile"] == "default"
++    assert target["gateway_config"]["session_key_prefix"] == "webui:moss:denholm"
++
++
++def test_local_profile_respects_legacy_or_explicit_gateway_mode():
++    from api.gateway_chat import resolve_chat_execution_target
++
++    assert resolve_chat_execution_target("moss", {}, {"HERMES_WEBUI_CHAT_BACKEND": "legacy-direct"})["execution_target"] == "local_direct"
++    assert resolve_chat_execution_target("moss", {}, {"HERMES_WEBUI_CHAT_BACKEND": "gateway"})["execution_target"] == "local_gateway"
++
++
++def test_routes_dispatches_using_resolved_session_profile():
+     from pathlib import Path
+
+     routes = (Path(__file__).resolve().parents[1] / "api" / "routes.py").read_text(encoding="utf-8")
+@@ -140,10 +166,10 @@ def test_routes_proxy_resolution_uses_session_profile_before_active_fallback():
+     assert start != -1
+     body = routes[start:start + 7000]
+
+-    assert 'active_profile_name = getattr(s, "profile", None)' in body
+-    assert "active_profile_name = get_active_profile_name()" in body
+-    assert "gateway_profile_proxy = profile_proxy_for(active_profile_name, cfg)" in body
+-    assert 'worker_kwargs["gateway_config"] = gateway_profile_proxy' in body
++    assert 'selected_profile = getattr(s, "profile", None) or get_active_profile_name()' in body
++    assert 'resolve_chat_execution_target(selected_profile, cfg)' in body
++    assert 'execution_target["execution_target"] in {"remote_gateway", "local_gateway"}' in body
++    assert 'worker_kwargs["gateway_config"] = execution_target["gateway_config"]' in body
+
+
+ def test_profile_selector_orders_moss_personas_default_and_local_modes(monkeypatch):

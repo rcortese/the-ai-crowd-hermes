@@ -1,6 +1,19 @@
 name: the-ai-crowd
-
-x-hermes-env: &hermes-env
+x-hermes-env:
+  TZ: ${TZ:-UTC}
+  HERMES_UID: 99
+  HERMES_GID: 100
+  HOME: /opt/data
+  PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+  HERMES_KANBAN_HOME: /mnt/hermes-shared
+  HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
+  HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
+x-hermes-llm-env-files:
+- ./env/fleet.env
+x-hermes-common:
+  restart: always
+  user: 99:100
+  environment:
     TZ: ${TZ:-UTC}
     HERMES_UID: 99
     HERMES_GID: 100
@@ -8,34 +21,24 @@ x-hermes-env: &hermes-env
     HERMES_KANBAN_HOME: /mnt/hermes-shared
     HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
     HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
-x-hermes-llm-env-files: &hermes-llm-env-files
-  - ./state/secrets/hermes-llm/fleet.env
-x-hermes-common: &hermes-common
-  restart: always
-  user: "99:100"
-  environment:
-    <<: *hermes-env
-  networks:
-    - internal
-
+  networks: &id001
+  - internal
+x-openai-codex-auth-home: /mnt/hermes-auth-shared
+x-openai-codex-auth-volume: ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
 services:
   moss:
-    <<: *hermes-common
-    # All-in-one runtime: supervisord starts gateway, dashboard, and WebUI.
-    # Runs supervisor as root only to drop child programs to hermes UID/GID 99:100.
-    user: "0:0"
-    env_file:
-      - ./state/secrets/hermes-llm/fleet.env
-      - ./state/secrets/jen-api-server/api-server.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.moss-all-in-one
-    # Production releases may pin Moss to a local immutable Docker image ID.
-    # Leave MOSS_IMAGE_REF unset for the ordinary host-built/local fleet path.
-    image: ${MOSS_IMAGE_REF:-the-ai-crowd/moss-all-in-one:local}
-    working_dir: /agents/moss/private
+    restart: always
+    user: 0:0
     environment:
-      <<: *hermes-env
+      TZ: ${TZ:-UTC}
+      HERMES_UID: 99
+      HERMES_GID: 100
+      HOME: /opt/data
+      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/moss/private:/tmp
+      HERMES_KANBAN_DISPATCH_OWNER: moss
+      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       AGENT_NAME: moss
       AGENT_ROOT: /agents/moss
       AGENT_PUBLIC: /agents/moss/public
@@ -43,17 +46,18 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/moss/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
-      HERMES_KANBAN_DISPATCH_OWNER: moss
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
-      WEBHOOK_ENABLED: "true"
-      WEBHOOK_PORT: "8644"
+      WEBHOOK_ENABLED: 'true'
+      WEBHOOK_PORT: '8644'
+      API_SERVER_ENABLED: 'true'
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: '8648'
       HERMES_WEBUI_AGENT_DIR: /opt/hermes
       HERMES_WEBUI_HOST: 0.0.0.0
-      HERMES_WEBUI_PORT: "8787"
-      HERMES_WEBUI_SESSION_LAUNCH_TOKEN: ${HERMES_WEBUI_SESSION_LAUNCH_TOKEN:-}
+      HERMES_WEBUI_PORT: '8787'
       HERMES_WEBUI_STATE_DIR: /opt/data/webui
       HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/moss/private
+      HERMES_WEBUI_CHAT_BACKEND: legacy-direct
+      HERMES_WEBUI_GATEWAY_BASE_URL: http://moss:8648
       HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL: http://jen:8642
       HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY_ENV: API_SERVER_KEY
       HERMES_WEBUI_PROFILE_PROXY_JEN_LABEL: Jen
@@ -79,135 +83,205 @@ services:
       HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_LABEL: The Elders
       HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_REMOTE_PROFILE: default
       HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_SESSION_KEY_PREFIX: webui:moss:the-elders
-    volumes:
-      - ./runtime/moss-home:/opt/data
-      - ./agents/public/moss:/agents/moss/public:ro
-      - ./agents/private/moss:/agents/moss/private:rw
-      - ./state/shared:/mnt/hermes-shared
-      - ${HERMES_BACKUP_ROOT:-/backup}:/backup:rw
+      TELEGRAM_BOT_TOKEN: ${MOSS_TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_HOME_CHANNEL: ${MOSS_TELEGRAM_HOME_CHANNEL:-}
+      TELEGRAM_ALLOWED_USERS: ${MOSS_TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_HOME_CHANNEL_THREAD_ID: ${MOSS_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
+      ANTHROPIC_API_KEY: ${MOSS_ANTHROPIC_API_KEY:-}
+      ANTHROPIC_TOKEN: ${MOSS_ANTHROPIC_TOKEN:-}
     networks:
-      internal:
+      internal: null
       private_proxy:
         aliases:
-          - hermes
-      local_llm:
+        - hermes
+      local_llm: null
+    env_file:
+    - ./env/fleet.env
+    - ./env/moss-webui.env
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.moss-all-in-one
+      args:
+        MOSS_BASE_IMAGE: ${MOSS_BASE_IMAGE:?set MOSS_BASE_IMAGE to the reviewed immutable Moss base image}
+      # Builds must supply the private Node dependency explicitly.  The default
+      # is an intentionally incomplete public placeholder, so a missing input
+      # fails during Docker COPY rather than silently baking a substitute.
+      additional_contexts:
+        clash_royale_build_input: ${CLASH_ROYALE_BUILD_INPUT_DIR:-./ops/build-inputs/empty}
+    image: the-ai-crowd/moss-all-in-one:${THE_AI_CROWD_IMAGE_TAG}
+    working_dir: /agents/moss/private
+    volumes:
+    - ./runtime/moss-home:/opt/data
+    - ./agents/public/moss:/agents/moss/public:ro
+    - ./agents/private/moss:/agents/moss/private:rw
+    - ./state/shared:/mnt/hermes-shared
+    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
+    - ${THE_AI_CROWD_BACKUP_ROOT:-./state/private/backups}:/mnt/user/backups/the-ai-crowd:rw
     expose:
-      - "8787"
-      - "9119"
-      - "8644"
+    - '8787'
+    - '9119'
+    - '8644'
+    - '8648'
     ports:
-      - "0.0.0.0:8644:8644"
+    - 0.0.0.0:8644:8644
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:9119/api/status >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null || exit 1"]
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS
+        http://127.0.0.1:8648/health >/dev/null || exit 1
       interval: 30s
       timeout: 5s
       retries: 10
       start_period: 90s
-
-
   jen:
-    <<: *hermes-common
-    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
-    user: "0:0"
-    env_file:
-      - ./state/secrets/hermes-llm/fleet.env
-      - ./state/secrets/jen-api-server/api-server.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.jen
-    image: the-ai-crowd/jen:local
-    working_dir: /agents/jen/private
+    restart: always
+    user: 0:0
     environment:
-      <<: *hermes-env
+      TZ: ${TZ:-UTC}
+      HERMES_UID: 99
+      HERMES_GID: 100
+      HOME: /opt/data
+      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
+      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
       AGENT_NAME: jen
       AGENT_ROOT: /agents/jen
       AGENT_PUBLIC: /agents/jen/public
       AGENT_PRIVATE: /agents/jen/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/jen/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
-      API_SERVER_ENABLED: "true"
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
+      API_SERVER_ENABLED: 'true'
       API_SERVER_HOST: 0.0.0.0
-      API_SERVER_PORT: "8642"
+      API_SERVER_PORT: '8642'
       GOG_HOME: /opt/data/gog
       GOG_KEYRING_BACKEND: file
+      JEN_DOCUMENT_TASK_ALLOWED_ROOTS: /opt/data/cache/documents
+      JEN_DOCUMENT_TASK_CANDIDATES_BACKEND: /agents/jen/private/bin/jen-document-task-candidates-backend
+      JEN_DOCUMENT_TASK_ANALYSIS_QUEUE: /mnt/hermes-shared/jen-document-task-candidates/content-analysis-queue
+      TELEGRAM_BOT_TOKEN: ${JEN_TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_USERS: ${JEN_TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_HOME_CHANNEL: ${JEN_TELEGRAM_HOME_CHANNEL:-}
+      TELEGRAM_HOME_CHANNEL_NAME: ${JEN_TELEGRAM_HOME_CHANNEL_NAME:-}
+      TELEGRAM_ALLOW_ALL_USERS: ${JEN_TELEGRAM_ALLOW_ALL_USERS:-}
+      TODOIST_API_TOKEN: ${JEN_TODOIST_API_TOKEN:-}
+      JEN_GOOGLE_ACCOUNT: ${JEN_GOOGLE_ACCOUNT:-}
+      JEN_GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
+      GOG_ACCOUNT: ${JEN_GOG_ACCOUNT:-}
       GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
-      GOG_ACCOUNT: ${JEN_GOOGLE_ACCOUNT:-}
+      ANTHROPIC_API_KEY: ${JEN_ANTHROPIC_API_KEY:-}
+      ANTHROPIC_TOKEN: ${JEN_ANTHROPIC_TOKEN:-}
+    networks: *id001
+    env_file:
+    - ./env/fleet.env
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.jen
+    image: the-ai-crowd/jen:${THE_AI_CROWD_IMAGE_TAG}
+    working_dir: /agents/jen/private
     volumes:
-      - ./runtime/jen-home:/opt/data
-      - ./agents/public/jen:/agents/jen/public:ro
-      - ./agents/private/jen:/agents/jen/private:rw
-      - ./state/shared:/mnt/hermes-shared
+    - ./runtime/jen-home:/opt/data
+    - ./agents/public/jen:/agents/jen/public:ro
+    - ./agents/private/jen:/agents/jen/private:rw
+    - ./state/shared:/mnt/hermes-shared
+    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
-      - "9121"
-      - "8642"
+    - '9121'
+    - '8642'
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9121/ >/dev/null || exit 1"]
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:9121/ >/dev/null || exit 1
       interval: 30s
       timeout: 5s
       retries: 10
       start_period: 60s
-
   denholm:
-    <<: *hermes-common
-    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
-    user: "0:0"
-    env_file:
-      - ./state/secrets/hermes-llm/fleet.env
-      - ./state/secrets/jen-api-server/api-server.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.denholm
-    image: the-ai-crowd/denholm:local
-    working_dir: /agents/denholm/private
-    command: ["gateway", "run"]
+    restart: always
+    user: 0:0
     environment:
-      <<: *hermes-env
+      TZ: ${TZ:-UTC}
+      HERMES_UID: 99
+      HERMES_GID: 100
+      HOME: /opt/data
+      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
+      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
       AGENT_NAME: denholm
       AGENT_ROOT: /agents/denholm
       AGENT_PUBLIC: /agents/denholm/public
       AGENT_PRIVATE: /agents/denholm/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/denholm/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
-      API_SERVER_ENABLED: "true"
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
+      API_SERVER_ENABLED: 'true'
       API_SERVER_HOST: 0.0.0.0
-      API_SERVER_PORT: "8643"
+      API_SERVER_PORT: '8643'
+      TELEGRAM_BOT_TOKEN: ${DENHOLM_TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_HOME_CHANNEL: ${DENHOLM_TELEGRAM_HOME_CHANNEL:-}
+      TELEGRAM_ALLOWED_USERS: ${DENHOLM_TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_ALLOWED_CHATS: ${DENHOLM_TELEGRAM_ALLOWED_CHATS:-}
+      TELEGRAM_REQUIRE_MENTION: ${DENHOLM_TELEGRAM_REQUIRE_MENTION:-}
+      TELEGRAM_HOME_CHANNEL_NAME: ${DENHOLM_TELEGRAM_HOME_CHANNEL_NAME:-}
+      ANTHROPIC_API_KEY: ${DENHOLM_ANTHROPIC_API_KEY:-}
+      ANTHROPIC_TOKEN: ${DENHOLM_ANTHROPIC_TOKEN:-}
+    networks: *id001
+    env_file:
+    - ./env/fleet.env
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.denholm
+    image: the-ai-crowd/denholm:${THE_AI_CROWD_IMAGE_TAG}
+    working_dir: /agents/denholm/private
     volumes:
-      - ./runtime/denholm-home:/opt/data
-      - ./agents/public/denholm:/agents/denholm/public:ro
-      - ./agents/private/denholm:/agents/denholm/private:rw
-      - ./state/shared:/mnt/hermes-shared
+    - ./runtime/denholm-home:/opt/data
+    - ./agents/public/denholm:/agents/denholm/public:ro
+    - ./agents/private/denholm:/agents/denholm/private:rw
+    - ./state/shared:/mnt/hermes-shared
+    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
-      - "9122"
-      - "8643"
+    - '9122'
+    - '8643'
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8643/health >/dev/null || exit 1"]
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8643/health >/dev/null || exit 1
       interval: 30s
       timeout: 5s
       retries: 10
       start_period: 60s
-
   roy:
-    <<: *hermes-common
-    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
-    user: "0:0"
-    env_file:
-      - ./state/secrets/hermes-llm/fleet.env
-      - ./state/secrets/jen-api-server/api-server.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.roy
-    image: the-ai-crowd/roy:local
-    working_dir: /agents/roy/private
-    command: ["gateway", "run"]
+    restart: always
+    user: 0:0
     environment:
-      <<: *hermes-env
-      HERMES_HOME: /opt/data
+      TZ: ${TZ:-UTC}
+      HERMES_UID: 99
+      HERMES_GID: 100
+      HOME: /opt/data
+      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/roy
       HERMES_KANBAN_DISPATCH_OWNER: roy
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
+      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
+      HERMES_HOME: /opt/data
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/roy/private:/mnt/user/transfer
+      GOG_HOME: /opt/data/gog
+      GOG_KEYRING_BACKEND: file
+      GOG_CLIENT: roy-google
+      ROY_GOG_ACCOUNT: ''
+      ROY_GOOGLE_WORKSPACE_ACCOUNT: ${ROY_GOOGLE_WORKSPACE_ACCOUNT:-}
+      ROY_VIVIANE_GOOGLE_BACKEND: gog
+      ROY_VIVIANE_DRIVE_FOLDER_ID: ${ROY_VIVIANE_DRIVE_FOLDER_ID:-}
+      ROY_VIVIANE_SHEET_ID: ${ROY_VIVIANE_SHEET_ID:-}
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
       AGENT_NAME: roy
       AGENT_ROOT: /agents/roy
       AGENT_PUBLIC: /agents/roy/public
@@ -215,138 +289,201 @@ services:
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
       TERMINAL_CWD: /agents/roy/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
-      WEBHOOK_ENABLED: "true"
-      WEBHOOK_PORT: "8644"
-      API_SERVER_ENABLED: "true"
+      WEBHOOK_ENABLED: 'true'
+      WEBHOOK_PORT: '8644'
+      API_SERVER_ENABLED: 'true'
       API_SERVER_HOST: 0.0.0.0
-      API_SERVER_PORT: "8645"
+      API_SERVER_PORT: '8645'
+      HERMES_WEBUI_AGENT_DIR: /opt/hermes
+      HERMES_WEBUI_HOST: 0.0.0.0
+      HERMES_WEBUI_PORT: '8787'
+      HERMES_WEBUI_STATE_DIR: /opt/data/webui
+      HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/roy/private
+      ROY_DELIVERY_TRANSFER_DIR: /mnt/user/transfer
+      ROY_DELIVERY_WORKSPACE_ROOT: /agents/roy/private
+      HERMES_WEBUI_CHAT_BACKEND: legacy-direct
+      HERMES_WEBUI_GATEWAY_BASE_URL: http://roy:8645
+      HERMES_WEBUI_ISOLATED_PROFILE: '1'
+      ROY_DELIVERY_WEBUI_BASE_URL: https://roy.rodolflix.com
+      TELEGRAM_BOT_TOKEN: ${ROY_TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_USERS: ${ROY_TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_HOME_CHANNEL: ${ROY_TELEGRAM_HOME_CHANNEL:-}
+      TELEGRAM_HOME_CHANNEL_THREAD_ID: ${ROY_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
+      ANTHROPIC_API_KEY: ${ROY_ANTHROPIC_API_KEY:-}
+      ANTHROPIC_TOKEN: ${ROY_ANTHROPIC_TOKEN:-}
+    networks:
+      internal: null
+      private_proxy:
+        aliases:
+        - roy
+    env_file:
+    - ./env/fleet.env
+    - ./env/roy.env
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.roy-all-in-one
+    image: the-ai-crowd/roy-all-in-one:${THE_AI_CROWD_IMAGE_TAG}
+    working_dir: /agents/roy/private
     volumes:
-      - ./runtime/roy-home:/opt/data
-      - ./agents/public/roy:/agents/roy/public:ro
-      - ./agents/private/roy:/agents/roy/private:rw
-      - ./state/shared:/mnt/hermes-shared
+    - ./runtime/roy-home:/opt/data
+    - ./agents/public/roy:/agents/roy/public:ro
+    - ./agents/private/roy:/agents/roy/private:rw
+    - ./state/shared:/mnt/hermes-shared
+    - ${ROY_TRANSFER_ROOT:-./state/private/roy-transfer}:/mnt/user/transfer:rw
+    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
-      - "9123"
-      - "8644"
-      - "8645"
+    - '8787'
+    - '8644'
+    - '8645'
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS http://127.0.0.1:8645/health >/dev/null || exit 1"]
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS
+        http://127.0.0.1:8645/health >/dev/null || exit 1
       interval: 30s
       timeout: 5s
       retries: 10
-      start_period: 60s
-
+      start_period: 90s
   richmond:
-    <<: *hermes-common
-    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
-    user: "0:0"
-    env_file:
-      - ./state/secrets/hermes-llm/fleet.env
-      - ./state/secrets/jen-api-server/api-server.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.richmond
-    image: the-ai-crowd/richmond:local
-    working_dir: /agents/richmond/private
-    command: ["gateway", "run"]
+    restart: always
+    user: 0:0
     environment:
-      <<: *hermes-env
+      TZ: ${TZ:-UTC}
+      HERMES_UID: 99
+      HERMES_GID: 100
+      HOME: /opt/data
+      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/richmond/private:/mnt/hermes-shared/richmond
+      HERMES_KANBAN_DISPATCH_OWNER: richmond
+      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       AGENT_NAME: richmond
       AGENT_ROOT: /agents/richmond
       AGENT_PUBLIC: /agents/richmond/public
       AGENT_PRIVATE: /agents/richmond/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/richmond/private
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
-      HERMES_KANBAN_DISPATCH_OWNER: richmond
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
-      API_SERVER_ENABLED: "true"
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
+      API_SERVER_ENABLED: 'true'
       API_SERVER_HOST: 0.0.0.0
-      API_SERVER_PORT: "8646"
+      API_SERVER_PORT: '8646'
+      RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
+      RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
+      RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
+    networks: *id001
+    env_file:
+    - ./env/fleet.env
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.richmond
+    image: the-ai-crowd/richmond:${THE_AI_CROWD_IMAGE_TAG}
+    working_dir: /agents/richmond/private
     volumes:
-      - ./runtime/richmond-home:/opt/data
-      - ./agents/public/richmond:/agents/richmond/public:ro
-      - ./agents/private/richmond:/agents/richmond/private:rw
-      - ./state/shared:/mnt/hermes-shared
+    - ./runtime/richmond-home:/opt/data
+    - ./agents/public/richmond:/agents/richmond/public:ro
+    - ./agents/private/richmond:/agents/richmond/private:rw
+    - ./state/shared:/mnt/hermes-shared
+    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
-      - "9120"
-      - "8646"
+    - '9120'
+    - '8646'
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8646/health >/dev/null || exit 1"]
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8646/health >/dev/null || exit 1
       interval: 30s
       timeout: 5s
       retries: 10
       start_period: 60s
-
   the-elders:
-    <<: *hermes-common
-    # Hermes Agent v0.15.2 image starts via s6 as root, then drops privileges internally.
-    user: "0:0"
-    env_file:
-      - ./state/secrets/hermes-llm/fleet.env
-      - ./state/secrets/jen-api-server/api-server.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.the-elders
-    image: the-ai-crowd/the-elders:local
-    working_dir: /agents/the-elders/private
-    command: ["gateway", "run"]
+    restart: always
+    user: 0:0
     environment:
-      <<: *hermes-env
+      TZ: ${TZ:-UTC}
+      HERMES_UID: 99
+      HERMES_GID: 100
+      HOME: /opt/data
+      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_KANBAN_DISPATCH_OWNER: the-elders
+      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       AGENT_NAME: the-elders
       AGENT_ROOT: /agents/the-elders
       AGENT_PUBLIC: /agents/the-elders/public
       AGENT_PRIVATE: /agents/the-elders/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/the-elders/private
-      HERMES_KANBAN_DISPATCH_OWNER: the-elders
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
-      API_SERVER_ENABLED: "true"
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
+      API_SERVER_ENABLED: 'true'
       API_SERVER_HOST: 0.0.0.0
-      API_SERVER_PORT: "8647"
+      API_SERVER_PORT: '8647'
+      RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
+      RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
+      RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
+    networks: *id001
+    env_file:
+    - ./env/fleet.env
+    build:
+      context: .
+      dockerfile: ops/images/Dockerfile.the-elders
+    image: the-ai-crowd/the-elders:${THE_AI_CROWD_IMAGE_TAG}
+    working_dir: /agents/the-elders/private
     read_only: true
     tmpfs:
-      - /tmp
-      - /run:exec
+    - /tmp
+    - /run:exec
     volumes:
-      - ./runtime/the-elders-home:/opt/data
-      - ./agents/public/the-elders:/agents/the-elders/public:ro
-      - ./agents/private/the-elders:/agents/the-elders/private:rw
-      - ./state/shared:/mnt/hermes-shared:ro
+    - ./runtime/the-elders-home:/opt/data
+    - ./agents/public/the-elders:/agents/the-elders/public:ro
+    - ./agents/private/the-elders:/agents/the-elders/private:rw
+    - ./state/shared:/mnt/hermes-shared:ro
+    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
-      - "9130"
-      - "8647"
+    - '9130'
+    - '8647'
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8647/health >/dev/null || exit 1"]
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8647/health >/dev/null || exit 1
       interval: 30s
       timeout: 5s
       retries: 10
       start_period: 60s
-
   nats:
     image: nats:2.10-alpine
-    command: ["-js", "-sd", "/data", "-m", "8222", "-n", "nats"]
+    command:
+    - -js
+    - -sd
+    - /data
+    - -m
+    - '8222'
+    - -n
+    - nats
     restart: unless-stopped
     networks:
-      - internal
+    - internal
     volumes:
-      - nats_data:/data
+    - nats_data:/data
     expose:
-      - "4222"
-      - "8222"
+    - '4222'
+    - '8222'
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8222/healthz?js-enabled=true || exit 1"]
+      test:
+      - CMD-SHELL
+      - wget -q --spider http://127.0.0.1:8222/healthz?js-enabled=true || exit 1
       interval: 30s
       timeout: 5s
       retries: 10
       start_period: 15s
-
 volumes:
-  nats_data:
-
+  nats_data: null
 networks:
   internal:
     name: the-ai-crowd_internal

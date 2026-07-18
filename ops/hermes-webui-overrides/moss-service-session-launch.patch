@@ -12,19 +12,10 @@ index 27cd9b3d..c3da9db3 100644
 +# The only exposed route is POST /api/internal/session-launch.
 +# HERMES_WEBUI_SESSION_LAUNCH_TOKEN=
 diff --git a/README.md b/README.md
-index f18f33dd..f3399104 100644
+index 4e17ead0..3ac95f34 100644
 --- a/README.md
 +++ b/README.md
-@@ -95,7 +95,7 @@ What makes it different from other agentic tools:
- | Provider-agnostic | Yes | No (Claude only) | Yes | Yes | Yes |
- | Open source | Yes (MIT) | No | Yes | Yes | Yes |
- 
--† Claude Code has CLAUDE.md / MEMORY.md project context and rolling auto-memory, but not full automatic cross-session recall  
-+† Claude Code has CLAUDE.md / MEMORY.md project context and rolling auto-memory, but not full automatic cross-session recall
- ‡ Claude Code has cloud-managed scheduling (Anthropic infrastructure) and session-scoped `/loop`; no self-hosted cron
- 
- **The closest competitor is OpenClaw** — both are always-on, self-hosted, open-source agents
-@@ -596,6 +596,7 @@ The WebUI is still coupled to Hermes Agent internals for runtime execution, prov
+@@ -612,6 +612,7 @@ The WebUI is still coupled to Hermes Agent internals for runtime execution, prov
  **Deploying & operating**
  - [`docs/remote-access.md`](docs/remote-access.md) — SSH tunnel, Tailscale, and phone access (incl. a community ARM64-Android field report)
  - [`docs/advanced-chat-setup.md`](docs/advanced-chat-setup.md) — optional dynamic recall-prefill and Gateway-backed browser chat for self-hosted deployments
@@ -33,10 +24,10 @@ index f18f33dd..f3399104 100644
  - [`docs/supervisor.md`](docs/supervisor.md) — launchd, systemd, supervisord, runit, and s6 process-supervisor setup
  - [`docs/wsl-autostart.md`](docs/wsl-autostart.md) — WSL2 auto-start at Windows login
 diff --git a/api/routes.py b/api/routes.py
-index d16ddd27..0f410f98 100644
+index cc24f00b..1bc6e01f 100644
 --- a/api/routes.py
 +++ b/api/routes.py
-@@ -2839,6 +2839,12 @@ def _is_browser_unsafe_request(handler) -> bool:
+@@ -5153,6 +5153,12 @@ def _check_same_origin_browser_request(handler, *, require_provenance: bool = Fa
  
  def _csrf_exempt_path(path: str) -> bool:
      """Paths that cannot or must not carry a session CSRF token."""
@@ -49,31 +40,24 @@ index d16ddd27..0f410f98 100644
      return path in {
          "/api/auth/login",
          "/api/auth/passkey/options",
-@@ -9117,6 +9123,18 @@ def handle_post(handler, parsed) -> bool:
-         finally:
-             if diag:
-                 diag.finish()
+@@ -12910,6 +12916,11 @@ def handle_post(handler, parsed) -> bool:
+             diag.finish()
+         return True
+ 
 +    if parsed.path == "/api/internal/session-launch":
-+        from api.service_session_launch import handle_service_session_launch, service_launch_authorized
++        from api.service_session_launch import handle_service_session_launch
 +
-+        if not service_launch_authorized(handler):
-+            return j(handler, {"error": "service authorization required"}, status=401)
-+        try:
-+            body = read_body(handler)
-+        except ValueError as exc:
-+            status = 413 if "too large" in str(exc).lower() else 400
-+            return bad(handler, str(exc), status=status)
 +        return handle_service_session_launch(handler, body)
 +
-     # CSRF: reject cross-origin or tokenless authenticated browser requests.
-     # /api/auth/login has no authenticated session token yet, and /api/csp-report
-     # is intentionally unauthenticated for browser-generated violation reports.
+     if parsed.path == "/api/escape/authorize":
+         return _handle_escape_authorize(handler, parsed, body)
+ 
 diff --git a/api/service_session_launch.py b/api/service_session_launch.py
 new file mode 100644
-index 00000000..a6a34139
+index 00000000..c9cd32f9
 --- /dev/null
 +++ b/api/service_session_launch.py
-@@ -0,0 +1,187 @@
+@@ -0,0 +1,185 @@
 +"""Narrow service capability for creating a persistent WebUI session and turn.
 +
 +This is intentionally not a general HTTP proxy and is distinct from browser
@@ -185,17 +169,12 @@ index 00000000..a6a34139
 +        clear_request_profile()
 +
 +
-+def service_launch_authorized(handler) -> bool:
-+    """Authorize the service capability before any request-body parsing."""
-+    return _authorized(handler)
-+
-+
 +def handle_service_session_launch(handler, body: object) -> bool:
 +    """Create, persist, and start a service-authorized WebUI conversation.
 +
 +    Responses and logs deliberately exclude the initial prompt and service token.
 +    """
-+    if not service_launch_authorized(handler):
++    if not _authorized(handler):
 +        _error(handler, "service authorization required", 401)
 +        return True
 +    data, error = _validate_body(body)
@@ -212,6 +191,9 @@ index 00000000..a6a34139
 +        from api.routes import _session_model_state_from_request, resolve_trusted_workspace, start_session_turn
 +
 +        with _request_profile(data["profile"]):
++            # Model/provider and remote-workspace resolution are profile-scoped.
++            # Resolve them only after establishing the requested launch profile,
++            # never from a pre-existing browser/request profile.
 +            workspace = str(resolve_trusted_workspace(data["workspace"]))
 +            model, provider = _session_model_state_from_request(data["model"], None)
 +            session = new_session(
@@ -326,10 +308,10 @@ index 00000000..52bb91a9
 +live WebUI process, drain and recheck active streams. Do not use browser cookies
 +or manually copied credentials as a substitute for the service capability.
 diff --git a/server.py b/server.py
-index 74e3a3e5..49da64eb 100644
+index 29a8c220..a4b66001 100644
 --- a/server.py
 +++ b/server.py
-@@ -135,6 +135,7 @@ from urllib.parse import urlparse
+@@ -101,6 +101,7 @@ from urllib.parse import urlparse
  logger = logging.getLogger(__name__)
  
  from api.auth import check_auth
@@ -337,43 +319,7 @@ index 74e3a3e5..49da64eb 100644
  from api.config import HOST, PORT, STATE_DIR, SESSION_DIR, DEFAULT_WORKSPACE
  from api.helpers import (
      j,
-@@ -201,22 +202,22 @@ class QuietHTTPServer(ThreadingHTTPServer):
-         self.accept_loop_requests_total += 1
-         self.accept_loop_last_request_at = time.time()
-         return super()._handle_request_noblock()
--    
-+
-     def handle_error(self, request, client_address):
-         """Override to suppress logging for common client disconnect errors."""
-         exc_type, exc_value, _ = sys.exc_info()
--        
-+
-         # Silently ignore common connection errors caused by client disconnects
-         if exc_type in (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, TimeoutError):
-             return
--        
-+
-         # Also handle socket errors that indicate client disconnect
-         if issubclass(exc_type, OSError):
-             # errno 54 is Connection reset by peer on macOS/BSD
-             # errno 104 is Connection reset by peer on Linux
-             if getattr(exc_value, 'errno', None) in (32, 54, 104, 110):  # EPIPE, ECONNRESET, ETIMEDOUT
-                 return
--        
-+
-         # For other errors, use default logging
-         super().handle_error(request, client_address)
- 
-@@ -230,7 +231,7 @@ class Handler(BaseHTTPRequestHandler):
-     # Connection: close because the body has no terminator. See PR notes.
-     protocol_version = "HTTP/1.1"
-     timeout = 30  # seconds — kills idle/incomplete connections to prevent thread exhaustion
--    
-+
-     def setup(self):
-         """Set socket options for each accepted connection."""
-         super().setup()
-@@ -359,7 +360,15 @@ class Handler(BaseHTTPRequestHandler):
+@@ -407,7 +408,15 @@ class Handler(BaseHTTPRequestHandler):
              _is_csp_report_post = (
                  parsed.path == "/api/csp-report" and self.command == "POST"
              )
@@ -383,7 +329,7 @@ index 74e3a3e5..49da64eb 100644
 +            # never let it inherit or mint a browser session cookie.
 +            if (
 +                not _is_csp_report_post
-+                and not (self.command == "POST" and is_service_launch_path(parsed.path))
++                and not is_service_launch_path(parsed.path)
 +                and not check_auth(self, parsed)
 +            ):
 +                return
@@ -392,10 +338,10 @@ index 74e3a3e5..49da64eb 100644
                  return j(self, {'error': 'not found'}, status=404)
 diff --git a/tests/test_service_session_launch.py b/tests/test_service_session_launch.py
 new file mode 100644
-index 00000000..ed3cc847
+index 00000000..8fb704f8
 --- /dev/null
 +++ b/tests/test_service_session_launch.py
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,133 @@
 +"""Regression coverage for the narrow internal persistent-session launcher."""
 +from __future__ import annotations
 +
@@ -474,18 +420,58 @@ index 00000000..ed3cc847
 +    assert not is_service_launch_path("/api/chat/start")
 +
 +
-+
-+def test_unauthorized_request_is_rejected_before_body_parse(monkeypatch):
-+    """No capability means malformed/oversized payloads cannot change the 401 contract."""
++def test_requested_profile_scopes_workspace_and_model_resolution(monkeypatch):
++    """A service launch must not inherit model/workspace state from another profile."""
++    launch = _module(monkeypatch)
++    import api.models as models
++    import api.profiles as profiles
 +    import api.routes as routes
-+    import api.service_session_launch as launch
 +
-+    monkeypatch.delenv("HERMES_WEBUI_SESSION_LAUNCH_TOKEN", raising=False)
-+    importlib.reload(launch)
-+    captured = {}
-+    monkeypatch.setattr(routes, "read_body", lambda _handler: (_ for _ in ()).throw(AssertionError("body must not be read")))
-+    monkeypatch.setattr(routes, "j", lambda _handler, payload, status=200, **_kwargs: captured.update(payload=payload, status=status) or True)
-+    monkeypatch.setattr(routes.RequestDiagnostics, "maybe_start", staticmethod(lambda *_args, **_kwargs: None))
++    observed = {}
 +
-+    assert routes.handle_post(SimpleNamespace(headers={}), SimpleNamespace(path=launch.PATH))
-+    assert captured == {"payload": {"error": "service authorization required"}, "status": 401}
++    def current_profile():
++        return getattr(profiles._tls, "profile", None)
++
++    def resolve_workspace(workspace):
++        observed["workspace_profile"] = current_profile()
++        return workspace
++
++    def resolve_model(model, _provider):
++        observed["model_profile"] = current_profile()
++        return model or "profile-default-model", "profile-default-provider"
++
++    session = SimpleNamespace(session_id="session-1", save=lambda: None)
++
++    def new_session(**kwargs):
++        observed["new_session_profile"] = current_profile()
++        observed["session_kwargs"] = kwargs
++        return session
++
++    def start_turn(*_args, **_kwargs):
++        observed["turn_profile"] = current_profile()
++        return {"stream_id": "stream-1"}
++
++    # A browser/request context for another profile must not leak into this
++    # explicitly authorized service launch.
++    profiles.set_request_profile("default")
++    monkeypatch.setattr(launch, "_profile_exists", lambda _profile: True)
++    monkeypatch.setattr(launch, "_verify_active_stream", lambda *_args: True)
++    monkeypatch.setattr(routes, "resolve_trusted_workspace", resolve_workspace)
++    monkeypatch.setattr(routes, "_session_model_state_from_request", resolve_model)
++    monkeypatch.setattr(routes, "start_session_turn", start_turn)
++    monkeypatch.setattr(models, "new_session", new_session)
++    monkeypatch.setattr(launch, "j", lambda *_args, **_kwargs: None)
++
++    handler = SimpleNamespace(headers={launch.HEADER: "t" * 32})
++    assert launch.handle_service_session_launch(handler, {
++        "profile": "moss",
++        "workspace": "/agents/moss/private",
++        "model": "openai/gpt-5.5",
++        "initial_prompt": "hello",
++    })
++
++    assert {observed[key] for key in (
++        "workspace_profile", "model_profile", "new_session_profile", "turn_profile",
++    )} == {"moss"}
++    assert observed["session_kwargs"]["model_provider"] == "profile-default-provider"
++    assert getattr(profiles._tls, "profile", None) is None
