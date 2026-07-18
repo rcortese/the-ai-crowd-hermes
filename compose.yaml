@@ -322,7 +322,7 @@ services:
     build:
       context: .
       dockerfile: ops/images/Dockerfile.roy-all-in-one
-    image: the-ai-crowd/roy-all-in-one:${THE_AI_CROWD_IMAGE_TAG}
+    image: the-ai-crowd/roy-all-in-one:local
     working_dir: /agents/roy/private
     volumes:
     - ./runtime/roy-home:/opt/data
