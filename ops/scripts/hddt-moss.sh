@@ -5,7 +5,7 @@ umask 077
 readonly SERVICE=moss PROJECT=the-ai-crowd CONTAINER=the-ai-crowd-moss-1
 readonly DEFAULT_ROOT=/mnt/user/appdata/the-ai-crowd-hddt
 readonly REQUEST_KEYS='["approval_context","candidate_image_id","candidate_render_sha256","canonical_remote","confirmation_deadline_epoch","created_epoch","executor_sha256","input_aggregate_sha256","mode","moss_base_image","operation_id","request_sha256","rollback_image_id","rollback_render_sha256","source_closure_sha256","source_revision","source_tree"]'
-readonly RECEIPT_KEYS='["base_image","candidate_image_id","context_sha256","created_epoch","executor_sha256","source_closure_sha256","source_remote","source_revision","source_tree","toolchain_sha256"]'
+readonly RECEIPT_KEYS='["base_image","candidate_image_id","context_sha256","created_epoch","executor_sha256","source_base_revision","source_closure_sha256","source_remote","source_revision","source_tree","toolchain_sha256"]'
 readonly AUTH_KEYS='["approval_channel","approval_id","approved_epoch","candidate_image_id","candidate_render_sha256","consumed","executor_sha256","expires_epoch","moss_base_image","operation_id","operations","request_sha256","rollback_image_id","rollback_render_sha256","source_remote","source_revision","source_tree"]'
 usage(){ printf '%s\n' 'usage: hddt-moss.sh {prepare|run|confirm|rollback|recover} --operation-id ID [fields]'; }
 die(){ printf 'HDDT: %s\n' "$1" >&2; exit "${2:-64}"; }
@@ -81,8 +81,12 @@ check_source(){
     [[ $closure =~ ^[0-9a-f]{64}$ ]]||die 'source closure unavailable' 65; printf '%s\n' "$closure"
 }
 check_receipt(){
- local r=$1 closure=$2 f="$r/build-receipts/sha256-${candidate_image_id#sha256:}.json"; regular_private "$f"&&json_keys_exact "$f" "$RECEIPT_KEYS"||die 'receipt schema/custody invalid' 65
+ local r=$1 checkout=$2 closure=$3 f="$r/build-receipts/sha256-${candidate_image_id#sha256:}.json" base canonical gb; regular_private "$f"&&json_keys_exact "$f" "$RECEIPT_KEYS"||die 'receipt schema/custody invalid' 65
  [[ $(sha "$f") == "$receipt_sha256" ]]||die 'receipt bytes mismatch' 65
+ base=$(jq -er '.source_base_revision|strings|select(test("^[0-9a-f]{40}$"))' "$f")||die 'receipt source base invalid' 65
+ gb=$(git_bin); canonical=$("$gb" -c safe.directory="$checkout" -C "$checkout" rev-parse --verify "${base}^{commit}")||die 'receipt source base unavailable' 65
+ [[ $canonical == "$base" && $base != "$source_revision" ]]||die 'receipt source base mismatch' 65
+ "$gb" -c safe.directory="$checkout" -C "$checkout" merge-base --is-ancestor "$base" "$source_revision"||die 'receipt source base non-ancestor' 65
  jq -e --arg rev "$source_revision" --arg tree "$source_tree" --arg remote "$canonical_remote" --arg image "$candidate_image_id" --arg base "$moss_base_image" --arg closure "$closure" --arg exec "$(sha "$0")" '.source_revision==$rev and .source_tree==$tree and .source_remote==$remote and .candidate_image_id==$image and .base_image==$base and .source_closure_sha256==$closure and .executor_sha256==$exec and (.context_sha256|test("^[0-9a-f]{64}$")) and (.toolchain_sha256|test("^[0-9a-f]{64}$"))' "$f" >/dev/null||die 'receipt binding mismatch' 65; printf '%s\n' "$f"
 }
 check_images(){ local db; db=$(docker_bin); "$db" image inspect "$moss_base_image" >/dev/null && "$db" image inspect "$candidate_image_id" >/dev/null && "$db" image inspect "$rollback_image_id" >/dev/null; }
@@ -93,7 +97,7 @@ prepare(){
  parse "$@"; reject_production_overrides; [[ $mode == automatic || $mode == followable ]]||die 'invalid mode'; valid_image "$candidate_image_id"&&valid_image "$rollback_image_id"&&[[ $candidate_image_id != "$rollback_image_id" ]]||die 'invalid image IDs'; [[ $source_revision =~ ^[0-9a-f]{40}$ && $source_tree =~ ^[0-9a-f]{40}$ && $receipt_sha256 =~ ^[0-9a-f]{64}$ && $confirmation_seconds =~ ^[0-9]+$ && -n $canonical_remote && -n $moss_base_image && -n $approval_context ]]||die 'invalid prepare fields'
  local r sr op stage closure receipt before after cand_hash roll_hash input_hash exec_hash body req_hash; r=$(root); sr=$(stack); init_root "$r"; op="$r/operations/$operation_id"
  exec 9>"$r/prepare.lock"; flock -xn 9||die 'prepare lock busy' 75
- closure=$(check_source "$sr"); check_images||die 'base or image ID unavailable' 65; receipt=$(check_receipt "$r" "$closure")
+ closure=$(check_source "$sr"); check_images||die 'base or image ID unavailable' 65; receipt=$(check_receipt "$r" "$sr" "$closure")
  body=$(jq -ncS --arg op "$operation_id" --arg mode "$mode" --arg rev "$source_revision" --arg tree "$source_tree" --arg remote "$canonical_remote" --arg candidate "$candidate_image_id" --arg rollback "$rollback_image_id" --arg base "$moss_base_image" --arg approval "$approval_context" --arg receipt "$receipt_sha256" '{operation_id:$op,mode:$mode,source_revision:$rev,source_tree:$tree,canonical_remote:$remote,candidate_image_id:$candidate,rollback_image_id:$rollback,moss_base_image:$base,approval_context:$approval,receipt_sha256:$receipt}')
  req_hash=$(sha256sum <<<"$body"|cut -d' ' -f1); if [[ -d $op ]]; then [[ -f $op/prepare.sha256 && $(<"$op/prepare.sha256") == "$req_hash" ]]||die 'operation payload diverges' 65; printf '%s\n' "$(jq -r .request_sha256 "$op/request.json")"; return; fi
  stage=$(mktemp -d "$r/staging/$operation_id.XXXXXX"); chmod 700 "$stage"; mkdir -m 700 "$stage/control"; trap 'rm -rf -- "${stage:-}"' INT TERM ERR EXIT
@@ -122,7 +126,7 @@ rollback_live(){ local op=$1 cause=$2 j class; j=$(live); class=$(candidate_rela
 CURRENT_OP= CURRENT_PHASE= CURRENT_ROOT= HANDLER_ACTIVE=0 HANDLER_DONE=0
 release_lifecycle_lock(){ flock -u 8 2>/dev/null||true; exec 8>&-; }
 reacquire_lifecycle_lock(){ exec 8>"$CURRENT_ROOT/deploy.lock"; flock -xn 8; }
-signal_relation(){ local j=$1; if [[ $(rollback_relation "$CURRENT_OP" "$j") == rollback ]]; then printf '%s\n' rollback; return; fi; [[ -e $CURRENT_OP/candidate-identity.json ]]||seal_candidate_identity "$CURRENT_OP" "$j"||true; candidate_relation "$CURRENT_OP" "$j"; }
+signal_relation(){ local j=$1; if [[ $(rollback_relation "$CURRENT_OP" "$j") == rollback ]]; then printf '%s\n' rollback; return 0; fi; [[ -e $CURRENT_OP/candidate-identity.json ]]||seal_candidate_identity "$CURRENT_OP" "$j"||true; candidate_relation "$CURRENT_OP" "$j"; }
 finalize_interruption(){
  local origin=$1 rc=${2:-1} j relation; local reason="signal_${origin}"
  (( HANDLER_ACTIVE || HANDLER_DONE ))&&return 0
@@ -148,7 +152,7 @@ finalize_interruption(){
 }
 run(){
  parse "$@"; reject_production_overrides; local r op auth j deadline fail= attempts=0; r=$(root); init_root "$r"; op="$r/operations/$operation_id"; [[ -d $op && ! -e $op/terminal.json ]]||die 'operation missing or terminal' 65; load_request "$op"; CURRENT_OP=$op; CURRENT_ROOT=$r; CURRENT_PHASE=preapply; trap 'finalize_interruption INT' INT; trap 'finalize_interruption TERM' TERM; trap 'finalize_interruption ERR $?' ERR; trap 'finalize_interruption EXIT $?' EXIT
- exec 8>"$r/deploy.lock"; flock -xn 8||die 'lifecycle lock busy' 75; check_source "$(stack)" >/dev/null; check_receipt "$r" "$(check_source "$(stack)")" >/dev/null; load_request "$op"; [[ $(sha "$op/candidate.rendered.json") == "$candidate_render_sha256" && $(sha "$op/rollback.rendered.json") == "$rollback_render_sha256" ]]||die 'sealed render drift' 65; j=$(live); jq -e --arg image "$rollback_image_id" '.Image==$image and .State.Running==true and .State.Status=="running" and (.State.Health.Status//"none")=="healthy"' <<<"$j" >/dev/null||{ journal "$op" REJECTED_PRE_APPLY rollback_identity_mismatch; terminal "$op" REJECTED_PRE_APPLY rollback_identity_mismatch; return 65; }; seal_live_snapshot "$op" "$j"; snapshot_matches "$op" "$j"||die "snapshot identity mismatch" 65
+ exec 8>"$r/deploy.lock"; flock -xn 8||die 'lifecycle lock busy' 75; local sr closure; sr=$(stack); closure=$(check_source "$sr"); check_receipt "$r" "$sr" "$closure" >/dev/null; load_request "$op"; [[ $(sha "$op/candidate.rendered.json") == "$candidate_render_sha256" && $(sha "$op/rollback.rendered.json") == "$rollback_render_sha256" ]]||die 'sealed render drift' 65; j=$(live); jq -e --arg image "$rollback_image_id" '.Image==$image and .State.Running==true and .State.Status=="running" and (.State.Health.Status//"none")=="healthy"' <<<"$j" >/dev/null||{ journal "$op" REJECTED_PRE_APPLY rollback_identity_mismatch; terminal "$op" REJECTED_PRE_APPLY rollback_identity_mismatch; return 65; }; seal_live_snapshot "$op" "$j"; snapshot_matches "$op" "$j"||die "snapshot identity mismatch" 65
  auth="$r/authorizations/$operation_id.ready"; validate_auth "$auth"||{ journal "$op" REJECTED_PRE_APPLY authorization_invalid; terminal "$op" REJECTED_PRE_APPLY authorization_invalid; return 65; }; mv -T "$auth" "$r/authorizations/$operation_id.consumed"; sync "$r/authorizations"; journal "$op" APPLY_INTENT authorization_consumed; CURRENT_PHASE=mutated
  [[ -z ${HDDT_AFTER_APPLY_INTENT_HOOK:-} ]]||"$HDDT_AFTER_APPLY_INTENT_HOOK"; journal "$op" APPLYING candidate; apply_render "$op" candidate||{ rollback_live "$op" apply_failed; return 1; }; journal "$op" VERIFYING_BASE probes
  deadline=$(( $(now)+${HDDT_PROBE_SECONDS:-30} )); while ! fail=$(probe_once "$op" candidate); do attempts=$((attempts+1)); case $fail in exited|dead|unhealthy|third|restart_or_identity) rollback_live "$op" "probe_$fail"; return 1;; health-8787|health-8644|health-8648|host-health-8644) if [[ $(now) -lt $deadline ]]; then journal "$op" VERIFYING_BASE "retry_$fail"; "${HDDT_SLEEP_BIN:-sleep}" "${HDDT_SLEEP_SECONDS:-1}"; continue; fi; rollback_live "$op" "probe_deadline_probe_$fail"; return 1;; created|absent) ;; esac; [[ $(now) -ge $deadline ]]&&{ rollback_live "$op" probe_deadline; return 1; }; journal "$op" VERIFYING_BASE "retry_$fail"; "${HDDT_SLEEP_BIN:-sleep}" "${HDDT_SLEEP_SECONDS:-1}"; done

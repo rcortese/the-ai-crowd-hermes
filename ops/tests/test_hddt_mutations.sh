@@ -62,7 +62,7 @@ run_red(){
   (( reached == 1 )) || { printf 'mutant output:\n' >&2; show "$output"; fail "$name did not reach the isolated fixture"; }
   grep -Fq -- "$expected" "$output" || { printf 'mutant output:\n' >&2; show "$output"; fail "$name missed exact oracle: $expected"; }
   if grep -Eiq 'syntax error|command not found|No such file or directory|unbound variable' "$output"; then
-    [[ $name == rollback-render-tag || $name == trap-omit-rollback || $name == outbox-before-terminal ]] && grep -Fq '/terminal.json: No such file or directory' "$output" || { printf 'mutant output:\n' >&2; show "$output"; fail "$name failed through syntax/setup"; }
+    [[ $name == rollback-render-tag || $name == trap-omit-rollback || $name == outbox-before-terminal || $name == signal-rollback-return-status ]] && grep -Fq '/terminal.json: No such file or directory' "$output" || { printf 'mutant output:\n' >&2; show "$output"; fail "$name failed through syntax/setup"; }
   fi
   if [[ $name == functional-endpoint ]]; then
     printf '%s\n' 'REACH[t81-functional-endpoint] ASSERT[t81] causal=true'
@@ -104,6 +104,10 @@ run_red lote-b trap-omit-rollback T63 "$base" hddt 'ASSERT[t63]' 'candidate) rol
 run_red lote-b trap-duplicate-rollback T63 "$base" hddt 'ASSERT[t63]' 'if apply_render "$op" rollback && probe_once "$op" rollback; then' 'if apply_render "$op" rollback && probe_once "$op" rollback && apply_render "$op" rollback && probe_once "$op" rollback; then' rollback_live
 run_red lote-b outbox-before-terminal T77 "$base" hddt 'ASSERT[t77]: terminal-before-outbox' $'jq -nc --arg s "$state" --arg r "$reason" --argjson t "$(now)" \'{state:$s,reason:$r,created_epoch:$t}\'|atomic_new "$op/terminal.json"; [[ -s $op/terminal.json ]]||die \'terminal durability failure\' 74; jq -nc --arg op "$(basename "$op")" --arg s "$state" --arg h "$(sha "$op/terminal.json")" \'{operation_id:$op,state:$s,terminal_sha256:$h}\'|atomic_new "$r/outbox/$(basename "$op").ready"||die \'terminal outbox publication failure\' 74;' $'jq -nc --arg op "$(basename "$op")" --arg s "$state" --arg h "$(sha "$op/terminal.json")" \'{operation_id:$op,state:$s,terminal_sha256:$h}\'|atomic_new "$r/outbox/$(basename "$op").ready"||die \'terminal outbox publication failure\' 74; jq -nc --arg s "$state" --arg r "$reason" --argjson t "$(now)" \'{state:$s,reason:$r,created_epoch:$t}\'|atomic_new "$op/terminal.json"; [[ -s $op/terminal.json ]]||die \'terminal durability failure\' 74;' terminal_locked
 run_red lote-b rollback-preapply-incomplete T79 "$base" hddt 'ASSERT[t79]: rollback-preapply-incomplete' 'PREPARED|AUTHORIZED|VALIDATING|SNAPSHOTTING)' 'AUTHORIZED|VALIDATING|SNAPSHOTTING)' recover
+run_red lote-b signal-rollback-return-status T67 "$base" hddt 'ASSERT[t67]' "printf '%s\\n' rollback; return 0;" "printf '%s\\n' rollback; return 1;" signal_relation
+run_red lote-b source-base-ancestry T82 "$base" hddt 'ASSERT[t82]' 'merge-base --is-ancestor "$base" "$source_revision"||die' 'true||die' check_receipt
+run_red lote-b run-source-base-revalidation T82 "$base" hddt 'ASSERT[t82]' 'closure=$(check_source "$sr"); check_receipt "$r" "$sr" "$closure" >/dev/null; load_request "$op";' 'closure=$(check_source "$sr"); : # mutation: omit run receipt revalidation
+ load_request "$op";' run
 
 jq -Rn --arg schema hddt-mutation-ledger/v1 '
   [inputs | split("\t") | {schema:.[0],cohort:.[1],id:.[2],case_id:.[3],target:.[4],oracle:.[5],result:.[6],rc:(.[7]|tonumber)}]
@@ -112,17 +116,17 @@ jq -Rn --arg schema hddt-mutation-ledger/v1 '
 while IFS= read -r line || [[ -n $line ]]; do printf '%s\n' "$line"; done <"$ledger_rows" >>"$ledger_tsv"
 jq -e '
   .schema=="hddt-mutation-ledger/v1"
-  and (.mutants|length)==26
-  and ([.mutants[].id]|unique|length)==26
+  and (.mutants|length)==29
+  and ([.mutants[].id]|unique|length)==29
   and ([.mutants[]|select(.cohort=="existing")]|length)==7
   and ([.mutants[]|select(.cohort=="lote-a")]|length)==10
-  and ([.mutants[]|select(.cohort=="lote-b")]|length)==9
+  and ([.mutants[]|select(.cohort=="lote-b")]|length)==12
   and ([.mutants[].result]|all(.=="RED"))
-  and ([.mutants[].id]|sort)==(["apply-env-i","authorization-single-use","base-binding","cas-ignore-id","cas-ignore-restart-count","cas-ignore-started-at","confirmation-deadline","container-curl-argv","env-scrub","functional-endpoint","health-none","host-container-vantage","input-drift","mount-overlap","outbox-before-terminal","parser-eval-injection","recovery-image-only-third","release-argv","reopen-live-input-post-seal","rollback-preapply-incomplete","rollback-render-tag","selector-tag-default","set-E-nested-err","third-state-recovery","trap-duplicate-rollback","trap-omit-rollback"]|sort)
+  and ([.mutants[].id]|sort)==(["apply-env-i","authorization-single-use","base-binding","cas-ignore-id","cas-ignore-restart-count","cas-ignore-started-at","confirmation-deadline","container-curl-argv","env-scrub","functional-endpoint","health-none","host-container-vantage","input-drift","mount-overlap","outbox-before-terminal","parser-eval-injection","recovery-image-only-third","release-argv","reopen-live-input-post-seal","rollback-preapply-incomplete","rollback-render-tag","run-source-base-revalidation","selector-tag-default","set-E-nested-err","signal-rollback-return-status","source-base-ancestry","third-state-recovery","trap-duplicate-rollback","trap-omit-rollback"]|sort)
 ' "$ledger_json" >/dev/null || fail 'ledger coverage/schema validation failed'
 printf '%s\n' 'MUTATION_LEDGER_TSV_BEGIN'
 while IFS= read -r line || [[ -n $line ]]; do printf '%s\n' "$line"; done <"$ledger_tsv"
 printf '%s\n' 'MUTATION_LEDGER_JSON_BEGIN'
 jq -cS . "$ledger_json"
 HDDT_SCRIPT="$base" bash "$moss_test" mutations
-printf '%s\n' 'hddt-mutations: PASS semantic-red=true ledger-schema=hddt-mutation-ledger/v1 total=26 existing=7 lote-a=10 lote-b=9'
+printf '%s\n' 'hddt-mutations: PASS semantic-red=true ledger-schema=hddt-mutation-ledger/v1 total=29 existing=7 lote-a=10 lote-b=12'
