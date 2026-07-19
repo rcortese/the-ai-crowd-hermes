@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
+# Recovery has executable coverage in the shared fake-first matrix; assert its
+# dedicated T34–T40/T49 evidence rather than scanning implementation text.
 set -Eeuo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-script="$root/ops/scripts/hddt-moss.sh"
-[[ -x "$script" ]] || { echo 'missing HDDT executor' >&2; exit 1; }
-grep -Fq 'recover)' "$script"
-grep -Fq 'RECOVERY_UNRESOLVED' "$script"
-grep -Fq 'ROLLBACK_FAILED' "$script"
-grep -Fq 'trap' "$script"
-echo 'hddt-recovery-contract: PASS'
+out=$(mktemp /tmp/hddt-recovery-output.XXXXXX)
+trap 'rm -f "$out"' EXIT
+bash "$root/ops/tests/test_hddt_moss.sh" >"$out"
+for t in T34 T35 T36 T37 T38 T39 T40 T49; do grep -qx "$t PASS" "$out" >/dev/null; done
+printf '%s\n' 'hddt-recovery: T34-T40,T49 PASS'
