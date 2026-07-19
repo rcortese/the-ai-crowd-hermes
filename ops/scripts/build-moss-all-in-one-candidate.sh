@@ -33,3 +33,19 @@ docker build --pull=false \
   --build-context "clash_royale_build_input=$INPUT_DIR" \
   "$CTX"
 docker image inspect "$TAG" --format 'tag={{index .RepoTags 0}} image={{.Id}} created={{.Created}}'
+
+# A build receipt is authority for prepare only after this source-only producer
+# publishes it write-once. It contains hashes/identifiers, never rendered env.
+BUILD_RECEIPT_ROOT=${BUILD_RECEIPT_ROOT:?set BUILD_RECEIPT_ROOT to the host-only receipt root}
+mkdir -p "$BUILD_RECEIPT_ROOT"; chmod 700 "$BUILD_RECEIPT_ROOT"
+image_id=$(docker image inspect "$TAG" --format '{{.Id}}')
+[[ $image_id =~ ^sha256:[0-9a-f]{64}$ ]] || { printf '%s\n' 'invalid candidate image ID' >&2; exit 65; }
+tree=$(git -C "$ROOT" rev-parse "$COMMIT^{tree}")
+context_sha=$(git -C "$ROOT" ls-tree -r "$COMMIT" | sha256sum | awk '{print $1}')
+script_sha=$(sha256sum "$0" | awk '{print $1}')
+receipt="$BUILD_RECEIPT_ROOT/sha256-${image_id#sha256:}.json"
+tmp=$(mktemp "$BUILD_RECEIPT_ROOT/.receipt.XXXXXX")
+printf '{"source_revision":"%s","source_tree":"%s","candidate_image_id":"%s","base_image":"%s","context_sha256":"%s","executor_sha256":"%s"}\n' "$COMMIT" "$tree" "$image_id" "$BASE_IMAGE" "$context_sha" "$script_sha" >"$tmp"
+chmod 600 "$tmp"; sync "$tmp"
+if [[ -e $receipt ]]; then cmp -s "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'divergent build receipt already exists' >&2; exit 65; }; rm -f "$tmp"; else ln "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'receipt publication race' >&2; exit 65; }; rm -f "$tmp"; sync "$BUILD_RECEIPT_ROOT"; fi
+printf 'build-receipt=%s sha256=%s\n' "$receipt" "$(sha256sum "$receipt" | awk '{print $1}')"
