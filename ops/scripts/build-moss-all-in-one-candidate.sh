@@ -6,6 +6,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 git -C "$ROOT" rev-parse --show-toplevel >/dev/null
 COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
+SOURCE_BASE_REVISION="${HDDT_SOURCE_BASE_REVISION:-}"
+if [[ ! $SOURCE_BASE_REVISION =~ ^[0-9a-f]{40}$ ]]; then
+  printf '%s\n' 'invalid explicit HDDT source base revision' >&2
+  exit 65
+fi
+source_base_canonical=$(git -C "$ROOT" rev-parse --verify "${SOURCE_BASE_REVISION}^{commit}") || { printf '%s\n' 'explicit HDDT source base revision unavailable' >&2; exit 65; }
+[[ $source_base_canonical == "$SOURCE_BASE_REVISION" && $SOURCE_BASE_REVISION != "$COMMIT" ]] || { printf '%s\n' 'explicit HDDT source base revision mismatches source revision' >&2; exit 65; }
+git -C "$ROOT" merge-base --is-ancestor "$SOURCE_BASE_REVISION" "$COMMIT" || { printf '%s\n' 'explicit HDDT source base revision is not an ancestor' >&2; exit 65; }
 INPUT_DIR="${CLASH_ROYALE_BUILD_INPUT_DIR:?set CLASH_ROYALE_BUILD_INPUT_DIR to the controlled private Node input directory}"
 BASE_IMAGE="${MOSS_BASE_IMAGE:?set MOSS_BASE_IMAGE to the reviewed immutable Moss base image}"
 TAG="${1:?usage: $0 IMAGE_TAG}"
@@ -46,12 +54,14 @@ image_id=$(docker image inspect "$TAG" --format '{{.Id}}')
 tree=$(git -C "$ROOT" rev-parse "$COMMIT^{tree}")
 source_remote=$(git -C "$ROOT" remote get-url origin)
 context_sha=$(git -C "$ROOT" ls-tree -r "$COMMIT" | sha256sum | cut -d' ' -f1)
-source_closure_sha=$( { git -C "$ROOT" ls-tree -r "$COMMIT"; sha256sum "$CTX/$MANIFEST_REL"; } | sha256sum | cut -d' ' -f1)
+source_closure_sha=$( { git -C "$ROOT" ls-tree -r "$COMMIT"; sha256sum <"$CTX/$MANIFEST_REL"; } | sha256sum | cut -d' ' -f1)
 script_sha=$(sha256sum "$0" | cut -d' ' -f1)
 toolchain_sha=$( { docker version --format '{{json .}}'; docker buildx version; } | sha256sum | cut -d' ' -f1)
+created_epoch=$(git -C "$ROOT" show -s --format=%ct "$COMMIT")
+[[ $created_epoch =~ ^[0-9]+$ ]] || { printf '%s\n' 'invalid source commit epoch' >&2; exit 65; }
 receipt="$BUILD_RECEIPT_ROOT/sha256-${image_id#sha256:}.json"
 tmp=$(mktemp "$BUILD_RECEIPT_ROOT/.receipt.XXXXXX")
-jq -ncS --arg rev "$COMMIT" --arg tree "$tree" --arg remote "$source_remote" --arg closure "$source_closure_sha" --arg image "$image_id" --arg base "$BASE_IMAGE" --arg context "$context_sha" --arg exec "$script_sha" --arg toolchain "$toolchain_sha" --argjson created "$(date -u +%s)" '{source_revision:$rev,source_tree:$tree,source_remote:$remote,source_closure_sha256:$closure,candidate_image_id:$image,base_image:$base,context_sha256:$context,executor_sha256:$exec,toolchain_sha256:$toolchain,created_epoch:$created}' >"$tmp"
+jq -ncS --arg rev "$COMMIT" --arg source_base "$SOURCE_BASE_REVISION" --arg tree "$tree" --arg remote "$source_remote" --arg closure "$source_closure_sha" --arg image "$image_id" --arg base "$BASE_IMAGE" --arg context "$context_sha" --arg exec "$script_sha" --arg toolchain "$toolchain_sha" --argjson created "$created_epoch" '{source_revision:$rev,source_base_revision:$source_base,source_tree:$tree,source_remote:$remote,source_closure_sha256:$closure,candidate_image_id:$image,base_image:$base,context_sha256:$context,executor_sha256:$exec,toolchain_sha256:$toolchain,created_epoch:$created}' >"$tmp"
 chmod 600 "$tmp"; sync "$tmp"
 if [[ -e $receipt ]]; then [[ -f $receipt && ! -L $receipt ]] && cmp -s "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'divergent or unsafe build receipt already exists' >&2; exit 65; }; rm -f "$tmp"; else ln "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'receipt publication race' >&2; exit 65; }; rm -f "$tmp"; sync "$BUILD_RECEIPT_ROOT"; fi
 printf 'build-receipt=%s sha256=%s\n' "$receipt" "$(sha256sum "$receipt" | cut -d' ' -f1)"

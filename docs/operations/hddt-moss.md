@@ -10,7 +10,7 @@
 - `recover` terminalizes an unresolved rehearsal state rather than guessing from a tag.
 - `hddt-moss-status.sh --operation-id …` is read-only.
 
-The Compose selector is `MOSS_IMAGE_REF`; it must be a canonical local `sha256:` image ID. The ordinary tag fallback remains for non-HDDT flows. `validate-moss-release-binding.sh` renders both candidate and rollback under `env -i` and rejects image mismatch.
+The producer requires `HDDT_SOURCE_BASE_REVISION` as an explicit lowercase 40-hex Git commit. It is provenance for the produced candidate—not authorization: before any Docker invocation it is resolved locally, required to differ from `source_revision`, and required to be an ancestor of it. The request and authorization remain bound to `source_revision`; the hash-bound build receipt carries `source_base_revision`, is copied into the operation, and is revalidated against the authenticated checkout during `prepare` and `run`. For byte-stable re-execution, the receipt's `created_epoch` is the immutable source commit epoch rather than the wall clock of the build invocation.
 
 ## Validation
 
