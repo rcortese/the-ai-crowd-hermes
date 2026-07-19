@@ -38,8 +38,8 @@ run_red(){
   bash -n "$mutant" || fail "$name produced invalid Bash"
   output="$dir/output"
   case $mode in
-    hddt) env -i PATH="$PATH" HDDT_SCRIPT="$mutant" HDDT_KEEP_FIXTURE=1 bash "$moss_test" --case "$case_id" >"$output" 2>&1 || rc=$? ;;
-    adapter) env -i PATH="$PATH" HDDT_ADAPTER_SCRIPT="$mutant" HDDT_KEEP_FIXTURE=1 bash "$moss_test" --case "$case_id" >"$output" 2>&1 || rc=$? ;;
+    hddt) env -i PATH="$PATH" HDDT_SCRIPT="$mutant" bash "$moss_test" --case "$case_id" >"$output" 2>&1 || rc=$? ;;
+    adapter) env -i PATH="$PATH" HDDT_ADAPTER_SCRIPT="$mutant" bash "$moss_test" --case "$case_id" >"$output" 2>&1 || rc=$? ;;
     binding) env -i PATH="$PATH" bash "$binding_test" "$mutant" >"$output" 2>&1 || rc=$? ;;
     test-set-e)
       runner="$dir/root/ops/tests/test_hddt_moss.sh"
@@ -47,7 +47,7 @@ run_red(){
       ln -s "$root/ops/scripts" "$dir/root/ops/scripts"
       mv "$mutant" "$runner"
       mutant=$runner
-      env -i PATH="$PATH" HDDT_KEEP_FIXTURE=1 bash "$runner" --case "$case_id" >"$output" 2>&1 || rc=$?
+      env -i PATH="$PATH" bash "$runner" --case "$case_id" >"$output" 2>&1 || rc=$?
       ;;
     *) fail "$name has unknown mutation mode $mode" ;;
   esac
@@ -57,7 +57,7 @@ run_red(){
   elif [[ $name == functional-endpoint ]]; then
     grep -Fq 'REACH[t81-functional-endpoint]' "$output" && reached=1
   else
-    grep -Fq 'FIXTURE=' "$output" && reached=1
+    grep -Fq 'FIXTURE_PRESERVED=' "$output" && reached=1
   fi
   (( reached == 1 )) || { printf 'mutant output:\n' >&2; show "$output"; fail "$name did not reach the isolated fixture"; }
   grep -Fq -- "$expected" "$output" || { printf 'mutant output:\n' >&2; show "$output"; fail "$name missed exact oracle: $expected"; }
