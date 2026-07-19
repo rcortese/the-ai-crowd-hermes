@@ -21,7 +21,8 @@ RUN cd /opt/hermes \
         hermes_cli/config.py \
         gateway/run.py
 
-RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
+RUN rm -rf /opt/hermes-webui \
+    && git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
     && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
