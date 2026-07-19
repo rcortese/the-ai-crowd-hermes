@@ -37,15 +37,21 @@ docker image inspect "$TAG" --format 'tag={{index .RepoTags 0}} image={{.Id}} cr
 # A build receipt is authority for prepare only after this source-only producer
 # publishes it write-once. It contains hashes/identifiers, never rendered env.
 BUILD_RECEIPT_ROOT=${BUILD_RECEIPT_ROOT:?set BUILD_RECEIPT_ROOT to the host-only receipt root}
-mkdir -p "$BUILD_RECEIPT_ROOT"; chmod 700 "$BUILD_RECEIPT_ROOT"
+[[ $BUILD_RECEIPT_ROOT == /* && ! -L $BUILD_RECEIPT_ROOT ]] || { printf '%s\n' 'unsafe build receipt root' >&2; exit 65; }
+if [[ ! -e $BUILD_RECEIPT_ROOT ]]; then parent=$(realpath -e -- "$(dirname "$BUILD_RECEIPT_ROOT")") || exit 65; [[ ! -L $parent ]] || exit 65; mkdir -m 700 -- "$BUILD_RECEIPT_ROOT"; fi
+[[ $(realpath -e -- "$BUILD_RECEIPT_ROOT") == "$BUILD_RECEIPT_ROOT" && $(stat -c %u "$BUILD_RECEIPT_ROOT") == "$(id -u)" ]] || { printf '%s\n' 'receipt root custody mismatch' >&2; exit 65; }
+chmod 700 "$BUILD_RECEIPT_ROOT"
 image_id=$(docker image inspect "$TAG" --format '{{.Id}}')
 [[ $image_id =~ ^sha256:[0-9a-f]{64}$ ]] || { printf '%s\n' 'invalid candidate image ID' >&2; exit 65; }
 tree=$(git -C "$ROOT" rev-parse "$COMMIT^{tree}")
-context_sha=$(git -C "$ROOT" ls-tree -r "$COMMIT" | sha256sum | awk '{print $1}')
-script_sha=$(sha256sum "$0" | awk '{print $1}')
+source_remote=$(git -C "$ROOT" remote get-url origin)
+context_sha=$(git -C "$ROOT" ls-tree -r "$COMMIT" | sha256sum | cut -d' ' -f1)
+source_closure_sha=$( { git -C "$ROOT" ls-tree -r "$COMMIT"; sha256sum "$CTX/$MANIFEST_REL"; } | sha256sum | cut -d' ' -f1)
+script_sha=$(sha256sum "$0" | cut -d' ' -f1)
+toolchain_sha=$( { docker version --format '{{json .}}'; docker buildx version; } | sha256sum | cut -d' ' -f1)
 receipt="$BUILD_RECEIPT_ROOT/sha256-${image_id#sha256:}.json"
 tmp=$(mktemp "$BUILD_RECEIPT_ROOT/.receipt.XXXXXX")
-printf '{"source_revision":"%s","source_tree":"%s","candidate_image_id":"%s","base_image":"%s","context_sha256":"%s","executor_sha256":"%s"}\n' "$COMMIT" "$tree" "$image_id" "$BASE_IMAGE" "$context_sha" "$script_sha" >"$tmp"
+jq -ncS --arg rev "$COMMIT" --arg tree "$tree" --arg remote "$source_remote" --arg closure "$source_closure_sha" --arg image "$image_id" --arg base "$BASE_IMAGE" --arg context "$context_sha" --arg exec "$script_sha" --arg toolchain "$toolchain_sha" --argjson created "$(date -u +%s)" '{source_revision:$rev,source_tree:$tree,source_remote:$remote,source_closure_sha256:$closure,candidate_image_id:$image,base_image:$base,context_sha256:$context,executor_sha256:$exec,toolchain_sha256:$toolchain,created_epoch:$created}' >"$tmp"
 chmod 600 "$tmp"; sync "$tmp"
-if [[ -e $receipt ]]; then cmp -s "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'divergent build receipt already exists' >&2; exit 65; }; rm -f "$tmp"; else ln "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'receipt publication race' >&2; exit 65; }; rm -f "$tmp"; sync "$BUILD_RECEIPT_ROOT"; fi
-printf 'build-receipt=%s sha256=%s\n' "$receipt" "$(sha256sum "$receipt" | awk '{print $1}')"
+if [[ -e $receipt ]]; then [[ -f $receipt && ! -L $receipt ]] && cmp -s "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'divergent or unsafe build receipt already exists' >&2; exit 65; }; rm -f "$tmp"; else ln "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'receipt publication race' >&2; exit 65; }; rm -f "$tmp"; sync "$BUILD_RECEIPT_ROOT"; fi
+printf 'build-receipt=%s sha256=%s\n' "$receipt" "$(sha256sum "$receipt" | cut -d' ' -f1)"
