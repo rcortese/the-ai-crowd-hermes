@@ -108,7 +108,7 @@ services:
       # fails during Docker COPY rather than silently baking a substitute.
       additional_contexts:
         clash_royale_build_input: ${CLASH_ROYALE_BUILD_INPUT_DIR:-./ops/build-inputs/empty}
-    image: the-ai-crowd/moss-all-in-one:${THE_AI_CROWD_IMAGE_TAG}
+    image: ${MOSS_IMAGE_REF:-the-ai-crowd/moss-all-in-one:${THE_AI_CROWD_IMAGE_TAG}}
     working_dir: /agents/moss/private
     volumes:
     - ./runtime/moss-home:/opt/data
