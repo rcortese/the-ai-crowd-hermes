@@ -74,7 +74,7 @@ run_red(){
 }
 
 # Existing seven mutants remain independently causal.
-run_red existing env-scrub T10 "$base" hddt 'ASSERT[t10]' 'env -i HOME=/root PATH="$PATH" MOSS_BASE_IMAGE="$moss_base_image" MOSS_IMAGE_REF="$image" "$db" compose' 'env HOME=/root PATH="$PATH" MOSS_BASE_IMAGE="$moss_base_image" MOSS_IMAGE_REF="$image" "$db" compose'
+run_red existing env-scrub T10 "$base" hddt 'ASSERT[t10]' 'env -i HOME=/root PATH="$PATH" MOSS_IMAGE_REF="$image" "$db" compose' 'env HOME=/root PATH="$PATH" MOSS_IMAGE_REF="$image" "$db" compose'
 run_red existing input-drift T51 "$base" hddt 'ASSERT[t51]' '[[ $before == "$after" ]]||die '\''live inputs drifted before seal'\'' 65' ': # mutation: accept pre-seal drift'
 run_red existing authorization-single-use T44 "$base" hddt 'ASSERT[t44]' 'validate_auth "$auth"||{' 'true||{'
 run_red existing confirmation-deadline T69 "$base" hddt 'ASSERT[t69]' 'deadline_valid "$op" 1||die' 'true||die'
@@ -84,7 +84,7 @@ run_red existing third-state-recovery T38 "$base" hddt 'ASSERT[t38]' 'terminal "
 
 # Lote A: separate causal mutants for the specified control boundaries.
 run_red lote-a base-binding T06 "$base" hddt 'ASSERT[t06]: receipt-base-binding-accepted' '.base_image==$base and .source_closure_sha256==$closure' '.base_image==$base or .source_closure_sha256==$closure'
-run_red lote-a selector-tag-default T00 "$binding" binding "ERROR: Compose resolved Moss to fixture/moss:local, expected sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" 'MOSS_IMAGE_REF="$1" docker compose' 'MOSS_IMAGE_REF=fixture/moss:local docker compose'
+run_red lote-a selector-tag-default T00 "$binding" binding "ERROR: Compose did not bind Moss to expected immutable image sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" 'MOSS_IMAGE_REF="$1" docker compose' 'MOSS_IMAGE_REF=fixture/moss:local docker compose'
 run_red lote-a reopen-live-input-post-seal T51 "$base" hddt 'ASSERT[t51]' '-f "$op/$kind.rendered.json" up -d' '-f "$(stack)/compose.yaml" up -d'
 run_red lote-a health-none T08 "$base" hddt 'ASSERT[t08]: health-none-admitted' 'j=$(live); jq -e --arg image "$rollback_image_id" '\''.Image==$image and .State.Running==true and .State.Status=="running" and (.State.Health.Status//"none")=="healthy"'\'' <<<"$j"' 'j=$(live); jq -e --arg image "$rollback_image_id" '\''.Image==$image and .State.Running==true and .State.Status=="running" and (.State.Health.Status//"none")!="unhealthy"'\'' <<<"$j"'
 run_red lote-a set-E-nested-err T76 "$moss_test" test-set-e 'ASSERT[t76]: nested-ERR-handler' $'#!/usr/bin/env bash\n# Causal fake-first HDDT matrix. Every Txx runs in an isolated process/root.\nset -Eeuo pipefail' $'#!/usr/bin/env bash\n# Causal fake-first HDDT matrix. Every Txx runs in an isolated process/root.\nset -euo pipefail'

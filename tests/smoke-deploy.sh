@@ -2,6 +2,8 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+: "${MOSS_IMAGE_REF:?set MOSS_IMAGE_REF to the explicit candidate image}"
+export MOSS_IMAGE_REF
 
 project="the-ai-crowd-smoke"
 started=false
@@ -87,7 +89,7 @@ compose=(docker compose -p "$project" -f compose.yaml -f "$override_out")
 # Arm cleanup before up: Compose can create a subset of resources and then
 # fail, and that partial state must not survive a smoke failure.
 started=true
-"${compose[@]}" up -d --build moss
+"${compose[@]}" up -d --no-build moss
 "${compose[@]}" exec -T moss sh -lc 'test "${API_SERVER_KEY:-}" = moss-smoke-isolated-api-key' || {
   echo "smoke_deploy_failed: isolated API key missing from moss container" >&2
   exit 1
