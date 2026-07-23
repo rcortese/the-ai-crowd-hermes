@@ -10,7 +10,9 @@
 - `recover` terminalizes an unresolved rehearsal state rather than guessing from a tag.
 - `hddt-moss-status.sh --operation-id …` is read-only.
 
-The producer requires `HDDT_SOURCE_BASE_REVISION` as an explicit lowercase 40-hex Git commit. It is provenance for the produced candidate—not authorization: before any Docker invocation it is resolved locally, required to differ from `source_revision`, and required to be an ancestor of it. The request and authorization remain bound to `source_revision`; the hash-bound build receipt carries `source_base_revision`, is copied into the operation, and is revalidated against the authenticated checkout during `prepare` and `run`. For byte-stable re-execution, the receipt's `created_epoch` is the immutable source commit epoch rather than the wall clock of the build invocation.
+The producer requires `HDDT_SOURCE_BASE_REVISION` as an explicit lowercase 40-hex Git commit. It is provenance for the produced candidate—not authorization: before any Docker invocation it is resolved locally, required to differ from `source_revision`, and required to be an ancestor of it. The request and authorization remain bound to `source_revision`; the hash-bound build receipt carries `source_base_revision` and `base_image`, is copied into the operation, and is revalidated against the authenticated checkout during `prepare` and `run`. For byte-stable re-execution, the receipt's `created_epoch` is the immutable source commit epoch rather than the wall clock of the build invocation.
+
+Build and deploy inputs are deliberately separate. Only `ops/scripts/build-moss-all-in-one-candidate.sh` consumes `MOSS_BASE_IMAGE` and `CLASH_ROYALE_BUILD_INPUT_DIR`. Compose deployment selects an already-built candidate with `MOSS_IMAGE_REF`; release validation and `up --no-build` rendering do not receive or require build inputs. The image fallback in `compose.yaml` is scaffold/development convenience, never a release selector.
 
 ## Validation
 

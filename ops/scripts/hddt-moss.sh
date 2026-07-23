@@ -77,7 +77,7 @@ check_source(){
       ops/scripts/validate-moss-native-conversation.sh ops/scripts/build-moss-all-in-one-candidate.sh \
       ops/tests/test_hddt_moss.sh ops/tests/test_hddt_moss_recovery.sh ops/tests/test_hddt_mutations.sh \
       ops/tests/test_hddt_adapter.sh ops/tests/run-moss-release-tests.sh \
-      ops/tests/test_moss_candidate_build_contract.sh | sha256sum | cut -d' ' -f1)
+      ops/tests/test_moss_candidate_build_contract.sh ops/tests/test_moss_deploy_decoupling.sh | sha256sum | cut -d' ' -f1)
     [[ $closure =~ ^[0-9a-f]{64}$ ]]||die 'source closure unavailable' 65; printf '%s\n' "$closure"
 }
 check_receipt(){
@@ -92,7 +92,7 @@ check_receipt(){
 check_images(){ local db; db=$(docker_bin); "$db" image inspect "$moss_base_image" >/dev/null && "$db" image inspect "$candidate_image_id" >/dev/null && "$db" image inspect "$rollback_image_id" >/dev/null; }
 input_manifest(){ local dir=$1; (cd "$dir"; sha256sum compose.yaml .env env/fleet.env env/moss-webui.env)|sort; }
 copy_inputs(){ local sr=$1 dst=$2 f; mkdir -m 700 -p "$dst/env"; for f in compose.yaml .env env/fleet.env env/moss-webui.env; do [[ -f $sr/$f && ! -L $sr/$f ]]||die "unsafe input $f" 65; cp --reflink=never "$sr/$f" "$dst/$f"; chmod 600 "$dst/$f"; done; }
-render(){ local op=$1 kind=$2 image=$3 db out; db=$(docker_bin); out="$op/$kind.rendered.json"; env -i HOME=/root PATH="$PATH" MOSS_BASE_IMAGE="$moss_base_image" MOSS_IMAGE_REF="$image" "$db" compose --env-file "$op/compose-inputs/.env" --project-directory "$op/compose-inputs" --project-name "$PROJECT" -f "$op/compose-inputs/compose.yaml" config --format json >"$out.tmp"; jq -e --arg image "$image" 'keys==["services"] and (.services|keys)==["moss"] and .services.moss.image==$image and ([paths(scalars) as $p|getpath($p)|strings]|all((contains("compose-inputs") or contains("${") or contains("env_file"))|not))' "$out.tmp" >/dev/null||die "invalid $kind render" 65; chmod 600 "$out.tmp"; sync "$out.tmp"; mv "$out.tmp" "$out"; sync "$op"; sha "$out"; }
+render(){ local op=$1 kind=$2 image=$3 db out; db=$(docker_bin); out="$op/$kind.rendered.json"; env -i HOME=/root PATH="$PATH" MOSS_IMAGE_REF="$image" "$db" compose --env-file "$op/compose-inputs/.env" --project-directory "$op/compose-inputs" --project-name "$PROJECT" -f "$op/compose-inputs/compose.yaml" config --format json >"$out.tmp"; jq -e --arg image "$image" 'keys==["services"] and (.services|keys)==["moss"] and .services.moss.image==$image and (.services.moss|has("build")|not) and ([paths(scalars) as $p|getpath($p)|strings]|all((contains("compose-inputs") or contains("${") or contains("env_file"))|not))' "$out.tmp" >/dev/null||die "invalid $kind render" 65; chmod 600 "$out.tmp"; sync "$out.tmp"; mv "$out.tmp" "$out"; sync "$op"; sha "$out"; }
 prepare(){
  parse "$@"; reject_production_overrides; [[ $mode == automatic || $mode == followable ]]||die 'invalid mode'; valid_image "$candidate_image_id"&&valid_image "$rollback_image_id"&&[[ $candidate_image_id != "$rollback_image_id" ]]||die 'invalid image IDs'; [[ $source_revision =~ ^[0-9a-f]{40}$ && $source_tree =~ ^[0-9a-f]{40}$ && $receipt_sha256 =~ ^[0-9a-f]{64}$ && $confirmation_seconds =~ ^[0-9]+$ && -n $canonical_remote && -n $moss_base_image && -n $approval_context ]]||die 'invalid prepare fields'
  local r sr op stage closure receipt before after cand_hash roll_hash input_hash exec_hash body req_hash; r=$(root); sr=$(stack); init_root "$r"; op="$r/operations/$operation_id"

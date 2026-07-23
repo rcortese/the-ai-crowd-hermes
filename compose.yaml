@@ -98,16 +98,8 @@ services:
     env_file:
     - ./env/fleet.env
     - ./env/moss-webui.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.moss-all-in-one
-      args:
-        MOSS_BASE_IMAGE: ${MOSS_BASE_IMAGE:?set MOSS_BASE_IMAGE to the reviewed immutable Moss base image}
-      # Builds must supply the private Node dependency explicitly.  The default
-      # is an intentionally incomplete public placeholder, so a missing input
-      # fails during Docker COPY rather than silently baking a substitute.
-      additional_contexts:
-        clash_royale_build_input: ${CLASH_ROYALE_BUILD_INPUT_DIR:-./ops/build-inputs/empty}
+    # Deploys select a prebuilt candidate explicitly. The fallback is only the
+    # repository scaffold/dev image and must not be used for release binding.
     image: ${MOSS_IMAGE_REF:-the-ai-crowd/moss-all-in-one:${THE_AI_CROWD_IMAGE_TAG}}
     working_dir: /agents/moss/private
     volumes:
