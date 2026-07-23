@@ -51,7 +51,9 @@ case "${1:-} ${2:-}" in
   'build --pull=false') exit 0 ;;
   'image inspect')
     case ${5:-} in
-      '{{.Id}}') printf '%s\n' "${FIXTURE_IMAGE_ID:?}" ;;
+      '{{.Id}}')
+        if [[ ${3:-} == "${FIXTURE_BASE_ID:-}" ]]; then printf '%s\n' "${FIXTURE_BASE_ID:?}"; else printf '%s\n' "${FIXTURE_IMAGE_ID:?}"; fi
+        ;;
       *) printf '%s\n' 'tag=fixture/moss:test image=sha256:bbbb created=fixed' ;;
     esac
     ;;
@@ -69,7 +71,7 @@ chmod 700 "$bin/docker" "$bin/date"
 date_epoch_file="$fx/date.epoch"
 printf '%s\n' 100 >"$date_epoch_file"
 helper="$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
-base_image=fixture/base@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+base_image=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 
 env_common=(
   PATH="$bin:$PATH"
@@ -77,6 +79,7 @@ env_common=(
   MOSS_BASE_IMAGE="$base_image"
   DOCKER_LOG="$docker_log"
   FIXTURE_IMAGE_ID="$image_id"
+  FIXTURE_BASE_ID="$base_image"
   DATE_EPOCH_FILE="$date_epoch_file"
 )
 run_with_base(){
@@ -86,6 +89,11 @@ run_with_base(){
 run_without_base(){
   local receipts=$1
   env -u HDDT_SOURCE_BASE_REVISION "${env_common[@]}" BUILD_RECEIPT_ROOT="$receipts" "$helper" fixture/moss:test
+}
+run_raw(){
+  local receipts=$1
+  shift
+  env "$@" PATH="$bin:$PATH" DOCKER_LOG="$docker_log" FIXTURE_IMAGE_ID="$image_id" FIXTURE_BASE_ID="$base_image" DATE_EPOCH_FILE="$date_epoch_file" BUILD_RECEIPT_ROOT="$receipts" HDDT_SOURCE_BASE_REVISION="$base_revision" "$helper" fixture/moss:test
 }
 assert_no_effect(){
   local receipts=$1 label=$2
@@ -138,4 +146,54 @@ run_negative nonexistent 4444444444444444444444444444444444444444
 run_negative equal "$source_revision"
 run_negative nonancestor "$nonancestor_revision"
 
-printf '%s\n' 'moss-candidate-build-contract: PASS real-git=true docker=fake source-base=true idempotent=true negatives=5'
+run_input_negative(){
+  local label=$1
+  shift
+  local receipts="$fx/receipts-$label" rc=0
+  : >"$docker_log"
+  set +e
+  run_raw "$receipts" "$@" >"$fx/$label.out" 2>&1
+  rc=$?
+  set -e
+  [[ $rc == 65 ]] || fail "$label expected rc=65 got rc=$rc"
+  assert_no_effect "$receipts" "$label"
+}
+
+run_input_negative missing-input MOSS_BASE_IMAGE="$base_image"
+run_input_negative missing-base CLASH_ROYALE_BUILD_INPUT_DIR="$input"
+run_input_negative mutable-base CLASH_ROYALE_BUILD_INPUT_DIR="$input" MOSS_BASE_IMAGE=fixture/base:mutable
+
+for file in package.json package-lock.json; do
+  cp -- "$input/$file" "$fx/$file.clean"
+  printf '%s\n' tampered >>"$input/$file"
+  run_input_negative "tampered-${file//./-}" CLASH_ROYALE_BUILD_INPUT_DIR="$input" MOSS_BASE_IMAGE="$base_image"
+  mv -- "$fx/$file.clean" "$input/$file"
+done
+
+if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
+  mutroot="$fx/mutroot"
+  mkdir -p "$mutroot/ops/scripts"
+  cp -- "$source_helper" "$mutroot/ops/scripts/build-moss-all-in-one-candidate.sh"
+  mutant_helper="$mutroot/ops/scripts/build-moss-all-in-one-candidate.sh"
+  mutant_tmp="$mutant_helper.tmp"
+  checksum_anchors=0
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line == '  sha256sum -c "$CTX/$MANIFEST_REL"' ]]; then
+      printf '%s\n' '  true # MUTANT: checksum verification omitted' >>"$mutant_tmp"
+      ((checksum_anchors+=1))
+    else
+      printf '%s\n' "$line" >>"$mutant_tmp"
+    fi
+  done <"$mutant_helper"
+  [[ $checksum_anchors == 1 ]] || fail 'checksum mutant anchor mismatch'
+  mv -- "$mutant_tmp" "$mutant_helper"
+  chmod 755 "$mutant_helper"
+  set +e
+  MOSS_BUILD_CONTRACT_MUTATION_CHILD=1 bash "$0" "$mutroot" >"$fx/checksum-mutant.out" 2>&1
+  mutant_rc=$?
+  set -e
+  [[ $mutant_rc != 0 ]] || fail 'checksum-omission mutant survived'
+  grep -Fq 'tampered-package-json expected rc=65 got rc=0' "$fx/checksum-mutant.out" || fail 'checksum-omission mutant lacked causal oracle'
+fi
+
+printf '%s\n' 'moss-candidate-build-contract: PASS real-git=true docker=fake source-base=true immutable-base=true checksum-bound=true checksum-mutant=RED idempotent=true negatives=10'
