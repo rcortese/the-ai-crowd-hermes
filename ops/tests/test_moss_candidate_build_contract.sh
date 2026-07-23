@@ -3,7 +3,8 @@
 set -Eeuo pipefail
 source_root=${1:?root required}
 source_helper="$source_root/ops/scripts/build-moss-all-in-one-candidate.sh"
-[[ -x $source_helper ]] || { printf '%s\n' 'missing build helper' >&2; exit 1; }
+source_hddt="$source_root/ops/scripts/hddt-moss.sh"
+[[ -x $source_helper && -x $source_hddt ]] || { printf '%s\n' 'missing build helper or HDDT executor' >&2; exit 1; }
 
 fail(){ printf 'BUILD CONTRACT ASSERT: %s\n' "$*" >&2; exit 1; }
 fx=$(mktemp -d /tmp/moss-candidate-build-contract.XXXXXX)
@@ -15,7 +16,8 @@ printf '%s\n' '{"name":"fixture","lockfileVersion":3}' >"$input/package-lock.jso
 
 mkdir -p "$repo/ops/scripts" "$repo/ops/build-inputs" "$repo/ops/images" "$repo/ops/manifests"
 cp -- "$source_helper" "$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
-chmod 755 "$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
+cp -- "$source_hddt" "$repo/ops/scripts/hddt-moss.sh"
+chmod 755 "$repo/ops/scripts/build-moss-all-in-one-candidate.sh" "$repo/ops/scripts/hddt-moss.sh"
 (
   cd "$input"
   sha256sum package.json package-lock.json
@@ -26,6 +28,7 @@ printf '%s\n' \
   ops/images/Dockerfile.moss-all-in-one \
   ops/manifests/moss-release-source-closure.paths \
   ops/scripts/build-moss-all-in-one-candidate.sh \
+  ops/scripts/hddt-moss.sh \
   source.txt | LC_ALL=C sort >"$repo/ops/manifests/moss-release-source-closure.paths"
 printf '%s\n' 'fixture base' >"$repo/source.txt"
 git -C "$repo" init -q -b main
@@ -133,6 +136,8 @@ jq -e --arg base "$base_revision" --arg source "$source_revision" \
 mapfile -t expected_closure_paths <"$repo/ops/manifests/moss-release-source-closure.paths"
 expected_closure=$(git -C "$repo" ls-tree -r --full-tree "$source_revision" -- "${expected_closure_paths[@]}" | sha256sum | cut -d' ' -f1)
 jq -e --arg closure "$expected_closure" '.source_closure_sha256==$closure' "$receipt" >/dev/null || fail 'happy shared source closure mismatch'
+expected_executor=$(sha256sum "$repo/ops/scripts/hddt-moss.sh" | cut -d' ' -f1)
+jq -e --arg exec "$expected_executor" '.executor_sha256==$exec' "$receipt" >/dev/null || fail 'happy HDDT executor binding mismatch'
 cp -- "$receipt" "$fx/receipt.first"
 expected_created_epoch=$(git -C "$repo" show -s --format=%ct "$source_revision")
 jq -e --argjson expected "$expected_created_epoch" '.created_epoch==$expected' "$receipt" >/dev/null || fail 'receipt epoch is not source commit epoch'
@@ -183,6 +188,7 @@ if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
   mutroot="$fx/mutroot"
   mkdir -p "$mutroot/ops/scripts"
   cp -- "$source_helper" "$mutroot/ops/scripts/build-moss-all-in-one-candidate.sh"
+  cp -- "$source_hddt" "$mutroot/ops/scripts/hddt-moss.sh"
   mutant_helper="$mutroot/ops/scripts/build-moss-all-in-one-candidate.sh"
   mutant_tmp="$mutant_helper.tmp"
   checksum_anchors=0
@@ -203,6 +209,24 @@ if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
   set -e
   [[ $mutant_rc != 0 ]] || fail 'checksum-omission mutant survived'
   grep -Fq 'tampered-package-json expected rc=65 got rc=0' "$fx/checksum-mutant.out" || fail 'checksum-omission mutant lacked causal oracle'
+
+  execroot="$fx/executor-mutroot"
+  mkdir -p "$execroot/ops/scripts"
+  cp -- "$source_helper" "$execroot/ops/scripts/build-moss-all-in-one-candidate.sh"
+  cp -- "$source_hddt" "$execroot/ops/scripts/hddt-moss.sh"
+  exec_helper="$execroot/ops/scripts/build-moss-all-in-one-candidate.sh"
+  old='hddt_executor_sha=$(sha256sum "$ROOT/ops/scripts/hddt-moss.sh" | cut -d'\'' '\'' -f1)'
+  new='hddt_executor_sha=$(sha256sum "$0" | cut -d'\'' '\'' -f1) # MUTANT: producer hash substituted for HDDT executor'
+  body=$(<"$exec_helper")
+  [[ $body == *"$old"* ]] || fail 'executor-binding mutant anchor missing'
+  printf '%s' "${body/"$old"/"$new"}" >"$exec_helper"
+  chmod 755 "$exec_helper" "$execroot/ops/scripts/hddt-moss.sh"
+  set +e
+  MOSS_BUILD_CONTRACT_MUTATION_CHILD=1 bash "$0" "$execroot" >"$fx/executor-mutant.out" 2>&1
+  executor_mutant_rc=$?
+  set -e
+  [[ $executor_mutant_rc != 0 ]] || fail 'executor-binding mutant survived'
+  grep -Fq 'happy HDDT executor binding mismatch' "$fx/executor-mutant.out" || fail 'executor-binding mutant lacked causal oracle'
 fi
 
-printf '%s\n' 'moss-candidate-build-contract: PASS real-git=true docker=fake source-base=true immutable-base=true checksum-bound=true checksum-mutant=RED idempotent=true negatives=10'
+printf '%s\n' 'moss-candidate-build-contract: PASS real-git=true docker=fake source-base=true immutable-base=true checksum-bound=true checksum-mutant=RED executor-binding=true executor-mutant=RED idempotent=true negatives=10'
