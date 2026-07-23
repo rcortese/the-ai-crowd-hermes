@@ -54,17 +54,17 @@ chmod 700 "$fx/bin/docker"
 rc=0
 env -i HOME=/root PATH="$fx/bin:$PATH" DOCKER_LOG="$fx/docker.log" HDDT_SOURCE_BASE_REVISION="$builder_base" bash "$builder" fixture/moss:test >"$fx/missing-both.out" 2>&1 || rc=$?
 (( rc != 0 )) || fail 'builder accepted missing private input and base image'
-grep -Fq 'CLASH_ROYALE_BUILD_INPUT_DIR' "$fx/missing-both.out" || fail 'missing private input oracle absent'
+grep -Fq 'missing controlled private Node build input directory' "$fx/missing-both.out" || fail 'missing private input oracle absent'
 [[ ! -s $fx/docker.log ]] || fail 'builder invoked Docker without private input'
 rc=0
 env -i HOME=/root PATH="$fx/bin:$PATH" DOCKER_LOG="$fx/docker.log" HDDT_SOURCE_BASE_REVISION="$builder_base" CLASH_ROYALE_BUILD_INPUT_DIR="$fx/build-input" bash "$builder" fixture/moss:test >"$fx/missing-base.out" 2>&1 || rc=$?
 (( rc != 0 )) || fail 'builder accepted missing base image'
-grep -Fq 'MOSS_BASE_IMAGE' "$fx/missing-base.out" || fail 'missing base image oracle absent'
+grep -Fq 'MOSS_BASE_IMAGE must be an immutable local sha256 image ID' "$fx/missing-base.out" || fail 'missing base image oracle absent'
 [[ ! -s $fx/docker.log ]] || fail 'builder invoked Docker without base image'
 
 # Smoke deploy requires the selector and can never request an implicit build.
-grep -Fq ': "${MOSS_IMAGE_REF:?set MOSS_IMAGE_REF to the explicit candidate image}"' "$smoke" || fail 'smoke does not require explicit candidate selector'
-grep -Fq '"${compose[@]}" up -d --no-build moss' "$smoke" || fail 'smoke does not use up --no-build moss'
+grep -Fq 'IMAGE_REF="${MOSS_SMOKE_IMAGE:-${MOSS_IMAGE_REF:-}}"' "$smoke" || fail 'smoke does not require explicit candidate selector'
+grep -Fq '"${compose[@]}" up -d --no-build --no-deps moss' "$smoke" || fail 'smoke does not use up --no-build --no-deps moss'
 ! grep -Fq -- '--build' "$smoke" || fail 'smoke still contains --build'
 
 # Causal mutant: restoring Moss build/coupling must fail the rendered no-build
