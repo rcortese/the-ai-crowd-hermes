@@ -12,7 +12,8 @@ MOSS_SMOKE_IMAGE_ID=$(docker image inspect "$IMAGE_REF" --format '{{.Id}}') || {
 export MOSS_SMOKE_IMAGE_ID
 
 production_container=the-ai-crowd-moss-1
-production_before=$(docker inspect "$production_container" --format '{{.Id}}|{{.Image}}|{{.State.StartedAt}}|{{.RestartCount}}') || {
+production_format='{{.Id}}|{{.Image}}|{{.State.StartedAt}}|{{.RestartCount}}|{{.State.Running}}|{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}'
+production_before=$(docker inspect "$production_container" --format "$production_format") || {
   printf '%s\n' 'smoke_deploy_blocked: production Moss identity unavailable' >&2
   exit 2
 }
@@ -27,22 +28,25 @@ compose=()
 armed=0
 
 on_exit(){
-  local rc=$? after=
+  local rc=$? after= cleanup_failed=0
   trap - EXIT INT TERM
   if ((armed)); then
     if ! "${compose[@]}" down --remove-orphans --volumes >/dev/null 2>&1; then
-      ((rc==0)) && rc=81
+      printf 'smoke_deploy_cleanup_failed: project=%s root=%s retained=true\n' "$project" "$smoke_root" >&2
+      rc=81
+      cleanup_failed=1
     fi
   fi
-  if ! after=$(docker inspect "$production_container" --format '{{.Id}}|{{.Image}}|{{.State.StartedAt}}|{{.RestartCount}}' 2>/dev/null); then
+  if ! after=$(docker inspect "$production_container" --format "$production_format" 2>/dev/null); then
     printf '%s\n' 'smoke_deploy_failed: production identity unavailable after smoke' >&2
-    ((rc==0)) && rc=82
-  fi
-  if [[ $after != "$production_before" ]]; then
+    rc=82
+  elif [[ $after != "$production_before" ]]; then
     printf 'smoke_deploy_failed: production identity changed before=%s after=%s\n' "$production_before" "$after" >&2
-    ((rc==0)) && rc=83
+    rc=83
   fi
-  rm -rf -- "$smoke_root"
+  if ((cleanup_failed == 0)); then
+    rm -rf -- "$smoke_root"
+  fi
   exit "$rc"
 }
 trap on_exit EXIT
@@ -81,9 +85,11 @@ networks:
 YAML
 
 compose=(docker compose --project-name "$project" --project-directory "$smoke_root" -f "$smoke_root/compose.yaml" -f "$override")
-THE_AI_CROWD_IMAGE_TAG=unused MOSS_IMAGE_REF="$MOSS_SMOKE_IMAGE_ID" "${compose[@]}" config >"$config_out"
+export THE_AI_CROWD_IMAGE_TAG=unused
+export MOSS_IMAGE_REF="$MOSS_SMOKE_IMAGE_ID"
+"${compose[@]}" config >"$config_out"
 armed=1
-THE_AI_CROWD_IMAGE_TAG=unused MOSS_IMAGE_REF="$MOSS_SMOKE_IMAGE_ID" "${compose[@]}" up -d --no-build --no-deps moss
+"${compose[@]}" up -d --no-build --no-deps moss
 container_id=$("${compose[@]}" ps -q moss)
 [[ -n $container_id ]] || { printf '%s\n' 'smoke_deploy_failed: candidate container missing' >&2; exit 1; }
 [[ $(docker inspect "$container_id" --format '{{.Image}}') == "$MOSS_SMOKE_IMAGE_ID" ]] || {

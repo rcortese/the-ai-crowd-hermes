@@ -13,7 +13,7 @@ mkdir -m 700 "$repo" "$input" "$bin"
 printf '%s\n' '{"name":"fixture","version":"1.0.0"}' >"$input/package.json"
 printf '%s\n' '{"name":"fixture","lockfileVersion":3}' >"$input/package-lock.json"
 
-mkdir -p "$repo/ops/scripts" "$repo/ops/build-inputs" "$repo/ops/images"
+mkdir -p "$repo/ops/scripts" "$repo/ops/build-inputs" "$repo/ops/images" "$repo/ops/manifests"
 cp -- "$source_helper" "$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
 chmod 755 "$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
 (
@@ -21,6 +21,12 @@ chmod 755 "$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
   sha256sum package.json package-lock.json
 ) >"$repo/ops/build-inputs/moss-clash-royale-war-bot.sha256"
 printf '%s\n' 'FROM scratch' >"$repo/ops/images/Dockerfile.moss-all-in-one"
+printf '%s\n' \
+  ops/build-inputs/moss-clash-royale-war-bot.sha256 \
+  ops/images/Dockerfile.moss-all-in-one \
+  ops/manifests/moss-release-source-closure.paths \
+  ops/scripts/build-moss-all-in-one-candidate.sh \
+  source.txt | LC_ALL=C sort >"$repo/ops/manifests/moss-release-source-closure.paths"
 printf '%s\n' 'fixture base' >"$repo/source.txt"
 git -C "$repo" init -q -b main
 git -C "$repo" config user.name fixture
@@ -124,6 +130,9 @@ receipt="$receipts/sha256-${image_id#sha256:}.json"
 jq -e --arg base "$base_revision" --arg source "$source_revision" \
   '.source_base_revision==$base and .source_revision==$source and .source_base_revision!=.source_revision' \
   "$receipt" >/dev/null || fail 'happy source-base binding mismatch'
+mapfile -t expected_closure_paths <"$repo/ops/manifests/moss-release-source-closure.paths"
+expected_closure=$(git -C "$repo" ls-tree -r --full-tree "$source_revision" -- "${expected_closure_paths[@]}" | sha256sum | cut -d' ' -f1)
+jq -e --arg closure "$expected_closure" '.source_closure_sha256==$closure' "$receipt" >/dev/null || fail 'happy shared source closure mismatch'
 cp -- "$receipt" "$fx/receipt.first"
 expected_created_epoch=$(git -C "$repo" show -s --format=%ct "$source_revision")
 jq -e --argjson expected "$expected_created_epoch" '.created_epoch==$expected' "$receipt" >/dev/null || fail 'receipt epoch is not source commit epoch'
