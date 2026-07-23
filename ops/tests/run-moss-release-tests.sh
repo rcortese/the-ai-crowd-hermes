@@ -35,4 +35,4 @@ bash ops/tests/test_hddt_moss.sh control
 bash ops/tests/test_hddt_moss.sh oracles
 bash ops/tests/test_hddt_adapter.sh
 bash ops/tests/test_hddt_mutations.sh
-printf '%s\n' 'moss-release-tests: PASS suites=build,deploy-decoupling,smoke-contract,title-topic,binding,hddt,recovery,cas,signals,control,oracles,adapter,mutations T01-T82'
+printf '%s\n' 'moss-release-tests: PASS suites=build,deploy-decoupling,smoke-contract,title-topic,binding,hddt,recovery,cas,signals,control,oracles,adapter,mutations T01-T83'
