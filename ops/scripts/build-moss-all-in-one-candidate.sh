@@ -14,8 +14,10 @@ fi
 source_base_canonical=$(git -C "$ROOT" rev-parse --verify "${SOURCE_BASE_REVISION}^{commit}") || { printf '%s\n' 'explicit HDDT source base revision unavailable' >&2; exit 65; }
 [[ $source_base_canonical == "$SOURCE_BASE_REVISION" && $SOURCE_BASE_REVISION != "$COMMIT" ]] || { printf '%s\n' 'explicit HDDT source base revision mismatches source revision' >&2; exit 65; }
 git -C "$ROOT" merge-base --is-ancestor "$SOURCE_BASE_REVISION" "$COMMIT" || { printf '%s\n' 'explicit HDDT source base revision is not an ancestor' >&2; exit 65; }
-INPUT_DIR="${CLASH_ROYALE_BUILD_INPUT_DIR:?set CLASH_ROYALE_BUILD_INPUT_DIR to the controlled private Node input directory}"
-BASE_IMAGE="${MOSS_BASE_IMAGE:?set MOSS_BASE_IMAGE to the reviewed immutable Moss base image}"
+INPUT_DIR="${CLASH_ROYALE_BUILD_INPUT_DIR:-}"
+[[ -n $INPUT_DIR ]] || { printf '%s\n' 'missing controlled private Node build input directory' >&2; exit 65; }
+BASE_IMAGE="${MOSS_BASE_IMAGE:-}"
+[[ $BASE_IMAGE =~ ^sha256:[0-9a-f]{64}$ ]] || { printf '%s\n' 'MOSS_BASE_IMAGE must be an immutable local sha256 image ID' >&2; exit 65; }
 TAG="${1:?usage: $0 IMAGE_TAG}"
 MANIFEST_REL="ops/build-inputs/moss-clash-royale-war-bot.sha256"
 
@@ -33,7 +35,9 @@ git -C "$ROOT" archive --format=tar "$COMMIT" | tar -xf - -C "$CTX"
 (
   cd "$INPUT_DIR"
   sha256sum -c "$CTX/$MANIFEST_REL"
-)
+) || { printf '%s\n' 'private build input checksum mismatch' >&2; exit 65; }
+resolved_base=$(docker image inspect "$BASE_IMAGE" --format '{{.Id}}') || { printf '%s\n' 'immutable Moss base image is unavailable locally' >&2; exit 65; }
+[[ $resolved_base == "$BASE_IMAGE" ]] || { printf '%s\n' 'Moss base image ID resolution mismatch' >&2; exit 65; }
 docker build --pull=false \
   --file "$CTX/ops/images/Dockerfile.moss-all-in-one" \
   --tag "$TAG" \
