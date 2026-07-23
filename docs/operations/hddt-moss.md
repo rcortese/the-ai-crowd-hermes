@@ -4,7 +4,7 @@
 
 ## Commands
 
-- `prepare --operation-id … --mode automatic|followable …` creates the private request/journal.
+- `prepare --operation-id … --mode followable only …` creates the private request/journal.
 - `run --operation-id …` consumes a fixture authorization only in rehearsal.
 - `confirm` / `rollback` publish one serialized control decision.
 - `recover` terminalizes an unresolved rehearsal state rather than guessing from a tag.

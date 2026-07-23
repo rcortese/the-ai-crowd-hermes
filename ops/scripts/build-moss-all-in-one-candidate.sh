@@ -20,6 +20,7 @@ BASE_IMAGE="${MOSS_BASE_IMAGE:-}"
 [[ $BASE_IMAGE =~ ^sha256:[0-9a-f]{64}$ ]] || { printf '%s\n' 'MOSS_BASE_IMAGE must be an immutable local sha256 image ID' >&2; exit 65; }
 TAG="${1:?usage: $0 IMAGE_TAG}"
 MANIFEST_REL="ops/build-inputs/moss-clash-royale-war-bot.sha256"
+source "${ROOT}/ops/scripts/lib/hddt-moss-closure.sh"
 
 if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
   printf '%s\n' 'refusing dirty source worktree' >&2
@@ -68,16 +69,19 @@ for path in "${closure_paths[@]}"; do
   [[ $path != /* && $path != *'..'* && -n $path ]] || { printf '%s\n' 'invalid release source closure path' >&2; exit 65; }
   git -C "$ROOT" ls-files --error-unmatch -- "$path" >/dev/null || { printf 'untracked release source closure path: %s\n' "$path" >&2; exit 65; }
 done
-source_closure_sha=$(git -C "$ROOT" ls-tree -r --full-tree "$COMMIT" -- "${closure_paths[@]}" | sha256sum | cut -d' ' -f1)
+source_closure_sha=$(hddt_source_closure "$ROOT")
 [[ $source_closure_sha =~ ^[0-9a-f]{64}$ ]] || { printf '%s\n' 'release source closure hash unavailable' >&2; exit 65; }
+builder_sha=$(sha256sum "$ROOT/ops/scripts/build-moss-all-in-one-candidate.sh" | cut -d' ' -f1)
 hddt_executor_sha=$(sha256sum "$ROOT/ops/scripts/hddt-moss.sh" | cut -d' ' -f1)
-[[ $hddt_executor_sha =~ ^[0-9a-f]{64}$ ]] || { printf '%s\n' 'HDDT executor hash unavailable' >&2; exit 65; }
+launcher_path="$ROOT/ops/scripts/hddt-moss-launcher.sh"
+[[ -f "$launcher_path" && ! -L "$launcher_path" ]] || { printf '%s\n' 'HDDT launcher unavailable' >&2; exit 65; }
+launcher_sha=$(sha256sum "$launcher_path" | cut -d' ' -f1)
 toolchain_sha=$( { docker version --format '{{json .}}'; docker buildx version; } | sha256sum | cut -d' ' -f1)
 created_epoch=$(git -C "$ROOT" show -s --format=%ct "$COMMIT")
 [[ $created_epoch =~ ^[0-9]+$ ]] || { printf '%s\n' 'invalid source commit epoch' >&2; exit 65; }
 receipt="$BUILD_RECEIPT_ROOT/sha256-${image_id#sha256:}.json"
 tmp=$(mktemp "$BUILD_RECEIPT_ROOT/.receipt.XXXXXX")
-jq -ncS --arg rev "$COMMIT" --arg source_base "$SOURCE_BASE_REVISION" --arg tree "$tree" --arg remote "$source_remote" --arg closure "$source_closure_sha" --arg image "$image_id" --arg base "$BASE_IMAGE" --arg context "$context_sha" --arg exec "$hddt_executor_sha" --arg toolchain "$toolchain_sha" --argjson created "$created_epoch" '{source_revision:$rev,source_base_revision:$source_base,source_tree:$tree,source_remote:$remote,source_closure_sha256:$closure,candidate_image_id:$image,base_image:$base,context_sha256:$context,executor_sha256:$exec,toolchain_sha256:$toolchain,created_epoch:$created}' >"$tmp"
+jq -ncS --arg rev "$COMMIT" --arg source_base "$SOURCE_BASE_REVISION" --arg tree "$tree" --arg remote "$source_remote" --arg closure "$source_closure_sha" --arg image "$image_id" --arg base "$BASE_IMAGE" --arg context "$context_sha" --arg builder "$builder_sha" --arg exec "$hddt_executor_sha" --arg launcher "$launcher_sha" --arg toolchain "$toolchain_sha" --argjson created "$created_epoch" '{source_revision:$rev,source_base_revision:$source_base,source_tree:$tree,source_remote:$remote,source_closure_sha256:$closure,candidate_image_id:$image,base_image:$base,context_sha256:$context,builder_sha256:$builder,executor_sha256:$exec,launcher_sha256:$launcher,toolchain_sha256:$toolchain,created_epoch:$created}' >"$tmp"
 chmod 600 "$tmp"; sync "$tmp"
 if [[ -e $receipt ]]; then [[ -f $receipt && ! -L $receipt ]] && cmp -s "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'divergent or unsafe build receipt already exists' >&2; exit 65; }; rm -f "$tmp"; else ln "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'receipt publication race' >&2; exit 65; }; rm -f "$tmp"; sync "$BUILD_RECEIPT_ROOT"; fi
 printf 'build-receipt=%s sha256=%s\n' "$receipt" "$(sha256sum "$receipt" | cut -d' ' -f1)"
