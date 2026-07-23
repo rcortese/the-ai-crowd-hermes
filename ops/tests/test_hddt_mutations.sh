@@ -84,6 +84,7 @@ run_red existing third-state-recovery T38 "$base" hddt 'ASSERT[t38]' 'terminal "
 
 # Lote A: separate causal mutants for the specified control boundaries.
 run_red lote-a base-binding T06 "$base" hddt 'ASSERT[t06]: receipt-base-binding-accepted' '.base_image==$base and .source_closure_sha256==$closure' '.base_image==$base or .source_closure_sha256==$closure'
+run_red lote-a authorization-base-binding T83 "$base" hddt 'ASSERT[t83]: authorization-base-binding-accepted' '.moss_base_image==$base and .source_revision==$rev' 'true and .source_revision==$rev'
 run_red lote-a selector-tag-default T00 "$binding" binding "ERROR: Compose did not bind Moss to expected immutable image sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" 'MOSS_IMAGE_REF="$1" docker compose' 'MOSS_IMAGE_REF=fixture/moss:local docker compose'
 run_red lote-a reopen-live-input-post-seal T51 "$base" hddt 'ASSERT[t51]' '-f "$op/$kind.rendered.json" up -d' '-f "$(stack)/compose.yaml" up -d'
 run_red lote-a health-none T08 "$base" hddt 'ASSERT[t08]: health-none-admitted' 'j=$(live); jq -e --arg image "$rollback_image_id" '\''.Image==$image and .State.Running==true and .State.Status=="running" and (.State.Health.Status//"none")=="healthy"'\'' <<<"$j"' 'j=$(live); jq -e --arg image "$rollback_image_id" '\''.Image==$image and .State.Running==true and .State.Status=="running" and (.State.Health.Status//"none")!="unhealthy"'\'' <<<"$j"'
@@ -116,17 +117,17 @@ jq -Rn --arg schema hddt-mutation-ledger/v1 '
 while IFS= read -r line || [[ -n $line ]]; do printf '%s\n' "$line"; done <"$ledger_rows" >>"$ledger_tsv"
 jq -e '
   .schema=="hddt-mutation-ledger/v1"
-  and (.mutants|length)==29
-  and ([.mutants[].id]|unique|length)==29
+  and (.mutants|length)==30
+  and ([.mutants[].id]|unique|length)==30
   and ([.mutants[]|select(.cohort=="existing")]|length)==7
-  and ([.mutants[]|select(.cohort=="lote-a")]|length)==10
+  and ([.mutants[]|select(.cohort=="lote-a")]|length)==11
   and ([.mutants[]|select(.cohort=="lote-b")]|length)==12
   and ([.mutants[].result]|all(.=="RED"))
-  and ([.mutants[].id]|sort)==(["apply-env-i","authorization-single-use","base-binding","cas-ignore-id","cas-ignore-restart-count","cas-ignore-started-at","confirmation-deadline","container-curl-argv","env-scrub","functional-endpoint","health-none","host-container-vantage","input-drift","mount-overlap","outbox-before-terminal","parser-eval-injection","recovery-image-only-third","release-argv","reopen-live-input-post-seal","rollback-preapply-incomplete","rollback-render-tag","run-source-base-revalidation","selector-tag-default","set-E-nested-err","signal-rollback-return-status","source-base-ancestry","third-state-recovery","trap-duplicate-rollback","trap-omit-rollback"]|sort)
+  and ([.mutants[].id]|sort)==(["apply-env-i","authorization-base-binding","authorization-single-use","base-binding","cas-ignore-id","cas-ignore-restart-count","cas-ignore-started-at","confirmation-deadline","container-curl-argv","env-scrub","functional-endpoint","health-none","host-container-vantage","input-drift","mount-overlap","outbox-before-terminal","parser-eval-injection","recovery-image-only-third","release-argv","reopen-live-input-post-seal","rollback-preapply-incomplete","rollback-render-tag","run-source-base-revalidation","selector-tag-default","set-E-nested-err","signal-rollback-return-status","source-base-ancestry","third-state-recovery","trap-duplicate-rollback","trap-omit-rollback"]|sort)
 ' "$ledger_json" >/dev/null || fail 'ledger coverage/schema validation failed'
 printf '%s\n' 'MUTATION_LEDGER_TSV_BEGIN'
 while IFS= read -r line || [[ -n $line ]]; do printf '%s\n' "$line"; done <"$ledger_tsv"
 printf '%s\n' 'MUTATION_LEDGER_JSON_BEGIN'
 jq -cS . "$ledger_json"
 HDDT_SCRIPT="$base" bash "$moss_test" mutations
-printf '%s\n' 'hddt-mutations: PASS semantic-red=true ledger-schema=hddt-mutation-ledger/v1 total=29 existing=7 lote-a=10 lote-b=12'
+printf '%s\n' 'hddt-mutations: PASS semantic-red=true ledger-schema=hddt-mutation-ledger/v1 total=30 existing=7 lote-a=11 lote-b=12'

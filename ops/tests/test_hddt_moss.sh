@@ -259,6 +259,18 @@ t82(){
   receipt; touch "$FX/git.base.nonancestor"; rc=0; : >"$FX/git.log"; prepare >"$FX/nonancestor.out" 2>&1||rc=$?; rm -f "$FX/git.base.nonancestor"; [[ $rc == 65 ]] || fail source-base-nonancestor-accepted; has "$FX/git.log" "merge-base><--is-ancestor><$BASE_REV><$REV>"; zero_effects
   receipt; prepare >/dev/null; auth; touch "$FX/git.base.absent"; rc=0; : >"$FX/git.log"; run >"$FX/run-base-absent.out" 2>&1||rc=$?; rm -f "$FX/git.base.absent"; eq "$rc" 65; has "$FX/git.log" "rev-parse><--verify><${BASE_REV}^{commit}>"; [[ -f $STATE/authorizations/hddt-case-0001.ready && ! -e $STATE/authorizations/hddt-case-0001.consumed ]] || fail run-source-base-consumed-authorization; zero_effects
 }
+t83(){
+  local rc=0 auth_file=$STATE/authorizations/hddt-case-0001.ready
+  prepare >/dev/null
+  auth
+  jq '.moss_base_image="sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"' "$auth_file" >"$FX/auth.tmp"
+  mv "$FX/auth.tmp" "$auth_file"
+  chmod 600 "$auth_file"
+  run >"$FX/auth-base.out" 2>&1 || rc=$?
+  [[ $rc == 65 ]] || fail authorization-base-binding-accepted
+  [[ -f $auth_file && ! -e $STATE/authorizations/hddt-case-0001.consumed ]] || fail authorization-base-binding-consumed
+  zero_effects
+}
 run_case(){
  CASE=${1,,}; CASE=${CASE#t}; CASE=t$CASE
  # Do not inherit controls from a prior caller; each case installs only its own hooks.
@@ -271,7 +283,7 @@ run_case(){
  fi
  "$CASE"; printf '%s PASS\n' "${CASE^^}"
 }
-if [[ ${1:-} == --case ]]; then [[ $# == 2 && $2 =~ ^T(0[1-9]|[1-7][0-9]|8[0-2])$ ]]||exit 64; run_case "$2"; exit; fi
-suite=${1:-core}; case $suite in core) cases=$(seq -w 1 33);; recovery) cases='34 35 36 37 38 39 40 49';; adapter) cases="47 81";; mutations) cases='41 42 43 44 45 46 48 50 51';; cas) cases=$(seq -w 52 60);; signals) cases=$(seq -w 61 67);; control) cases=$(seq -w 68 73);; oracles) cases='74 75 76 77 78 79 80 82';; all) cases=$(seq -w 1 82);; *) exit 64;; esac
+if [[ ${1:-} == --case ]]; then [[ $# == 2 && $2 =~ ^T(0[1-9]|[1-7][0-9]|8[0-3])$ ]]||exit 64; run_case "$2"; exit; fi
+suite=${1:-core}; case $suite in core) cases=$(seq -w 1 33);; recovery) cases='34 35 36 37 38 39 40 49';; adapter) cases="47 81";; mutations) cases='41 42 43 44 45 46 48 50 51';; cas) cases=$(seq -w 52 60);; signals) cases=$(seq -w 61 67);; control) cases=$(seq -w 68 73);; oracles) cases='74 75 76 77 78 79 80 82 83';; all) cases=$(seq -w 1 83);; *) exit 64;; esac
 for i in $cases; do bash "$0" --case "T$i"; done
 printf 'hddt-scenarios: PASS suite=%s causal=true\n' "$suite"

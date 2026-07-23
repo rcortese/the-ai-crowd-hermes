@@ -77,7 +77,9 @@ check_source(){
       ops/scripts/validate-moss-native-conversation.sh ops/scripts/build-moss-all-in-one-candidate.sh \
       ops/tests/test_hddt_moss.sh ops/tests/test_hddt_moss_recovery.sh ops/tests/test_hddt_mutations.sh \
       ops/tests/test_hddt_adapter.sh ops/tests/run-moss-release-tests.sh \
-      ops/tests/test_moss_candidate_build_contract.sh ops/tests/test_moss_deploy_decoupling.sh | sha256sum | cut -d' ' -f1)
+      ops/tests/test_moss_candidate_build_contract.sh ops/tests/test_moss_deploy_decoupling.sh \
+      ops/tests/test_moss_candidate_smoke_contract.sh ops/tests/test_moss_title_topic_contract.sh \
+      ops/images/Dockerfile.moss-all-in-one tests/smoke-deploy.sh | sha256sum | cut -d' ' -f1)
     [[ $closure =~ ^[0-9a-f]{64}$ ]]||die 'source closure unavailable' 65; printf '%s\n' "$closure"
 }
 check_receipt(){
