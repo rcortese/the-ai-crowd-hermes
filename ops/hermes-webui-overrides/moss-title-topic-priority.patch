@@ -1,0 +1,45 @@
+diff --git a/api/streaming.py b/api/streaming.py
+index 3425f1cb..20d5f3c8 100644
+--- a/api/streaming.py
++++ b/api/streaming.py
+@@ -2792,27 +2792,24 @@ def _title_language_mismatch(user_text: str, title: str) -> bool:
+ 
+ def _title_prompts(user_text: str, assistant_text: str) -> tuple[str, list[str]]:
+     qa = f"User question:\n{user_text[:500]}\n\nAssistant answer:\n{assistant_text[:500]}"
+-    language_rule = _title_prompt_language_rule(user_text)
+     prompts = [
+         (
+-            "Generate a short session title from this conversation start.\n"
++            "Generate a 3-7 word session title from this conversation start.\n"
+             "Use BOTH the user's question and the assistant's visible answer.\n"
+-            f"{language_rule}"
+-            "Return only the title text, 3-8 words, as a topic label.\n"
+-            "Do not use markdown, bullets, labels, or prefixes like Session Title:.\n"
+-            "Do not output a full sentence.\n"
+-            "Do not output acknowledgements or completion phrases like OK, done, or all set.\n"
+-            "Do not describe internal reasoning.\n"
+-            "Bad: The user is asking..., OK, all set.\n"
+-            "Good: Title Generation Test, Clarify Dialog Layout, GitHub Issue Triage"
++            "Identify the main topic and substantive intent. Prioritize what the conversation seeks "
++            "to resolve, decide, explain, create, or investigate.\n"
++            "Do not prioritize method, format, tool, role, audit, review, handoff, or process step "
++            "unless it is itself the central subject.\n"
++            "Return only the title text, with no markdown, bullets, labels, prefixes, quotes, or trailing punctuation."
+         ),
+         (
+-            "Rewrite this conversation start as a concise noun-phrase title.\n"
+-            "Use the actual topic, not the task outcome.\n"
+-            f"{language_rule}"
+-            "Return title text only.\n"
+-            "Do not use markdown, bullets, labels, or prefixes like Session Title:.\n"
+-            "Never output acknowledgements, completion status, or meta commentary."
++            "Generate a concise 3-7 word noun-phrase session title from this conversation start.\n"
++            "Use BOTH the user's question and the assistant's visible answer.\n"
++            "Represent the substantive subject and intent, not merely the instruction or workflow used "
++            "to address it.\n"
++            "Do not prioritize method, format, tool, role, audit, review, handoff, or process step "
++            "unless it is itself the central subject.\n"
++            "Return only the title text, with no markdown, bullets, labels, prefixes, quotes, or trailing punctuation."
+         ),
+     ]
+     return qa, prompts
