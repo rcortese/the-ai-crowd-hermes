@@ -4,6 +4,7 @@ set -Eeuo pipefail
 umask 077
 readonly SERVICE=moss PROJECT=the-ai-crowd CONTAINER=the-ai-crowd-moss-1
 readonly DEFAULT_ROOT=/mnt/ssd/appdata/the-ai-crowd-hddt
+readonly DEFAULT_STATE_ROOT=$DEFAULT_ROOT/state
 readonly DEFAULT_STACK_INPUTS=/mnt/ssd/appdata/the-ai-crowd
 readonly INSTALLED_EXECUTOR=/mnt/ssd/appdata/the-ai-crowd-hddt/bin/hddt-moss.sh
 readonly INSTALLED_LAUNCHER=/mnt/ssd/appdata/the-ai-crowd-hddt/bin/hddt-moss-launcher.sh
@@ -16,7 +17,7 @@ sha(){ sha256sum -- "$1"|cut -d' ' -f1; }
 now(){ local n; if [[ -n ${HDDT_CLOCK_FILE:-} ]]; then read -r n <"$HDDT_CLOCK_FILE"; printf '%s\n' "$n"; else date -u +%s; fi; }
 valid_id(){ [[ $1 =~ ^[a-z0-9][a-z0-9-]{7,63}$ ]]; }
 valid_image(){ [[ $1 =~ ^sha256:[0-9a-f]{64}$ ]]; }
-root(){ rehearsal && printf '%s\n' "${HDDT_STATE_ROOT:?}" || printf '%s\n' "$DEFAULT_ROOT"; }
+root(){ rehearsal && printf '%s\n' "${HDDT_STATE_ROOT:?}" || printf '%s\n' "$DEFAULT_STATE_ROOT"; }
 stack_inputs(){ rehearsal && printf '%s\n' "${HDDT_STACK_ROOT:?}" || printf '%s\n' "$DEFAULT_STACK_INPUTS"; }
 release_source(){ rehearsal && printf '%s\n' "${HDDT_RELEASE_SOURCE_ROOT:-${HDDT_STACK_ROOT:?}}" || printf '%s\n' "$DEFAULT_ROOT/release-source"; }
 stack(){ stack_inputs; }
@@ -26,7 +27,7 @@ reject_production_overrides(){ rehearsal && return 0; local v; for v in ${!HDDT_
 git_bin(){ rehearsal && printf '%s\n' "${HDDT_GIT_BIN:?}" || printf '%s\n' git; }
 curl_bin(){ rehearsal && printf '%s\n' "${HDDT_CURL_BIN:?}" || printf '%s\n' /usr/bin/curl; }
 json_keys_exact(){ local f=$1 keys=$2; jq -e --argjson want "$keys" 'type=="object" and ((keys|sort)==($want|sort))' "$f" >/dev/null; }
-regular_private(){ local p=$1 uid=${HDDT_CUSTODY_UID:-$(id -u)}; [[ -f $p && ! -L $p && $(stat -c %a -- "$p") == 600 && $(stat -c %u -- "$p") == "$uid" ]]; }
+regular_private(){ local p=$1 uid; uid=$([[ ${HDDT_REHEARSAL:-0} == 1 ]] && printf %s "${HDDT_CUSTODY_UID:-$(id -u)}" || printf 0); [[ -f $p && ! -L $p && $(stat -c %a -- "$p") == 600 && $(stat -c %u -- "$p") == "$uid" ]]; }
 atomic_new(){ local out=$1 tmp; [[ ! -e $out ]]||return 17; tmp=$(mktemp "$(dirname "$out")/.tmp.XXXXXX"); cat >"$tmp"; chmod 600 "$tmp"; sync "$tmp"; ln "$tmp" "$out" 2>/dev/null||{ rm -f "$tmp"; return 17; }; rm -f "$tmp"; sync "$(dirname "$out")"; }
 replace_atomic(){ local out=$1 tmp; tmp=$(mktemp "$(dirname "$out")/.tmp.XXXXXX"); cat >"$tmp"; chmod 600 "$tmp"; sync "$tmp"; mv -fT "$tmp" "$out"; sync "$(dirname "$out")"; }
 journal(){ local op=$1 state=$2 reason=$3; printf '%s\t%s\t%s\n' "$(now)" "$state" "$reason" >>"$op/journal.log"; sync "$op/journal.log"; }
@@ -38,28 +39,32 @@ consume_decision_locked(){ local op=$1 f=$op/control/decision.request c=$op/cont
 terminal_locked(){ local op=$1 state=$2 reason=$3 r; r=$(dirname "$(dirname "$op")"); [[ ! -e $op/terminal.json ]]||return 0; consume_decision_locked "$op"; jq -nc --arg s "$state" --arg r "$reason" --argjson t "$(now)" '{state:$s,reason:$r,created_epoch:$t}'|atomic_new "$op/terminal.json"; [[ -s $op/terminal.json ]]||die 'terminal durability failure' 74; jq -nc --arg op "$(basename "$op")" --arg s "$state" --arg h "$(sha "$op/terminal.json")" '{operation_id:$op,state:$s,terminal_sha256:$h}'|atomic_new "$r/outbox/$(basename "$op").ready"||die 'terminal outbox publication failure' 74; }
 terminal(){ local op=$1 state=$2 reason=$3; exec 6>"$op/control.lock"; flock -x 6; terminal_locked "$op" "$state" "$reason"; flock -u 6; }
 assert_safe_tree(){
-  local r=$1 real uid=${HDDT_CUSTODY_UID:-$(id -u)} p
-  [[ $r == /* && $r != /mnt/user/* && ! -L $r ]]||die 'state root non-canonical or symlink' 65
-  real=$(realpath -e -- "$r")||die 'state root unresolved' 65; [[ $real == "$r" ]]||die 'state root non-canonical' 65
-  [[ ${HDDT_REHEARSAL:-0} == 1 && $r == /tmp/hddt-* || ${HDDT_REHEARSAL:-0} != 1 && $r == "$DEFAULT_ROOT" ]]||die 'state root boundary' 65
-  p=$r; while [[ $p != /tmp && $p != / ]]; do [[ ! -L $p && $(stat -c %u -- "$p") == "$uid" && $(stat -c %a -- "$p") =~ ^7[0-7]0$ ]]||die 'state custody failed' 65; p=$(dirname "$p"); done
-  local db mounts; db=$(docker_bin); mounts=$("$db" inspect --format "{{json .Mounts}}" "$CONTAINER"); jq -e --arg r "$r" 'all(.[]; .Source as $s | (($s==$r) or ($s|startswith($r+"/")) or ($r|startswith($s+"/")))|not)' <<<"$mounts" >/dev/null||die 'state root overlaps target mount' 65
+ local r=$1 real uid; uid=$([[ ${HDDT_REHEARSAL:-0} == 1 ]] && printf %s "${HDDT_CUSTODY_UID:-$(id -u)}" || printf 0)
+ [[ $r == /* && $r != /mnt/user/* && ! -L $r ]]||die 'state root non-canonical or symlink' 65
+ real=$(realpath -e -- "$r")||die 'state root unresolved' 65; [[ $real == "$r" ]]||die 'state root non-canonical' 65
+ [[ ${HDDT_REHEARSAL:-0} == 1 && $r == /tmp/hddt-*/* || ${HDDT_REHEARSAL:-0} != 1 && $r == "$DEFAULT_STATE_ROOT" ]]||die 'state root boundary' 65
+ [[ $(stat -c %u -- "$r") == "$uid" && $(stat -c %a -- "$r") == 700 ]]||die 'state custody failed' 65
+ local db mounts; db=$(docker_bin); mounts=$("$db" inspect --format "{{json .Mounts}}" "$CONTAINER"); jq -e --arg r "$r" 'all(.[]; .Source as $s | (($s==$r) or ($s|startswith($r+"/")) or ($r|startswith($s+"/")))|not)' <<<"$mounts" >/dev/null||die 'state root overlaps target mount' 65
 }
+
 path_overlap(){ local a=$1 b=$2; [[ $a == "$b" || $a == "$b"/* || $b == "$a"/* ]]; }
 assert_fixed_paths(){
- local r=$1 release stack mounts db
+ local r=$1 release stack mounts db parent
  [[ ${HDDT_REHEARSAL:-0} == 1 ]] && return 0
- [[ $r == "$DEFAULT_ROOT" && $(release_source) == "$DEFAULT_ROOT/release-source" && $(stack_inputs) == "$DEFAULT_STACK_INPUTS" ]] || die 'production path selector rejected' 65
+ parent=$(dirname "$r"); [[ $parent == "$DEFAULT_ROOT" && $r == "$DEFAULT_STATE_ROOT" && $(release_source) == "$DEFAULT_ROOT/release-source" && $(stack_inputs) == "$DEFAULT_STACK_INPUTS" ]] || die 'production path selector rejected'
  release=$(release_source); stack=$(stack_inputs)
  [[ $release != /mnt/user/* && $stack != /mnt/user/* ]] || die 'production alias rejected' 65
- [[ -e $release && -e $stack ]] || die 'fixed production roots unresolved' 65
- [[ $(realpath -e "$release") == "$release" && $(realpath -e "$stack") == "$stack" ]] || die 'fixed production roots non-canonical' 65
+ [[ -e $release && -e $stack && -e "$DEFAULT_ROOT/bin" ]] || die 'fixed production roots unresolved' 65
+ [[ $(realpath -e "$release") == "$release" && $(realpath -e "$stack") == "$stack" && $(realpath -e "$DEFAULT_ROOT/bin") == "$DEFAULT_ROOT/bin" ]] || die 'fixed production roots non-canonical' 65
+ local managed; for managed in "$DEFAULT_ROOT" "$DEFAULT_ROOT/bin" "$release" "$r"; do [[ ! -L $managed && $(stat -c %u "$managed") == 0 && $(stat -c %a "$managed") == 700 ]] || die 'managed custody failed' 65; done
+ for managed in "$INSTALLED_EXECUTOR" "$INSTALLED_LAUNCHER"; do [[ -f $managed && ! -L $managed && $(stat -c %u "$managed") == 0 && $(stat -c %a "$managed") == 700 ]] || die 'installed byte custody failed' 65; done
  path_overlap "$r" "$stack" && die 'state/stack overlap' 65
- path_overlap "$r" "$release" && die 'state/release overlap' 65
+ path_overlap "$release" "$stack" && die 'release/stack overlap' 65
  db=$(docker_bin); mounts=$("$db" inspect --format "{{json .Mounts}}" "$CONTAINER")
  jq -e --arg r "$r" --arg release "$release" --arg stack "$stack" 'all(.[]; .Source as $s | (($s==$r) or ($s==$release) or ($s==$stack) or ($s|startswith($r+"/")) or ($s|startswith($release+"/")) or ($s|startswith($stack+"/")))|not)' <<<"$mounts" >/dev/null || die 'fixed path overlaps target mount' 65
 }
-init_root(){ local r=$1; if [[ ! -e $r ]]; then mkdir -m 700 -- "$r"; fi; assert_safe_tree "$r"; assert_fixed_paths "$r"; local d; for d in operations authorizations build-receipts outbox staging; do [[ -e $r/$d ]]||mkdir -m 700 "$r/$d"; [[ -d $r/$d && ! -L $r/$d ]]||die 'unsafe state subtree' 65; done; }
+
+init_root(){ local r=$1; if [[ ! -e $r ]]; then mkdir -m 700 -- "$r"; fi; assert_safe_tree "$r"; assert_fixed_paths "$r"; local d; for d in operations authorizations build-receipts outbox staging locks; do [[ -e $r/$d ]]||mkdir -m 700 "$r/$d"; [[ -d $r/$d && ! -L $r/$d && $(stat -c %a "$r/$d") == 700 ]]||die 'unsafe state subtree' 65; done; }
 parse(){
  operation_id= mode= source_revision= source_tree= canonical_remote= candidate_image_id= rollback_image_id= moss_base_image= receipt_sha256= approval_context= confirmation_seconds=${HDDT_CONFIRMATION_SECONDS:-600} reason=operator
  while (($#)); do (($#>=2))||die "missing value for $1"; case $1 in
@@ -108,7 +113,7 @@ check_receipt(){
  gb=$(git_bin); canonical=$("$gb" -c safe.directory="$checkout" -C "$checkout" rev-parse --verify "${base}^{commit}")||die 'receipt source base unavailable' 65
  [[ $canonical == "$base" && $base != "$source_revision" ]]||die 'receipt source base mismatch' 65
  "$gb" -c safe.directory="$checkout" -C "$checkout" merge-base --is-ancestor "$base" "$source_revision"||die 'receipt source base non-ancestor' 65
- jq -e --arg rev "$source_revision" --arg tree "$source_tree" --arg remote "$canonical_remote" --arg image "$candidate_image_id" --arg base "$moss_base_image" --arg closure "$closure" --arg exec "$(sha "$0")" --arg builder "$(jq -r .builder_sha256 "$f")" --arg launcher "$(jq -r .launcher_sha256 "$f")" '.source_revision==$rev and .source_tree==$tree and .source_remote==$remote and .candidate_image_id==$image and .base_image==$base and .source_closure_sha256==$closure and .executor_sha256==$exec and (.builder_sha256|test("^[0-9a-f]{64}$")) and (.launcher_sha256|test("^[0-9a-f]{64}$")) and (.context_sha256|test("^[0-9a-f]{64}$")) and (.toolchain_sha256|test("^[0-9a-f]{64}$"))' "$f" >/dev/null||die 'receipt binding mismatch' 65; printf '%s\n' "$f"
+ jq -e --arg rev "$source_revision" --arg tree "$source_tree" --arg remote "$canonical_remote" --arg image "$candidate_image_id" --arg base "$moss_base_image" --arg closure "$closure" --arg exec "$( [[ ${HDDT_REHEARSAL:-0} == 1 ]] && sha "$0" || sha "$INSTALLED_EXECUTOR" )" --arg builder "$(sha "$checkout/ops/scripts/build-moss-all-in-one-candidate.sh")" --arg launcher "$( [[ ${HDDT_REHEARSAL:-0} == 1 ]] && sha "$checkout/ops/scripts/hddt-moss-launcher.sh" || sha "$INSTALLED_LAUNCHER" )" '.source_revision==$rev and .source_tree==$tree and .source_remote==$remote and .candidate_image_id==$image and .base_image==$base and .source_closure_sha256==$closure and .executor_sha256==$exec and .builder_sha256==$builder and .launcher_sha256==$launcher and (.context_sha256|test("^[0-9a-f]{64}$")) and (.toolchain_sha256|test("^[0-9a-f]{64}$"))' "$f" >/dev/null||die 'receipt binding mismatch' 65; printf '%s\n' "$f"
 }
 check_images(){ local db; db=$(docker_bin); "$db" image inspect "$moss_base_image" >/dev/null && "$db" image inspect "$candidate_image_id" >/dev/null && "$db" image inspect "$rollback_image_id" >/dev/null; }
 input_manifest(){ local dir=$1; (cd "$dir"; sha256sum compose.yaml .env env/fleet.env env/moss-webui.env)|sort; }
@@ -151,7 +156,7 @@ signal_relation(){ local j=$1; if [[ $(rollback_relation "$CURRENT_OP" "$j") == 
 finalize_interruption(){
  local origin=$1 rc=${2:-1} j relation; local reason="signal_${origin}"
  (( HANDLER_ACTIVE || HANDLER_DONE ))&&return 0
- HANDLER_ACTIVE=1; trap - INT TERM ERR EXIT
+ HANDLER_ACTIVE=1; write_runner_exit "$rc"; trap - INT TERM ERR EXIT
  [[ -n $CURRENT_OP && -d $CURRENT_OP && ! -e $CURRENT_OP/terminal.json ]]||{ HANDLER_DONE=1; return 0; }
  if [[ $CURRENT_PHASE == preapply ]]; then
    journal "$CURRENT_OP" REJECTED_PRE_APPLY "$reason"; terminal "$CURRENT_OP" REJECTED_PRE_APPLY "$reason"
@@ -171,11 +176,15 @@ finalize_interruption(){
  HANDLER_DONE=1
  case $origin in INT) exit 130;; TERM) exit 143;; ERR) exit "$rc";; EXIT) return 0;; esac
 }
+classify_legacy(){ local r=$1 opid=$2 op f; op="$r/operations/$opid"; f="$op/request.json"; [[ -d $op && -f $f ]] || return 0; if ! json_keys_exact "$f" "$REQUEST_KEYS" || [[ $(jq -r '.mode//""' "$f" 2>/dev/null) != followable ]]; then printf 'RECOVERY_UNRESOLVED legacy_schema\n' >&2; return 65; fi; }
+runner_started_valid(){ local f=$1 pid token sid pgid; [[ -f $f ]] || return 1; pid=$(jq -er .pid "$f")||return 1; token=$(jq -er .start_token "$f")||return 1; sid=$(jq -er .sid "$f")||return 1; pgid=$(jq -er .pgid "$f")||return 1; [[ -r /proc/$pid/stat ]]||return 1; [[ $(awk '{print $22}' /proc/$pid/stat) == "$token" && $(ps -o sid= -p "$pid"|tr -d ' ') == "$sid" && $(ps -o pgid= -p "$pid"|tr -d ' ') == "$pgid" ]]; }
+write_runner_exit(){ local rc=${1:-0} op=${CURRENT_OP:-}; [[ ${HDDT_REHEARSAL:-0} != 1 && -n $op && -d $op && -n ${request_sha256:-} ]] || return 0; [[ -e $op/runner.exit.json ]] && return 0; jq -ncS --arg request "$request_sha256" --argjson pid "$$" --argjson code "$rc" --arg terminal "$( [[ -f $op/terminal.json ]] && sha "$op/terminal.json" || printf '' )" '{request_sha256:$request,pid:$pid,exit_code:$code,terminal_sha256:(if $terminal=="" then null else $terminal end),exit_epoch:now}' | atomic_new "$op/runner.exit.json" || true; }
 run(){
- parse "$@"; reject_production_overrides; local r op auth j deadline fail= attempts=0; r=$(root); init_root "$r"; op="$r/operations/$operation_id"; [[ -d $op && ! -e $op/terminal.json ]]||die 'operation missing or terminal' 65; load_request "$op"; CURRENT_OP=$op; CURRENT_ROOT=$r; CURRENT_PHASE=preapply; trap 'finalize_interruption INT' INT; trap 'finalize_interruption TERM' TERM; trap 'finalize_interruption ERR $?' ERR; trap 'finalize_interruption EXIT $?' EXIT
+ parse "$@"; reject_production_overrides; local r op auth j deadline fail= attempts=0; r=$(root); classify_legacy "$r" "$operation_id"; init_root "$r"; op="$r/operations/$operation_id"; [[ -d $op && ! -e $op/terminal.json ]]||die 'operation missing or terminal' 65; load_request "$op"; CURRENT_OP=$op; CURRENT_ROOT=$r; CURRENT_PHASE=preapply; trap 'finalize_interruption INT' INT; trap 'finalize_interruption TERM' TERM; trap 'finalize_interruption ERR $?' ERR; trap 'finalize_interruption EXIT $?' EXIT
  exec 8>"$r/deploy.lock"; flock -xn 8||die 'lifecycle lock busy' 75; local release_sr closure; release_sr=$(release_source); closure=$(check_source "$release_sr"); check_receipt "$r" "$release_sr" "$closure" >/dev/null; load_request "$op"; if [[ ${HDDT_REHEARSAL:-0} != 1 ]]; then
+   if [[ ! -e "$op/runner.started.json" && -f "$op/runner.launch.json" ]]; then token=$(awk '{print $22}' "/proc/$$/stat"); sid=$(ps -o sid= -p $$|tr -d ' '); pgid=$(ps -o pgid= -p $$|tr -d ' '); jq -ncS --arg request "$request_sha256" --arg launcher "$launcher_sha256" --arg executor "$executor_sha256" --argjson pid "$$" --arg sid "$sid" --arg pgid "$pgid" --arg token "$token" '{request_sha256:$request,launcher_sha256:$launcher,executor_sha256:$executor,pid:$pid,sid:$sid,pgid:$pgid,start_token:$token}'|atomic_new "$op/runner.started.json"; fi
    [[ -f "$op/runner.started.json" ]] || { journal "$op" REJECTED_PRE_APPLY runner_not_started; terminal "$op" REJECTED_PRE_APPLY runner_not_started; return 65; }
-   jq -e --arg req "$request_sha256" --arg launch "$launcher_sha256" --arg exec "$executor_sha256" '.request_sha256==$req and .launcher_sha256==$launch and .executor_sha256==$exec and (.pid|numbers) and (.sid|numbers) and (.pgid|numbers) and (.start_token|strings|length>0)' "$op/runner.started.json" >/dev/null || { journal "$op" REJECTED_PRE_APPLY runner_not_started; terminal "$op" REJECTED_PRE_APPLY runner_not_started; return 65; }
+   runner_started_valid "$op/runner.started.json" && jq -e --arg req "$request_sha256" --arg launch "$launcher_sha256" --arg exec "$executor_sha256" '.request_sha256==$req and .launcher_sha256==$launch and .executor_sha256==$exec' "$op/runner.started.json" >/dev/null || { journal "$op" REJECTED_PRE_APPLY runner_not_started; terminal "$op" REJECTED_PRE_APPLY runner_not_started; return 65; }
  fi
  [[ $(sha "$op/candidate.rendered.json") == "$candidate_render_sha256" && $(sha "$op/rollback.rendered.json") == "$rollback_render_sha256" ]]||die 'sealed render drift' 65; j=$(live); jq -e --arg image "$rollback_image_id" '.Image==$image and .State.Running==true and .State.Status=="running" and (.State.Health.Status//"none")=="healthy"' <<<"$j" >/dev/null||{ journal "$op" REJECTED_PRE_APPLY rollback_identity_mismatch; terminal "$op" REJECTED_PRE_APPLY rollback_identity_mismatch; return 65; }; seal_live_snapshot "$op" "$j"; snapshot_matches "$op" "$j"||die "snapshot identity mismatch" 65
  auth="$r/authorizations/$operation_id.ready"; validate_auth "$auth"||{ journal "$op" REJECTED_PRE_APPLY authorization_invalid; terminal "$op" REJECTED_PRE_APPLY authorization_invalid; return 65; }; mv -T "$auth" "$r/authorizations/$operation_id.consumed"; sync "$r/authorizations"; journal "$op" APPLY_INTENT authorization_consumed; CURRENT_PHASE=mutated
@@ -209,7 +218,7 @@ control(){
 }
 recover(){
  parse "$@"; reject_production_overrides; local r op state j class decision=none deadline
- r=$(root); init_root "$r"; op="$r/operations/$operation_id"; [[ -d $op ]]||die 'operation missing' 65; load_request "$op"
+ r=$(root); classify_legacy "$r" "$operation_id"; init_root "$r"; op="$r/operations/$operation_id"; [[ -d $op ]]||die 'operation missing' 65; load_request "$op"
  exec 8>"$r/deploy.lock"; flock -xn 8||die 'lifecycle lock busy' 75
  exec 7>"$op/control.lock"; flock -x 7
  [[ -e $op/terminal.json ]]&&{ flock -u 7; return 0; }
