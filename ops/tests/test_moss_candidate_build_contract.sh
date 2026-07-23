@@ -3,6 +3,8 @@
 set -Eeuo pipefail
 source_root=${1:?root required}
 source_helper="$source_root/ops/scripts/build-moss-all-in-one-candidate.sh"
+source_closure="$source_root/ops/scripts/lib/hddt-moss-closure.sh"
+source_launcher="$source_root/ops/scripts/hddt-moss-launcher.sh"
 source_hddt="$source_root/ops/scripts/hddt-moss.sh"
 [[ -x $source_helper && -x $source_hddt ]] || { printf '%s\n' 'missing build helper or HDDT executor' >&2; exit 1; }
 
@@ -14,9 +16,11 @@ mkdir -m 700 "$repo" "$input" "$bin"
 printf '%s\n' '{"name":"fixture","version":"1.0.0"}' >"$input/package.json"
 printf '%s\n' '{"name":"fixture","lockfileVersion":3}' >"$input/package-lock.json"
 
-mkdir -p "$repo/ops/scripts" "$repo/ops/build-inputs" "$repo/ops/images" "$repo/ops/manifests"
+mkdir -p "$repo/ops/scripts/lib" "$repo/ops/build-inputs" "$repo/ops/images" "$repo/ops/manifests"
 cp -- "$source_helper" "$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
 cp -- "$source_hddt" "$repo/ops/scripts/hddt-moss.sh"
+cp -- "$source_closure" "$repo/ops/scripts/lib/hddt-moss-closure.sh"
+cp -- "$source_launcher" "$repo/ops/scripts/hddt-moss-launcher.sh"
 chmod 755 "$repo/ops/scripts/build-moss-all-in-one-candidate.sh" "$repo/ops/scripts/hddt-moss.sh"
 (
   cd "$input"
@@ -186,9 +190,11 @@ done
 
 if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
   mutroot="$fx/mutroot"
-  mkdir -p "$mutroot/ops/scripts"
+  mkdir -p "$mutroot/ops/scripts/lib"
   cp -- "$source_helper" "$mutroot/ops/scripts/build-moss-all-in-one-candidate.sh"
   cp -- "$source_hddt" "$mutroot/ops/scripts/hddt-moss.sh"
+  cp -- "$source_closure" "$mutroot/ops/scripts/lib/hddt-moss-closure.sh"
+  cp -- "$source_launcher" "$mutroot/ops/scripts/hddt-moss-launcher.sh"
   mutant_helper="$mutroot/ops/scripts/build-moss-all-in-one-candidate.sh"
   mutant_tmp="$mutant_helper.tmp"
   checksum_anchors=0
@@ -211,9 +217,11 @@ if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
   grep -Fq 'tampered-package-json expected rc=65 got rc=0' "$fx/checksum-mutant.out" || fail 'checksum-omission mutant lacked causal oracle'
 
   execroot="$fx/executor-mutroot"
-  mkdir -p "$execroot/ops/scripts"
+  mkdir -p "$execroot/ops/scripts/lib"
   cp -- "$source_helper" "$execroot/ops/scripts/build-moss-all-in-one-candidate.sh"
   cp -- "$source_hddt" "$execroot/ops/scripts/hddt-moss.sh"
+  cp -- "$source_closure" "$execroot/ops/scripts/lib/hddt-moss-closure.sh"
+  cp -- "$source_launcher" "$execroot/ops/scripts/hddt-moss-launcher.sh"
   exec_helper="$execroot/ops/scripts/build-moss-all-in-one-candidate.sh"
   old='hddt_executor_sha=$(sha256sum "$ROOT/ops/scripts/hddt-moss.sh" | cut -d'\'' '\'' -f1)'
   new='hddt_executor_sha=$(sha256sum "$0" | cut -d'\'' '\'' -f1) # MUTANT: producer hash substituted for HDDT executor'

@@ -107,7 +107,7 @@ run_red lote-b outbox-before-terminal T77 "$base" hddt 'ASSERT[t77]: terminal-be
 run_red lote-b rollback-preapply-incomplete T79 "$base" hddt 'ASSERT[t79]: rollback-preapply-incomplete' 'PREPARED|AUTHORIZED|VALIDATING|SNAPSHOTTING)' 'AUTHORIZED|VALIDATING|SNAPSHOTTING)' recover
 run_red lote-b signal-rollback-return-status T67 "$base" hddt 'ASSERT[t67]' "printf '%s\\n' rollback; return 0;" "printf '%s\\n' rollback; return 1;" signal_relation
 run_red lote-b source-base-ancestry T82 "$base" hddt 'ASSERT[t82]' 'merge-base --is-ancestor "$base" "$source_revision"||die' 'true||die' check_receipt
-run_red lote-b run-source-base-revalidation T82 "$base" hddt 'ASSERT[t82]' 'closure=$(check_source "$sr"); check_receipt "$r" "$sr" "$closure" >/dev/null; load_request "$op";' 'closure=$(check_source "$sr"); : # mutation: omit run receipt revalidation
+run_red lote-b run-source-base-revalidation T82 "$base" hddt 'ASSERT[t82]' 'release_sr=$(release_source); closure=$(check_source "$release_sr"); check_receipt "$r" "$release_sr" "$closure" >/dev/null; load_request "$op";' 'release_sr=$(release_source); closure=$(check_source "$release_sr"); : # mutation: omit run receipt revalidation
  load_request "$op";' run
 
 jq -Rn --arg schema hddt-mutation-ledger/v1 '

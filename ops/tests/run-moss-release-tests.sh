@@ -4,7 +4,9 @@ set -Eeuo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$root"
 expected=(
-  'bash ops/tests/test_moss_candidate_build_contract.sh "$root"'
+  'bash ops/tests/test_hddt_lite_contract.sh
+bash ops/tests/test_hddt_lite_mutations.sh
+bash ops/tests/test_moss_candidate_build_contract.sh "$root"'
   'bash ops/tests/test_moss_deploy_decoupling.sh "$root"'
   'bash ops/tests/test_moss_candidate_smoke_contract.sh "$root"'
   'bash ops/tests/test_moss_title_topic_contract.sh "$root"'
