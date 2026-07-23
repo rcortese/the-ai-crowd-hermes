@@ -69,18 +69,16 @@ load_request(){
  [[ $(printf '%s\n' "$canonical"|sha256sum|cut -d' ' -f1) == "$request_sha256" ]]||die 'request hash invalid' 65
 }
 check_source(){
- local sr=$1 gb head tree remote closure dirty; gb=$(git_bin)
+ local sr=$1 gb head tree remote closure dirty closure_manifest path; local -a closure_paths; gb=$(git_bin)
  head=$("$gb" -c safe.directory="$sr" -C "$sr" rev-parse HEAD); tree=$("$gb" -c safe.directory="$sr" -C "$sr" rev-parse 'HEAD^{tree}'); remote=$("$gb" -c safe.directory="$sr" -C "$sr" remote get-url origin); "$gb" -c safe.directory="$sr" -C "$sr" diff --quiet||dirty=1
  [[ ${dirty:-0} == 0 && $head == "$source_revision" && $tree == "$source_tree" && $remote == "$canonical_remote" ]]||die 'source identity/cleanliness mismatch' 65
- closure=$("$gb" -c safe.directory="$sr" -C "$sr" ls-tree -r --full-tree HEAD -- \
-      ops/scripts/hddt-moss.sh ops/scripts/hddt-moss-status.sh \
-      ops/scripts/validate-moss-native-conversation.sh ops/scripts/build-moss-all-in-one-candidate.sh \
-      ops/tests/test_hddt_moss.sh ops/tests/test_hddt_moss_recovery.sh ops/tests/test_hddt_mutations.sh \
-      ops/tests/test_hddt_adapter.sh ops/tests/run-moss-release-tests.sh \
-      ops/tests/test_moss_candidate_build_contract.sh ops/tests/test_moss_deploy_decoupling.sh \
-      ops/tests/test_moss_candidate_smoke_contract.sh ops/tests/test_moss_title_topic_contract.sh \
-      ops/images/Dockerfile.moss-all-in-one tests/smoke-deploy.sh | sha256sum | cut -d' ' -f1)
-    [[ $closure =~ ^[0-9a-f]{64}$ ]]||die 'source closure unavailable' 65; printf '%s\n' "$closure"
+ closure_manifest="$sr/ops/manifests/moss-release-source-closure.paths"
+ [[ -f $closure_manifest && ! -L $closure_manifest ]]||die 'release source closure manifest missing or unsafe' 65
+ mapfile -t closure_paths <"$closure_manifest"; ((${#closure_paths[@]} > 0))||die 'release source closure manifest empty' 65
+ LC_ALL=C sort -cu "$closure_manifest"||die 'release source closure manifest must be sorted and unique' 65
+ for path in "${closure_paths[@]}"; do [[ $path != /* && $path != *'..'* && -n $path ]]||die 'invalid release source closure path' 65; "$gb" -c safe.directory="$sr" -C "$sr" ls-files --error-unmatch -- "$path" >/dev/null||die 'untracked release source closure path' 65; done
+ closure=$("$gb" -c safe.directory="$sr" -C "$sr" ls-tree -r --full-tree HEAD -- "${closure_paths[@]}" | sha256sum | cut -d' ' -f1)
+ [[ $closure =~ ^[0-9a-f]{64}$ ]]||die 'source closure unavailable' 65; printf '%s\n' "$closure"
 }
 check_receipt(){
  local r=$1 checkout=$2 closure=$3 f="$r/build-receipts/sha256-${candidate_image_id#sha256:}.json" base canonical gb; regular_private "$f"&&json_keys_exact "$f" "$RECEIPT_KEYS"||die 'receipt schema/custody invalid' 65

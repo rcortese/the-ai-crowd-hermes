@@ -58,7 +58,18 @@ image_id=$(docker image inspect "$TAG" --format '{{.Id}}')
 tree=$(git -C "$ROOT" rev-parse "$COMMIT^{tree}")
 source_remote=$(git -C "$ROOT" remote get-url origin)
 context_sha=$(git -C "$ROOT" ls-tree -r "$COMMIT" | sha256sum | cut -d' ' -f1)
-source_closure_sha=$( { git -C "$ROOT" ls-tree -r "$COMMIT"; sha256sum <"$CTX/$MANIFEST_REL"; } | sha256sum | cut -d' ' -f1)
+closure_manifest_rel=ops/manifests/moss-release-source-closure.paths
+closure_manifest="$ROOT/$closure_manifest_rel"
+[[ -f $closure_manifest && ! -L $closure_manifest ]] || { printf '%s\n' 'release source closure manifest missing or unsafe' >&2; exit 65; }
+mapfile -t closure_paths <"$closure_manifest"
+((${#closure_paths[@]} > 0)) || { printf '%s\n' 'release source closure manifest empty' >&2; exit 65; }
+LC_ALL=C sort -cu "$closure_manifest" || { printf '%s\n' 'release source closure manifest must be sorted and unique' >&2; exit 65; }
+for path in "${closure_paths[@]}"; do
+  [[ $path != /* && $path != *'..'* && -n $path ]] || { printf '%s\n' 'invalid release source closure path' >&2; exit 65; }
+  git -C "$ROOT" ls-files --error-unmatch -- "$path" >/dev/null || { printf 'untracked release source closure path: %s\n' "$path" >&2; exit 65; }
+done
+source_closure_sha=$(git -C "$ROOT" ls-tree -r --full-tree "$COMMIT" -- "${closure_paths[@]}" | sha256sum | cut -d' ' -f1)
+[[ $source_closure_sha =~ ^[0-9a-f]{64}$ ]] || { printf '%s\n' 'release source closure hash unavailable' >&2; exit 65; }
 script_sha=$(sha256sum "$0" | cut -d' ' -f1)
 toolchain_sha=$( { docker version --format '{{json .}}'; docker buildx version; } | sha256sum | cut -d' ' -f1)
 created_epoch=$(git -C "$ROOT" show -s --format=%ct "$COMMIT")
