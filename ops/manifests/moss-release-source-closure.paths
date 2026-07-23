@@ -3,8 +3,10 @@ ops/hermes-webui-overrides/moss-title-topic-priority.patch
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
 ops/scripts/build-moss-all-in-one-candidate.sh
+ops/scripts/hddt-moss-launcher.sh
 ops/scripts/hddt-moss-status.sh
 ops/scripts/hddt-moss.sh
+ops/scripts/lib/hddt-moss-closure.sh
 ops/scripts/validate-moss-native-conversation.sh
 ops/scripts/validate-moss-release-binding.sh
 ops/tests/run-moss-release-tests.sh
