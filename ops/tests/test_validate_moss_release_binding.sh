@@ -3,6 +3,7 @@ set -Eeuo pipefail
 script=$(realpath "${1:-ops/scripts/validate-moss-release-binding.sh}")
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 root="$tmp/stack"; bin="$tmp/bin"; mkdir -p "$root" "$bin"
+base=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 candidate=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 rollback=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 cat > "$root/compose.yaml" <<'YAML'
@@ -14,11 +15,21 @@ YAML
 cat > "$bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-if [[ "$1 $2" == 'image inspect' ]]; then printf '%s\n' "$3"; exit 0; fi
+if [[ "$1 $2" == 'image inspect' ]]; then
+  if [[ "$*" == *'Config.Labels'* ]]; then printf '%s\n' moss-all-in-one; else printf '%s\n' "$3"; fi
+  exit 0
+fi
 if [[ "$*" == *'config --format json'* ]]; then [[ -z ${HDDT_BINDING_HOSTILE:-} && -z ${MOSS_BASE_IMAGE+x} && -z ${CLASH_ROYALE_BUILD_INPUT_DIR+x} ]] || exit 23; printf '{"services":{"moss":{"image":"%s"}}}\n' "${MOSS_IMAGE_REF:?}"; exit 0; fi
 exit 2
 EOF
 chmod +x "$bin/docker"
-HDDT_BINDING_HOSTILE=ambient PATH="$bin:$PATH" MOSS_IMAGE_REF="$candidate" MOSS_BASE_IMAGE=hostile/base:tag CLASH_ROYALE_BUILD_INPUT_DIR=/hostile bash "$script" --compose-root "$root" --env-file "$tmp/release.env" --expected-image-ref "$candidate" --expected-rollback-image-ref "$rollback"
-HDDT_BINDING_HOSTILE=ambient PATH="$bin:$PATH" MOSS_IMAGE_REF=fixture/moss:hostile-tag MOSS_BASE_IMAGE=hostile/base:tag CLASH_ROYALE_BUILD_INPUT_DIR=/hostile bash "$script" --compose-root "$root" --env-file "$tmp/release.env" --expected-image-ref "$candidate" --expected-rollback-image-ref "$rollback"
+HDDT_BINDING_HOSTILE=ambient PATH="$bin:$PATH" MOSS_IMAGE_REF="$candidate" MOSS_BASE_IMAGE=hostile/base:tag CLASH_ROYALE_BUILD_INPUT_DIR=/hostile bash "$script" --compose-root "$root" --env-file "$tmp/release.env" --expected-base-image-ref "$base" --expected-image-ref "$candidate" --expected-rollback-image-ref "$rollback"
+HDDT_BINDING_HOSTILE=ambient PATH="$bin:$PATH" MOSS_IMAGE_REF=fixture/moss:hostile-tag MOSS_BASE_IMAGE=hostile/base:tag CLASH_ROYALE_BUILD_INPUT_DIR=/hostile bash "$script" --compose-root "$root" --env-file "$tmp/release.env" --expected-base-image-ref "$base" --expected-image-ref "$candidate" --expected-rollback-image-ref "$rollback"
+for bad in candidate rollback; do
+  bad_args=(--expected-base-image-ref "$base" --expected-image-ref "$candidate" --expected-rollback-image-ref "$rollback")
+  [[ $bad == candidate ]] && bad_args=(--expected-base-image-ref "$candidate" --expected-image-ref "$candidate" --expected-rollback-image-ref "$rollback")
+  [[ $bad == rollback ]] && bad_args=(--expected-base-image-ref "$rollback" --expected-image-ref "$candidate" --expected-rollback-image-ref "$rollback")
+  set +e; HDDT_BINDING_HOSTILE=ambient PATH="$bin:$PATH" bash "$script" --compose-root "$root" --env-file "$tmp/release.env" "${bad_args[@]}" >/dev/null 2>&1; rc=$?; set -e
+  [[ $rc == 64 ]] || { echo "expected $bad==base rejection, rc=$rc" >&2; exit 1; }
+done
 printf '%s\n' 'release-binding-tests: PASS'
