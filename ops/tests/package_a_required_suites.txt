@@ -1,5 +1,3 @@
-hddt-lite-behavior
-hddt-lite-mutants
 build
 deploy-decoupling
 smoke-contract

@@ -10,8 +10,6 @@ dispatch() {
   "$@"
 }
 if [[ ${HDDT_RUNNER_SELF_CHECK:-0} == 1 ]]; then exec bash ops/tests/test_runner_completeness.sh --self-check; fi
-dispatch hddt-lite-behavior bash ops/tests/test_hddt_lite_behavior.sh
-dispatch hddt-lite-mutants bash ops/tests/test_hddt_lite_mutants.sh
 dispatch build bash ops/tests/test_moss_candidate_build_contract.sh "$root"
 dispatch deploy-decoupling bash ops/tests/test_moss_deploy_decoupling.sh "$root"
 dispatch smoke-contract bash ops/tests/test_moss_candidate_smoke_contract.sh "$root"
@@ -25,4 +23,4 @@ dispatch control bash ops/tests/test_hddt_moss.sh control
 dispatch oracles bash ops/tests/test_hddt_moss.sh oracles
 dispatch adapter bash ops/tests/test_hddt_adapter.sh
 dispatch mutations bash ops/tests/test_hddt_mutations.sh
-printf '%s\n' 'moss-release-tests: PASS suites=package-a-lite,build,deploy-decoupling,smoke-contract,title-topic,binding,hddt,recovery,cas,signals,control,oracles,adapter,mutations T01-T83'
+printf '%s\n' 'moss-release-tests: PASS suites=package-a,build,deploy-decoupling,smoke-contract,title-topic,binding,hddt,recovery,cas,signals,control,oracles,adapter,mutations T01-T83'

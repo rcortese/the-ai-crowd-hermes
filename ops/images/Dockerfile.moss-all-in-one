@@ -1,5 +1,6 @@
 ARG MOSS_BASE_IMAGE
 FROM ${MOSS_BASE_IMAGE}
+LABEL org.the-ai-crowd.artifact="moss-all-in-one"
 
 USER root
 
