@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 hddt_required_source_closure(){
- local manifest=${1:?release source closure manifest required} path
+ local manifest=${1:?release source closure manifest required}
  [[ -f $manifest && ! -L $manifest ]] || return 65
- while IFS= read -r path; do
-  grep -Fqx -- "$path" "$manifest" || return 65
- done <<'REQUIRED_CLOSURE_PATHS'
+ local -a expected=()
+ mapfile -t expected <<'REQUIRED_CLOSURE_PATHS'
 compose.yaml
+ops/build-inputs/moss-clash-royale-war-bot.sha256
+ops/hermes-webui-overrides/moss-title-topic-priority.patch
+ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
 ops/scripts/build-moss-all-in-one-candidate.sh
 ops/scripts/hddt-moss-launcher.sh
+ops/scripts/hddt-moss-status.sh
 ops/scripts/hddt-moss.sh
 ops/scripts/lib/hddt-moss-closure.sh
+ops/scripts/validate-moss-native-conversation.sh
 ops/scripts/validate-moss-release-binding.sh
 ops/tests/hddt_lite_behavior_harness.sh
 ops/tests/package_a_required_suites.txt
@@ -34,6 +38,8 @@ ops/tests/test_runner_completeness.sh
 ops/tests/test_validate_moss_release_binding.sh
 tests/smoke-deploy.sh
 REQUIRED_CLOSURE_PATHS
+ ((${#expected[@]} == 32)) || return 65
+ cmp -s <(printf '%s\n' "${expected[@]}") <(LC_ALL=C sort "$manifest") || return 65
 }
 hddt_source_closure(){
  local root=${1:?release source required} manifest="$1/ops/manifests/moss-release-source-closure.paths" git_bin=${HDDT_GIT_BIN:-git}
