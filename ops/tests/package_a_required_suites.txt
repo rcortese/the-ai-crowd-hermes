@@ -5,6 +5,7 @@ supervisor-api-key
 title-topic
 binding
 closure
+bootstrap
 hddt
 recovery
 cas
