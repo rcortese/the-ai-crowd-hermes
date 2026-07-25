@@ -11,10 +11,8 @@ source_hddt="$source_root/ops/scripts/hddt-moss.sh"
 fail(){ printf 'BUILD CONTRACT ASSERT: %s\n' "$*" >&2; exit 1; }
 fx=$(mktemp -d /tmp/moss-candidate-build-contract.XXXXXX)
 trap 'if [[ ${HDDT_KEEP_FIXTURE:-0} == 1 ]]; then printf "BUILD_FIXTURE=%s\n" "$fx" >&2; else rm -rf -- "$fx"; fi' EXIT
-repo="$fx/repo"; input="$fx/input"; bin="$fx/bin"; docker_log="$fx/docker.log"
-mkdir -m 700 "$repo" "$input" "$bin"
-printf '%s\n' '{"name":"fixture","version":"1.0.0"}' >"$input/package.json"
-printf '%s\n' '{"name":"fixture","lockfileVersion":3}' >"$input/package-lock.json"
+repo="$fx/repo"; bin="$fx/bin"; docker_log="$fx/docker.log"
+mkdir -m 700 "$repo" "$bin"
 
 mkdir -p "$repo/ops/scripts/lib" "$repo/ops/build-inputs" "$repo/ops/images" "$repo/ops/manifests"
 cp -- "$source_helper" "$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
@@ -24,7 +22,6 @@ cp -- "$source_launcher" "$repo/ops/scripts/hddt-moss-launcher.sh"
 chmod 755 "$repo/ops/scripts/build-moss-all-in-one-candidate.sh" "$repo/ops/scripts/hddt-moss.sh"
 required_closure_paths=(
   compose.yaml
-  ops/build-inputs/moss-clash-royale-war-bot.sha256
   ops/hermes-webui-overrides/moss-title-topic-priority.patch
   ops/images/Dockerfile.moss-all-in-one
   ops/manifests/moss-release-source-closure.paths
@@ -35,6 +32,7 @@ required_closure_paths=(
   ops/scripts/lib/hddt-moss-closure.sh
   ops/scripts/validate-moss-native-conversation.sh
   ops/scripts/validate-moss-release-binding.sh
+  ops/supervisor/moss-all-in-one-supervisord.conf
   ops/tests/hddt_lite_behavior_harness.sh
   ops/tests/package_a_required_suites.txt
   ops/tests/run-moss-release-tests.sh
@@ -50,6 +48,7 @@ required_closure_paths=(
   ops/tests/test_moss_candidate_smoke_contract.sh
   ops/tests/test_moss_deploy_decoupling.sh
   ops/tests/test_moss_release_source_closure.sh
+  ops/tests/test_moss_supervisor_api_key_contract.sh
   ops/tests/test_moss_title_topic_contract.sh
   ops/tests/test_package_a.sh
   ops/tests/test_runner_completeness.sh
@@ -61,10 +60,6 @@ for path in "${required_closure_paths[@]}"; do
   mkdir -p "$(dirname "$target")"
   [[ -e $target ]] || printf '%s\n' fixture >"$target"
 done
-(
-  cd "$input"
-  sha256sum package.json package-lock.json
-) >"$repo/ops/build-inputs/moss-clash-royale-war-bot.sha256"
 printf '%s\n' 'FROM scratch' >"$repo/ops/images/Dockerfile.moss-all-in-one"
 {
   printf '%s\n' "${required_closure_paths[@]}"
@@ -123,7 +118,6 @@ base_image=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 
 env_common=(
   PATH="$bin:$PATH"
-  CLASH_ROYALE_BUILD_INPUT_DIR="$input"
   MOSS_BASE_IMAGE="$base_image"
   DOCKER_LOG="$docker_log"
   FIXTURE_IMAGE_ID="$image_id"
@@ -199,58 +193,22 @@ run_negative nonexistent 4444444444444444444444444444444444444444
 run_negative equal "$source_revision"
 run_negative nonancestor "$nonancestor_revision"
 
-run_input_negative(){
-  local label=$1
-  shift
-  local receipts="$fx/receipts-$label" rc=0
+run_base_negative(){
+  local label=$1 base=$2 receipts rc=0
+  receipts="$fx/receipts-$label"
   : >"$docker_log"
   set +e
-  run_raw "$receipts" "$@" >"$fx/$label.out" 2>&1
+  run_raw "$receipts" MOSS_BASE_IMAGE="$base" >"$fx/$label.out" 2>&1
   rc=$?
   set -e
   [[ $rc == 65 ]] || fail "$label expected rc=65 got rc=$rc"
   assert_no_effect "$receipts" "$label"
 }
 
-run_input_negative missing-input MOSS_BASE_IMAGE="$base_image"
-run_input_negative missing-base CLASH_ROYALE_BUILD_INPUT_DIR="$input"
-run_input_negative mutable-base CLASH_ROYALE_BUILD_INPUT_DIR="$input" MOSS_BASE_IMAGE=fixture/base:mutable
-
-for file in package.json package-lock.json; do
-  cp -- "$input/$file" "$fx/$file.clean"
-  printf '%s\n' tampered >>"$input/$file"
-  run_input_negative "tampered-${file//./-}" CLASH_ROYALE_BUILD_INPUT_DIR="$input" MOSS_BASE_IMAGE="$base_image"
-  mv -- "$fx/$file.clean" "$input/$file"
-done
+run_base_negative missing-base ''
+run_base_negative mutable-base fixture/base:mutable
 
 if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
-  mutroot="$fx/mutroot"
-  mkdir -p "$mutroot/ops/scripts/lib"
-  cp -- "$source_helper" "$mutroot/ops/scripts/build-moss-all-in-one-candidate.sh"
-  cp -- "$source_hddt" "$mutroot/ops/scripts/hddt-moss.sh"
-  cp -- "$source_closure" "$mutroot/ops/scripts/lib/hddt-moss-closure.sh"
-  cp -- "$source_launcher" "$mutroot/ops/scripts/hddt-moss-launcher.sh"
-  mutant_helper="$mutroot/ops/scripts/build-moss-all-in-one-candidate.sh"
-  mutant_tmp="$mutant_helper.tmp"
-  checksum_anchors=0
-  while IFS= read -r line || [[ -n $line ]]; do
-    if [[ $line == '  sha256sum -c "$CTX/$MANIFEST_REL"' ]]; then
-      printf '%s\n' '  true # MUTANT: checksum verification omitted' >>"$mutant_tmp"
-      ((checksum_anchors+=1))
-    else
-      printf '%s\n' "$line" >>"$mutant_tmp"
-    fi
-  done <"$mutant_helper"
-  [[ $checksum_anchors == 1 ]] || fail 'checksum mutant anchor mismatch'
-  mv -- "$mutant_tmp" "$mutant_helper"
-  chmod 755 "$mutant_helper"
-  set +e
-  MOSS_BUILD_CONTRACT_MUTATION_CHILD=1 bash "$0" "$mutroot" >"$fx/checksum-mutant.out" 2>&1
-  mutant_rc=$?
-  set -e
-  [[ $mutant_rc != 0 ]] || fail 'checksum-omission mutant survived'
-  grep -Fq 'tampered-package-json expected rc=65 got rc=0' "$fx/checksum-mutant.out" || fail 'checksum-omission mutant lacked causal oracle'
-
   execroot="$fx/executor-mutroot"
   mkdir -p "$execroot/ops/scripts/lib"
   cp -- "$source_helper" "$execroot/ops/scripts/build-moss-all-in-one-candidate.sh"
@@ -272,4 +230,4 @@ if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
   grep -Fq 'happy HDDT executor binding mismatch' "$fx/executor-mutant.out" || fail 'executor-binding mutant lacked causal oracle'
 fi
 
-printf '%s\n' 'moss-candidate-build-contract: PASS real-git=true docker=fake source-base=true immutable-base=true checksum-bound=true checksum-mutant=RED executor-binding=true executor-mutant=RED idempotent=true negatives=10'
+printf '%s\n' 'moss-candidate-build-contract: PASS real-git=true docker=fake source-base=true immutable-base=true no-private-node-input=true executor-binding=true executor-mutant=RED idempotent=true negatives=7'

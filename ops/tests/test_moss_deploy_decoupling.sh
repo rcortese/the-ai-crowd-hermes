@@ -11,7 +11,7 @@ fail(){ printf 'DEPLOY DECOUPLING ASSERT: %s\n' "$*" >&2; exit 1; }
 fx=$(mktemp -d /tmp/moss-deploy-decoupling.XXXXXX)
 trap 'rm -rf -- "$fx"' EXIT
 stack="$fx/stack"
-mkdir -p "$stack/env" "$fx/bin" "$fx/build-input"
+mkdir -p "$stack/env" "$fx/bin"
 cp -- "$compose_source" "$stack/compose.yaml"
 : >"$stack/.env"
 : >"$stack/env/fleet.env"
@@ -43,7 +43,7 @@ render_contract(){
 # Deploy rendering succeeds with both build-only variables absent and selects the candidate.
 render_contract "$stack/compose.yaml" "$fx/render.json"
 
-# The builder fails closed before Docker when either required build input is absent.
+# The builder fails closed before Docker when the required immutable base is absent.
 cat >"$fx/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
 printf '%s\n' invoked >>"${DOCKER_LOG:?}"
@@ -52,12 +52,7 @@ DOCKER
 chmod 700 "$fx/bin/docker"
 : >"$fx/docker.log"
 rc=0
-env -i HOME=/root PATH="$fx/bin:$PATH" DOCKER_LOG="$fx/docker.log" HDDT_SOURCE_BASE_REVISION="$builder_base" bash "$builder" fixture/moss:test >"$fx/missing-both.out" 2>&1 || rc=$?
-(( rc != 0 )) || fail 'builder accepted missing private input and base image'
-grep -Fq 'missing controlled private Node build input directory' "$fx/missing-both.out" || fail 'missing private input oracle absent'
-[[ ! -s $fx/docker.log ]] || fail 'builder invoked Docker without private input'
-rc=0
-env -i HOME=/root PATH="$fx/bin:$PATH" DOCKER_LOG="$fx/docker.log" HDDT_SOURCE_BASE_REVISION="$builder_base" CLASH_ROYALE_BUILD_INPUT_DIR="$fx/build-input" bash "$builder" fixture/moss:test >"$fx/missing-base.out" 2>&1 || rc=$?
+env -i HOME=/root PATH="$fx/bin:$PATH" DOCKER_LOG="$fx/docker.log" HDDT_SOURCE_BASE_REVISION="$builder_base" bash "$builder" fixture/moss:test >"$fx/missing-base.out" 2>&1 || rc=$?
 (( rc != 0 )) || fail 'builder accepted missing base image'
 grep -Fq 'MOSS_BASE_IMAGE must be an immutable local sha256 image ID' "$fx/missing-base.out" || fail 'missing base image oracle absent'
 [[ ! -s $fx/docker.log ]] || fail 'builder invoked Docker without base image'
@@ -77,15 +72,14 @@ awk '
     print "      dockerfile: ops/images/Dockerfile.moss-all-in-one"
     print "      args:"
     print "        MOSS_BASE_IMAGE: ${MOSS_BASE_IMAGE:?build input required}"
-    print "      additional_contexts:"
-    print "        clash_royale_build_input: ${CLASH_ROYALE_BUILD_INPUT_DIR:?build input required}"
+
   }
 ' "$stack/compose.yaml" >"$fx/mutant.yaml"
 rc=0
 render_contract "$fx/mutant.yaml" "$fx/mutant-unset.json" >"$fx/mutant-unset.out" 2>&1 || rc=$?
 (( rc != 0 )) || fail 'no-build contract accepted build-coupled mutant without inputs'
 rc=0
-render_contract "$fx/mutant.yaml" "$fx/mutant-supplied.json" MOSS_BASE_IMAGE=fixture/base:immutable CLASH_ROYALE_BUILD_INPUT_DIR="$fx/build-input" >"$fx/mutant-supplied.out" 2>&1 || rc=$?
+render_contract "$fx/mutant.yaml" "$fx/mutant-supplied.json" MOSS_BASE_IMAGE=fixture/base:immutable >"$fx/mutant-supplied.out" 2>&1 || rc=$?
 (( rc != 0 )) || fail 'no-build contract accepted build-coupled mutant with inputs'
 
 printf '%s\n' 'moss-deploy-decoupling: PASS render-no-build-inputs=true selector=true builder-fail-closed=true smoke-no-build=true mutant=RED'
