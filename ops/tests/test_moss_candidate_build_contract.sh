@@ -92,10 +92,11 @@ printf '<%s>' "$@" >>"${DOCKER_LOG:?}"
 printf '\n' >>"$DOCKER_LOG"
 case "${1:-} ${2:-}" in
   'build --pull=false') exit 0 ;;
+  'image tag'|'image rm') exit 0 ;;
   'image inspect')
     case ${5:-} in
       '{{.Id}}')
-        if [[ ${3:-} == "${FIXTURE_BASE_ID:-}" ]]; then printf '%s\n' "${FIXTURE_BASE_ID:?}"; else printf '%s\n' "${FIXTURE_IMAGE_ID:?}"; fi
+        if [[ ${3:-} == "${FIXTURE_BASE_ID:-}" || ${3:-} == "the-ai-crowd/moss-build-base:${FIXTURE_BASE_ID#sha256:}" ]]; then printf '%s\n' "${FIXTURE_BASE_ID:?}"; else printf '%s\n' "${FIXTURE_IMAGE_ID:?}"; fi
         ;;
       *) printf '%s\n' 'tag=fixture/moss:test image=sha256:bbbb created=fixed' ;;
     esac
@@ -166,6 +167,12 @@ receipt="$receipts/sha256-${image_id#sha256:}.json"
 jq -e --arg base "$base_revision" --arg source "$source_revision" \
   '.source_base_revision==$base and .source_revision==$source and .source_base_revision!=.source_revision' \
   "$receipt" >/dev/null || fail 'happy source-base binding mismatch'
+jq -e --arg image "$base_image" '.base_image==$image' "$receipt" >/dev/null || fail 'happy immutable base-image receipt binding mismatch'
+base_alias="the-ai-crowd/moss-build-base:${base_image#sha256:}"
+grep -Fq "<image><tag><$base_image><$base_alias>" "$docker_log" || fail 'immutable base image was not bound to a temporary local alias'
+grep -Fq "<build><--pull=false><--file>" "$docker_log" || fail 'candidate Docker build was not invoked'
+grep -Fq "<--build-arg><MOSS_BASE_IMAGE=$base_alias>" "$docker_log" || fail 'Docker FROM did not receive the verified temporary base alias'
+grep -Fq "<image><rm><$base_alias>" "$docker_log" || fail 'temporary base alias was not cleaned up'
 mapfile -t expected_closure_paths <"$repo/ops/manifests/moss-release-source-closure.paths"
 expected_closure=$(git -C "$repo" ls-tree -r --full-tree "$source_revision" -- "${expected_closure_paths[@]}" | sha256sum | cut -d' ' -f1)
 jq -e --arg closure "$expected_closure" '.source_closure_sha256==$closure' "$receipt" >/dev/null || fail 'happy shared source closure mismatch'
