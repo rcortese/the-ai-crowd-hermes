@@ -28,10 +28,18 @@ trap 'rm -rf "$CTX"' EXIT
 git -C "$ROOT" archive --format=tar "$COMMIT" | tar -xf - -C "$CTX"
 resolved_base=$(docker image inspect "$BASE_IMAGE" --format '{{.Id}}') || { printf '%s\n' 'immutable Moss base image is unavailable locally' >&2; exit 65; }
 [[ $resolved_base == "$BASE_IMAGE" ]] || { printf '%s\n' 'Moss base image ID resolution mismatch' >&2; exit 65; }
+# Dockerfile FROM requires a local name, not a bare image ID.  The image ID
+# remains the only authoritative input and receipt value; this deterministic
+# local alias is a transient resolver for this one build.
+base_alias="the-ai-crowd/moss-build-base:${BASE_IMAGE#sha256:}"
+docker image tag "$BASE_IMAGE" "$base_alias"
+trap 'docker image rm "$base_alias" >/dev/null 2>&1 || true; rm -rf "$CTX"' EXIT
+alias_id=$(docker image inspect "$base_alias" --format '{{.Id}}') || { printf '%s\n' 'temporary Moss base alias is unavailable locally' >&2; exit 65; }
+[[ $alias_id == "$BASE_IMAGE" ]] || { printf '%s\n' 'temporary Moss base alias resolution mismatch' >&2; exit 65; }
 docker build --pull=false \
   --file "$CTX/ops/images/Dockerfile.moss-all-in-one" \
   --tag "$TAG" \
-  --build-arg "MOSS_BASE_IMAGE=$BASE_IMAGE" \
+  --build-arg "MOSS_BASE_IMAGE=$base_alias" \
   "$CTX"
 docker image inspect "$TAG" --format 'tag={{index .RepoTags 0}} image={{.Id}} created={{.Created}}'
 
