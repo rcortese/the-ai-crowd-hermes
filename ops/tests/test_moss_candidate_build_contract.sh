@@ -6,7 +6,8 @@ source_helper="$source_root/ops/scripts/build-moss-all-in-one-candidate.sh"
 source_closure="$source_root/ops/scripts/lib/hddt-moss-closure.sh"
 source_launcher="$source_root/ops/scripts/hddt-moss-launcher.sh"
 source_hddt="$source_root/ops/scripts/hddt-moss.sh"
-[[ -x $source_helper && -x $source_hddt ]] || { printf '%s\n' 'missing build helper or HDDT executor' >&2; exit 1; }
+source_dockerfile="$source_root/ops/images/Dockerfile.moss-all-in-one"
+[[ -x $source_helper && -x $source_hddt && -f $source_dockerfile ]] || { printf '%s\n' 'missing build helper, HDDT executor, or Dockerfile' >&2; exit 1; }
 
 fail(){ printf 'BUILD CONTRACT ASSERT: %s\n' "$*" >&2; exit 1; }
 fx=$(mktemp -d /tmp/moss-candidate-build-contract.XXXXXX)
@@ -171,6 +172,8 @@ base_alias="the-ai-crowd/moss-build-base:${base_image#sha256:}"
 grep -Fq "<image><tag><$base_image><$base_alias>" "$docker_log" || fail 'immutable base image was not bound to a temporary local alias'
 grep -Fq "<build><--pull=false><--file>" "$docker_log" || fail 'candidate Docker build was not invoked'
 grep -Fq "<--build-arg><MOSS_BASE_IMAGE=$base_alias>" "$docker_log" || fail 'Docker FROM did not receive the verified temporary base alias'
+grep -Fq "<--build-arg><THE_AI_CROWD_SOURCE_REVISION=$source_revision>" "$docker_log" || fail 'image identity did not receive the exact source revision'
+grep -Fq 'LABEL org.the-ai-crowd.source-revision="${THE_AI_CROWD_SOURCE_REVISION}"' "$source_root/ops/images/Dockerfile.moss-all-in-one" || fail 'image source-revision label missing'
 ! grep -Fq "<image><rm><$base_alias>" "$docker_log" || fail 'content-addressed base resolver alias must not be removed'
 mapfile -t expected_closure_paths <"$repo/ops/manifests/moss-release-source-closure.paths"
 expected_closure=$(git -C "$repo" ls-tree -r --full-tree "$source_revision" -- "${expected_closure_paths[@]}" | sha256sum | cut -d' ' -f1)
@@ -216,11 +219,12 @@ run_base_negative mutable-base fixture/base:mutable
 
 if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
   execroot="$fx/executor-mutroot"
-  mkdir -p "$execroot/ops/scripts/lib"
+  mkdir -p "$execroot/ops/scripts/lib" "$execroot/ops/images"
   cp -- "$source_helper" "$execroot/ops/scripts/build-moss-all-in-one-candidate.sh"
   cp -- "$source_hddt" "$execroot/ops/scripts/hddt-moss.sh"
   cp -- "$source_closure" "$execroot/ops/scripts/lib/hddt-moss-closure.sh"
   cp -- "$source_launcher" "$execroot/ops/scripts/hddt-moss-launcher.sh"
+  cp -- "$source_dockerfile" "$execroot/ops/images/Dockerfile.moss-all-in-one"
   exec_helper="$execroot/ops/scripts/build-moss-all-in-one-candidate.sh"
   old='hddt_executor_sha=$(sha256sum "$ROOT/ops/scripts/hddt-moss.sh" | cut -d'\'' '\'' -f1)'
   new='hddt_executor_sha=$(sha256sum "$0" | cut -d'\'' '\'' -f1) # MUTANT: producer hash substituted for HDDT executor'

@@ -1,6 +1,8 @@
 ARG MOSS_BASE_IMAGE
 FROM ${MOSS_BASE_IMAGE}
+ARG THE_AI_CROWD_SOURCE_REVISION
 LABEL org.the-ai-crowd.artifact="moss-all-in-one"
+LABEL org.the-ai-crowd.source-revision="${THE_AI_CROWD_SOURCE_REVISION}"
 
 USER root
 
