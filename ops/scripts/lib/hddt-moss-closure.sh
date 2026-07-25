@@ -6,7 +6,6 @@ hddt_required_source_closure(){
  local -a expected=()
  mapfile -t expected <<'REQUIRED_CLOSURE_PATHS'
 compose.yaml
-ops/build-inputs/moss-clash-royale-war-bot.sha256
 ops/hermes-webui-overrides/moss-title-topic-priority.patch
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
@@ -17,6 +16,7 @@ ops/scripts/hddt-moss.sh
 ops/scripts/lib/hddt-moss-closure.sh
 ops/scripts/validate-moss-native-conversation.sh
 ops/scripts/validate-moss-release-binding.sh
+ops/supervisor/moss-all-in-one-supervisord.conf
 ops/tests/hddt_lite_behavior_harness.sh
 ops/tests/package_a_required_suites.txt
 ops/tests/run-moss-release-tests.sh
@@ -32,13 +32,14 @@ ops/tests/test_moss_candidate_build_contract.sh
 ops/tests/test_moss_candidate_smoke_contract.sh
 ops/tests/test_moss_deploy_decoupling.sh
 ops/tests/test_moss_release_source_closure.sh
+ops/tests/test_moss_supervisor_api_key_contract.sh
 ops/tests/test_moss_title_topic_contract.sh
 ops/tests/test_package_a.sh
 ops/tests/test_runner_completeness.sh
 ops/tests/test_validate_moss_release_binding.sh
 tests/smoke-deploy.sh
 REQUIRED_CLOSURE_PATHS
- ((${#expected[@]} == 32)) || return 65
+ ((${#expected[@]} == 33)) || return 65
  cmp -s <(printf '%s\n' "${expected[@]}") <(LC_ALL=C sort "$manifest") || return 65
 }
 hddt_source_closure(){

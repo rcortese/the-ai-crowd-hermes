@@ -16,19 +16,6 @@ RUN apt-get update \
         supervisor \
     && rm -rf /var/lib/apt/lists/*
 
-# Clash Royale scheduled screening uses Playwright from Moss cron.
-# The private Node input is supplied as a hash-verified named build context;
-# it is not assumed to live inside the exported deployment source tree.
-COPY --from=clash_royale_build_input package.json \
-     package-lock.json \
-     /opt/clash-royale-war-bot-node/
-RUN cd /opt/clash-royale-war-bot-node \
-    && npm ci --omit=dev \
-    && PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers npx playwright install chromium \
-    && CR_WAR_BOT_PLAYWRIGHT_NODE_PATH=/opt/clash-royale-war-bot-node/node_modules \
-       PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers \
-       node -e "const { chromium } = require('/opt/clash-royale-war-bot-node/node_modules/playwright'); (async()=>{ const b=await chromium.launch({headless:true}); await b.close(); })();" \
-    && chown -R 99:100 /opt/clash-royale-war-bot-node /opt/playwright-browsers
 
 RUN cd /opt/hermes \
     && test -x /opt/hermes/.venv/bin/hermes \
