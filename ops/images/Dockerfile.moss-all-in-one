@@ -5,7 +5,7 @@ LABEL org.the-ai-crowd.artifact="moss-all-in-one"
 USER root
 
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=9099d8e72c844cc6cd2acb80e6fbddd2e305aa03
+ARG HERMES_WEBUI_REV=da2301e9f9c24509224646588a92c359c4e734d6
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -29,31 +29,13 @@ RUN cd /opt/hermes \
         plugins/kanban/dashboard/plugin_api.py
 
 
-COPY ops/hermes-webui-overrides/moss-agent-health-auth.patch /tmp/moss-agent-health-auth.patch
-COPY ops/hermes-webui-overrides/moss-profile-selector-order.patch /tmp/moss-profile-selector-order.patch
-COPY ops/hermes-webui-overrides/moss-remote-proxy-routing.patch /tmp/moss-remote-proxy-routing.patch
-COPY ops/hermes-webui-overrides/moss-terminal-state-false-no-response.patch /tmp/moss-terminal-state-false-no-response.patch
-COPY ops/hermes-webui-overrides/moss-service-session-launch.patch /tmp/moss-service-session-launch.patch
-COPY ops/hermes-webui-overrides/moss-title-topic-priority.patch /tmp/moss-title-topic-priority.patch
-
-RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
+RUN rm -rf /opt/hermes-webui \
+    && git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
-    && test "$(git rev-parse HEAD)" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
-    && test "${HERMES_WEBUI_REV}" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
-    && git apply --check /tmp/moss-agent-health-auth.patch \
-    && git apply /tmp/moss-agent-health-auth.patch \
-    && git apply --check /tmp/moss-profile-selector-order.patch \
-    && git apply /tmp/moss-profile-selector-order.patch \
-    && git apply --check /tmp/moss-remote-proxy-routing.patch \
-    && git apply /tmp/moss-remote-proxy-routing.patch \
-    && git apply --check /tmp/moss-terminal-state-false-no-response.patch \
-    && git apply /tmp/moss-terminal-state-false-no-response.patch \
-    && git apply --check /tmp/moss-service-session-launch.patch \
-    && git apply /tmp/moss-service-session-launch.patch \
-    && git apply --check /tmp/moss-title-topic-priority.patch \
-    && git apply /tmp/moss-title-topic-priority.patch \
-    && test "$( { git diff --name-only; git ls-files --others --exclude-standard; } | LC_ALL=C sort -u)" = "$(printf '%s\n' .env.example README.md api/agent_health.py api/gateway_chat.py api/profiles.py api/routes.py api/service_session_launch.py api/streaming.py docs/service-session-launch.md server.py static/ui.js tests/test_agent_health_remote.py tests/test_issue5141_terminal_failure_transcript_evaluator.py tests/test_issue716_agent_heartbeat.py tests/test_profile_proxy_jen.py tests/test_service_session_launch.py | LC_ALL=C sort)" \
+    && test "$(git rev-parse HEAD)" = "da2301e9f9c24509224646588a92c359c4e734d6" \
+    && test "${HERMES_WEBUI_REV}" = "da2301e9f9c24509224646588a92c359c4e734d6" \
+    && test -z "$(git status --porcelain)" \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
     && cd /opt/hermes \
     && if [ -f tests/hermes_cli/test_auth_commands.py ]; then \
@@ -66,18 +48,20 @@ RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
        fi \
     && cd /opt/hermes-webui \
     && /opt/hermes/.venv/bin/python3 -m py_compile api/agent_health.py api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/service_session_launch.py api/streaming.py api/gateway_chat.py api/profiles.py server.py \
-    && /opt/hermes/.venv/bin/python3 -c 'from api.streaming import _title_prompts; qa, prompts = _title_prompts("Audit the deployment method for a broken release", "The release failed because runtime and build inputs were coupled"); assert len(prompts) == 2; assert any("main topic and substantive intent" in p for p in prompts); assert all("Do not prioritize method, format, tool, role, audit, review, handoff, or process step" in p for p in prompts); assert all("Return only the title text" in p for p in prompts)' \
+    && /opt/hermes/.venv/bin/python3 -c 'from api.streaming import _title_prompts; qa, prompts = _title_prompts("Audit the deployment method for a broken release", "The release failed because runtime and build inputs were coupled"); assert len(prompts) == 2; assert any("main topic and substantive intent" in p for p in prompts); assert all("Do not prioritize method, format, tool, role, audit, review, handoff, or process step" in p for p in prompts); assert all("Match the language of the user question." in p for p in prompts); assert all("markdown" in p.lower() for p in prompts)' \
     && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
         tests/test_agent_health_remote.py \
         tests/test_issue716_agent_heartbeat.py \
         tests/test_kanban_bridge.py \
-        tests/test_profile_proxy_jen.py \
         tests/test_remote_cron_proxy_guard.py \
         tests/test_webui_gateway_chat_backend.py \
         tests/test_stage364_opus_live_sse_event_id.py \
         tests/test_issue5141_terminal_failure_transcript_evaluator.py \
         tests/test_session_channel_option_x.py \
-        tests/test_service_session_launch.py \
+        tests/test_ai_crowd_v05276_port.py \
+        tests/test_ai_crowd_v05276_followup.py \
+        tests/test_credentialed_probe_redirects.py \
+        tests/test_ai_crowd_title_topic_priority.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
