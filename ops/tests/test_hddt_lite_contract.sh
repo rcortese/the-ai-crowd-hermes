@@ -23,4 +23,15 @@ for f in runner.launch.json runner.started.json runner.exit.json; do grep -Fq "$
 grep -Fq 'terminal.json' "$exec" || fail terminal-authority
 grep -Fq 'RECOVERY_UNRESOLVED' "$exec" || fail unresolved-oracle
 grep -Fq 'rendered.json' "$exec" || fail sealed-render-oracle
-printf '%s\n' 'hddt-lite-contract: PASS source-stack-separated closure=shared four-hashes=bound followable-only launcher=durable'
+mount_filter='all(.[]; .Source as $s | (($s=="/") or ($s==$r) or ($s|startswith($r+"/")) or ($r|startswith($s+"/")) or ($s==$release) or ($s|startswith($release+"/")) or ($release|startswith($s+"/")) or ($s==$stack) or ($stack|startswith($s+"/")))|not)'
+grep -Fq "$mount_filter" "$exec" || fail mount-domain-filter
+r=/mnt/ssd/appdata/the-ai-crowd-hddt/state
+release=/mnt/ssd/appdata/the-ai-crowd-hddt/release-source
+stack=/mnt/ssd/appdata/the-ai-crowd
+jq -e --arg r "$r" --arg release "$release" --arg stack "$stack" "$mount_filter" <<<'[{"Source":"/mnt/ssd/appdata/the-ai-crowd/runtime/moss-home"}]' >/dev/null || fail legitimate-stack-descendant-rejected
+for unsafe in / "$r" "$r/child" "$(dirname "$r")" "$release" "$release/child" "$(dirname "$release")" "$stack" "$(dirname "$stack")"; do
+  if jq -e --arg r "$r" --arg release "$release" --arg stack "$stack" "$mount_filter" <<<"[{\"Source\":\"$unsafe\"}]" >/dev/null; then
+    fail "unsafe mount domain accepted: $unsafe"
+  fi
+done
+printf '%s\n' 'hddt-lite-contract: PASS source-stack-separated closure=shared four-hashes=bound followable-only launcher=durable stack-descendants=allowed custody-overlap=blocked'

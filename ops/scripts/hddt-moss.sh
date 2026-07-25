@@ -61,7 +61,11 @@ assert_fixed_paths(){
  path_overlap "$r" "$stack" && die 'state/stack overlap' 65
  path_overlap "$release" "$stack" && die 'release/stack overlap' 65
  db=$(docker_bin); mounts=$("$db" inspect --format "{{json .Mounts}}" "$CONTAINER")
- jq -e --arg r "$r" --arg release "$release" --arg stack "$stack" 'all(.[]; .Source as $s | (($s==$r) or ($s==$release) or ($s==$stack) or ($s|startswith($r+"/")) or ($s|startswith($release+"/")) or ($s|startswith($stack+"/")))|not)' <<<"$mounts" >/dev/null || die 'fixed path overlaps target mount' 65
+ # State and release custody must be disjoint from every live mount in both
+ # directions. The stack root is different: Compose intentionally bind-mounts
+ # runtime data below it, so descendants are allowed while the root itself or
+ # any ancestor mount remains forbidden.
+ jq -e --arg r "$r" --arg release "$release" --arg stack "$stack" 'all(.[]; .Source as $s | (($s=="/") or ($s==$r) or ($s|startswith($r+"/")) or ($r|startswith($s+"/")) or ($s==$release) or ($s|startswith($release+"/")) or ($release|startswith($s+"/")) or ($s==$stack) or ($stack|startswith($s+"/")))|not)' <<<"$mounts" >/dev/null || die 'fixed path overlaps target mount' 65
 }
 
 init_root(){ local r=$1; if [[ ! -e $r ]]; then mkdir -m 700 -- "$r"; fi; assert_safe_tree "$r"; assert_fixed_paths "$r"; local d; for d in operations authorizations build-receipts outbox staging locks; do [[ -e $r/$d ]]||mkdir -m 700 "$r/$d"; [[ -d $r/$d && ! -L $r/$d && $(stat -c %a "$r/$d") == 700 ]]||die 'unsafe state subtree' 65; done; }
