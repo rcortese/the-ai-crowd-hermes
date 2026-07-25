@@ -22,7 +22,6 @@ cp -- "$source_launcher" "$repo/ops/scripts/hddt-moss-launcher.sh"
 chmod 755 "$repo/ops/scripts/build-moss-all-in-one-candidate.sh" "$repo/ops/scripts/hddt-moss.sh"
 required_closure_paths=(
   compose.yaml
-  ops/hermes-webui-overrides/moss-title-topic-priority.patch
   ops/images/Dockerfile.moss-all-in-one
   ops/manifests/moss-release-source-closure.paths
   ops/scripts/build-moss-all-in-one-candidate.sh

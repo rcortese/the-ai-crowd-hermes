@@ -6,7 +6,6 @@ hddt_required_source_closure(){
  local -a expected=()
  mapfile -t expected <<'REQUIRED_CLOSURE_PATHS'
 compose.yaml
-ops/hermes-webui-overrides/moss-title-topic-priority.patch
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
 ops/scripts/build-moss-all-in-one-candidate.sh
@@ -39,7 +38,7 @@ ops/tests/test_runner_completeness.sh
 ops/tests/test_validate_moss_release_binding.sh
 tests/smoke-deploy.sh
 REQUIRED_CLOSURE_PATHS
- ((${#expected[@]} == 33)) || return 65
+ ((${#expected[@]} == 32)) || return 65
  cmp -s <(printf '%s\n' "${expected[@]}") <(LC_ALL=C sort "$manifest") || return 65
 }
 hddt_source_closure(){

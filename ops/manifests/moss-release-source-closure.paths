@@ -1,5 +1,4 @@
 compose.yaml
-ops/hermes-webui-overrides/moss-title-topic-priority.patch
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
 ops/scripts/build-moss-all-in-one-candidate.sh
