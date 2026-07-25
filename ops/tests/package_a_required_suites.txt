@@ -3,6 +3,7 @@ deploy-decoupling
 smoke-contract
 title-topic
 binding
+closure
 hddt
 recovery
 cas
