@@ -24,11 +24,16 @@ cp -- "$source_launcher" "$repo/ops/scripts/hddt-moss-launcher.sh"
 chmod 755 "$repo/ops/scripts/build-moss-all-in-one-candidate.sh" "$repo/ops/scripts/hddt-moss.sh"
 required_closure_paths=(
   compose.yaml
+  ops/build-inputs/moss-clash-royale-war-bot.sha256
+  ops/hermes-webui-overrides/moss-title-topic-priority.patch
+  ops/images/Dockerfile.moss-all-in-one
   ops/manifests/moss-release-source-closure.paths
   ops/scripts/build-moss-all-in-one-candidate.sh
   ops/scripts/hddt-moss-launcher.sh
+  ops/scripts/hddt-moss-status.sh
   ops/scripts/hddt-moss.sh
   ops/scripts/lib/hddt-moss-closure.sh
+  ops/scripts/validate-moss-native-conversation.sh
   ops/scripts/validate-moss-release-binding.sh
   ops/tests/hddt_lite_behavior_harness.sh
   ops/tests/package_a_required_suites.txt
@@ -63,19 +68,16 @@ done
 printf '%s\n' 'FROM scratch' >"$repo/ops/images/Dockerfile.moss-all-in-one"
 {
   printf '%s\n' "${required_closure_paths[@]}"
-  printf '%s\n' ops/build-inputs/moss-clash-royale-war-bot.sha256
-  printf '%s\n' ops/images/Dockerfile.moss-all-in-one
-  printf '%s\n' source.txt
 } | LC_ALL=C sort >"$repo/ops/manifests/moss-release-source-closure.paths"
-printf '%s\n' 'fixture base' >"$repo/source.txt"
+printf '%s\n' 'fixture source' >>"$repo/compose.yaml"
 git -C "$repo" init -q -b main
 git -C "$repo" config user.name fixture
 git -C "$repo" config user.email fixture@example.invalid
 git -C "$repo" add .
 git -C "$repo" commit -q -m base
 base_revision=$(git -C "$repo" rev-parse HEAD)
-printf '%s\n' 'fixture source' >>"$repo/source.txt"
-git -C "$repo" add source.txt
+printf '%s\n' 'fixture source revision' >>"$repo/compose.yaml"
+git -C "$repo" add compose.yaml
 git -C "$repo" commit -q -m source
 source_revision=$(git -C "$repo" rev-parse HEAD)
 git -C "$repo" checkout -q --orphan unrelated
