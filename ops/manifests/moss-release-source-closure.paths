@@ -24,6 +24,7 @@ ops/tests/test_hddt_mutations.sh
 ops/tests/test_moss_candidate_build_contract.sh
 ops/tests/test_moss_candidate_smoke_contract.sh
 ops/tests/test_moss_deploy_decoupling.sh
+ops/tests/test_moss_release_source_closure.sh
 ops/tests/test_moss_title_topic_contract.sh
 ops/tests/test_package_a.sh
 ops/tests/test_runner_completeness.sh

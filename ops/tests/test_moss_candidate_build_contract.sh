@@ -22,18 +22,51 @@ cp -- "$source_hddt" "$repo/ops/scripts/hddt-moss.sh"
 cp -- "$source_closure" "$repo/ops/scripts/lib/hddt-moss-closure.sh"
 cp -- "$source_launcher" "$repo/ops/scripts/hddt-moss-launcher.sh"
 chmod 755 "$repo/ops/scripts/build-moss-all-in-one-candidate.sh" "$repo/ops/scripts/hddt-moss.sh"
+required_closure_paths=(
+  compose.yaml
+  ops/manifests/moss-release-source-closure.paths
+  ops/scripts/build-moss-all-in-one-candidate.sh
+  ops/scripts/hddt-moss-launcher.sh
+  ops/scripts/hddt-moss.sh
+  ops/scripts/lib/hddt-moss-closure.sh
+  ops/scripts/validate-moss-release-binding.sh
+  ops/tests/hddt_lite_behavior_harness.sh
+  ops/tests/package_a_required_suites.txt
+  ops/tests/run-moss-release-tests.sh
+  ops/tests/test_hddt_adapter.sh
+  ops/tests/test_hddt_lite_behavior.sh
+  ops/tests/test_hddt_lite_contract.sh
+  ops/tests/test_hddt_lite_mutants.sh
+  ops/tests/test_hddt_lite_mutations.sh
+  ops/tests/test_hddt_moss.sh
+  ops/tests/test_hddt_moss_recovery.sh
+  ops/tests/test_hddt_mutations.sh
+  ops/tests/test_moss_candidate_build_contract.sh
+  ops/tests/test_moss_candidate_smoke_contract.sh
+  ops/tests/test_moss_deploy_decoupling.sh
+  ops/tests/test_moss_release_source_closure.sh
+  ops/tests/test_moss_title_topic_contract.sh
+  ops/tests/test_package_a.sh
+  ops/tests/test_runner_completeness.sh
+  ops/tests/test_validate_moss_release_binding.sh
+  tests/smoke-deploy.sh
+)
+for path in "${required_closure_paths[@]}"; do
+  target="$repo/$path"
+  mkdir -p "$(dirname "$target")"
+  [[ -e $target ]] || printf '%s\n' fixture >"$target"
+done
 (
   cd "$input"
   sha256sum package.json package-lock.json
 ) >"$repo/ops/build-inputs/moss-clash-royale-war-bot.sha256"
 printf '%s\n' 'FROM scratch' >"$repo/ops/images/Dockerfile.moss-all-in-one"
-printf '%s\n' \
-  ops/build-inputs/moss-clash-royale-war-bot.sha256 \
-  ops/images/Dockerfile.moss-all-in-one \
-  ops/manifests/moss-release-source-closure.paths \
-  ops/scripts/build-moss-all-in-one-candidate.sh \
-  ops/scripts/hddt-moss.sh \
-  source.txt | LC_ALL=C sort >"$repo/ops/manifests/moss-release-source-closure.paths"
+{
+  printf '%s\n' "${required_closure_paths[@]}"
+  printf '%s\n' ops/build-inputs/moss-clash-royale-war-bot.sha256
+  printf '%s\n' ops/images/Dockerfile.moss-all-in-one
+  printf '%s\n' source.txt
+} | LC_ALL=C sort >"$repo/ops/manifests/moss-release-source-closure.paths"
 printf '%s\n' 'fixture base' >"$repo/source.txt"
 git -C "$repo" init -q -b main
 git -C "$repo" config user.name fixture
