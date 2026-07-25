@@ -23,6 +23,9 @@ for f in runner.launch.json runner.started.json runner.exit.json; do grep -Fq "$
 grep -Fq 'terminal.json' "$exec" || fail terminal-authority
 grep -Fq 'RECOVERY_UNRESOLVED' "$exec" || fail unresolved-oracle
 grep -Fq 'rendered.json' "$exec" || fail sealed-render-oracle
+grep -Fq 'config --format json "$SERVICE"' "$exec" || fail service-scoped-render
+grep -Fq ': >"$dst/env/roy.env"' "$exec" || fail remote-env-parser-placeholder
+! grep -Fq 'cp --reflink=never "$sr/env/roy.env"' "$exec" || fail remote-env-secret-copy
 mount_filter='all(.[]; .Source as $s | (($s=="/") or ($s==$r) or ($s|startswith($r+"/")) or ($r|startswith($s+"/")) or ($s==$release) or ($s|startswith($release+"/")) or ($release|startswith($s+"/")) or ($s==$stack) or ($stack|startswith($s+"/")))|not)'
 grep -Fq "$mount_filter" "$exec" || fail mount-domain-filter
 r=/mnt/ssd/appdata/the-ai-crowd-hddt/state
