@@ -172,7 +172,7 @@ base_alias="the-ai-crowd/moss-build-base:${base_image#sha256:}"
 grep -Fq "<image><tag><$base_image><$base_alias>" "$docker_log" || fail 'immutable base image was not bound to a temporary local alias'
 grep -Fq "<build><--pull=false><--file>" "$docker_log" || fail 'candidate Docker build was not invoked'
 grep -Fq "<--build-arg><MOSS_BASE_IMAGE=$base_alias>" "$docker_log" || fail 'Docker FROM did not receive the verified temporary base alias'
-grep -Fq "<image><rm><$base_alias>" "$docker_log" || fail 'temporary base alias was not cleaned up'
+! grep -Fq "<image><rm><$base_alias>" "$docker_log" || fail 'content-addressed base resolver alias must not be removed'
 mapfile -t expected_closure_paths <"$repo/ops/manifests/moss-release-source-closure.paths"
 expected_closure=$(git -C "$repo" ls-tree -r --full-tree "$source_revision" -- "${expected_closure_paths[@]}" | sha256sum | cut -d' ' -f1)
 jq -e --arg closure "$expected_closure" '.source_closure_sha256==$closure' "$receipt" >/dev/null || fail 'happy shared source closure mismatch'
