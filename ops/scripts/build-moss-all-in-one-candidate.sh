@@ -40,6 +40,7 @@ docker build --pull=false \
   --file "$CTX/ops/images/Dockerfile.moss-all-in-one" \
   --tag "$TAG" \
   --build-arg "MOSS_BASE_IMAGE=$base_alias" \
+  --build-arg "THE_AI_CROWD_SOURCE_REVISION=$COMMIT" \
   "$CTX"
 docker image inspect "$TAG" --format 'tag={{index .RepoTags 0}} image={{.Id}} created={{.Created}}'
 
