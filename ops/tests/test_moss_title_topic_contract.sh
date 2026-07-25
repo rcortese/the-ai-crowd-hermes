@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 root=${1:?source root required}
 dockerfile="$root/ops/images/Dockerfile.moss-all-in-one"
-expected_rev=da2301e9f9c24509224646588a92c359c4e734d6
+expected_rev=6fdbedb5217da42fc3a1af85c033f52a2176daee
 fail(){ printf 'TITLE CONTRACT ASSERT: %s\n' "$*" >&2; exit 1; }
 [[ -f $dockerfile && ! -L $dockerfile ]] || fail 'Dockerfile missing or unsafe'
 grep -Fq "ARG HERMES_WEBUI_REV=$expected_rev" "$dockerfile" || fail 'reviewed WebUI revision pin missing'
