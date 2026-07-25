@@ -5,7 +5,7 @@ LABEL org.the-ai-crowd.artifact="moss-all-in-one"
 USER root
 
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=da2301e9f9c24509224646588a92c359c4e734d6
+ARG HERMES_WEBUI_REV=6fdbedb5217da42fc3a1af85c033f52a2176daee
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -33,8 +33,8 @@ RUN rm -rf /opt/hermes-webui \
     && git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
-    && test "$(git rev-parse HEAD)" = "da2301e9f9c24509224646588a92c359c4e734d6" \
-    && test "${HERMES_WEBUI_REV}" = "da2301e9f9c24509224646588a92c359c4e734d6" \
+    && test "$(git rev-parse HEAD)" = "6fdbedb5217da42fc3a1af85c033f52a2176daee" \
+    && test "${HERMES_WEBUI_REV}" = "6fdbedb5217da42fc3a1af85c033f52a2176daee" \
     && test -z "$(git status --porcelain)" \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
     && cd /opt/hermes \
