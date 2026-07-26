@@ -37,6 +37,7 @@ required_closure_paths=(
   ops/tests/package_a_required_suites.txt
   ops/tests/run-moss-release-tests.sh
   ops/tests/test_hddt_adapter.sh
+  ops/tests/test_hddt_launcher_spawn_handshake.sh
   ops/tests/test_hddt_lite_behavior.sh
   ops/tests/test_hddt_lite_contract.sh
   ops/tests/test_hddt_lite_mutants.sh
