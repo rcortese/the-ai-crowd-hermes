@@ -21,7 +21,7 @@ launch=$op/runner.launch.json; started=$op/runner.started.json; exitrec=$op/runn
 [[ ! -e $launch && ! -e $started ]] || fail 'runner already launched'
 argv=$(jq -nc --arg e "$EXECUTOR" --arg id "$opid" '[$e,"run","--operation-id",$id]')
 jq -ncS --arg request "$request_sha" --arg launcher "$launcher_sha" --arg executor "$executor_sha" --arg log "$log" --argjson argv "$argv" --argjson epoch "$(date +%s)" '{request_sha256:$request,launcher_sha256:$launcher,executor_sha256:$executor,argv:$argv,log_path:$log,launch_epoch:$epoch}' >"$launch.tmp"; chmod 600 "$launch.tmp"; ln "$launch.tmp" "$launch" || { rm -f "$launch.tmp"; fail 'launch receipt publication race'; }; rm -f "$launch.tmp"
-env -i HOME=/root PATH=/usr/bin:/bin umask 077 nohup setsid "$EXECUTOR" run --operation-id "$opid" </dev/null >>"$log" 2>&1 &
+env -i HOME=/root PATH=/usr/bin:/bin nohup setsid "$EXECUTOR" run --operation-id "$opid" </dev/null >>"$log" 2>&1 &
 pid=$!
 start=$(date +%s); while (( $(date +%s)-start < HANDSHAKE_SECONDS )); do
  if [[ -f $started ]] && jq -e --arg r "$request_sha" --arg l "$launcher_sha" --arg e "$executor_sha" --argjson p "$pid" '.request_sha256==$r and .launcher_sha256==$l and .executor_sha256==$e and .pid==$p' "$started" >/dev/null; then

@@ -20,6 +20,7 @@ ops/tests/hddt_lite_behavior_harness.sh
 ops/tests/package_a_required_suites.txt
 ops/tests/run-moss-release-tests.sh
 ops/tests/test_hddt_adapter.sh
+ops/tests/test_hddt_launcher_spawn_handshake.sh
 ops/tests/test_hddt_lite_behavior.sh
 ops/tests/test_hddt_lite_contract.sh
 ops/tests/test_hddt_lite_mutants.sh
@@ -38,7 +39,7 @@ ops/tests/test_runner_completeness.sh
 ops/tests/test_validate_moss_release_binding.sh
 tests/smoke-deploy.sh
 REQUIRED_CLOSURE_PATHS
- ((${#expected[@]} == 32)) || return 65
+ ((${#expected[@]} == 33)) || return 65
  cmp -s <(printf '%s\n' "${expected[@]}") <(LC_ALL=C sort "$manifest") || return 65
 }
 hddt_source_closure(){

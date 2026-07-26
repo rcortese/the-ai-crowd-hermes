@@ -25,6 +25,7 @@ for key in source_closure_sha256 builder_sha256 executor_sha256 launcher_sha256;
 ! grep -Fq 'VERIFYING_AUTOMATIC' "$exec" || fail automatic-state-reference
 ! grep -Fq '/mnt/user/appdata/the-ai-crowd-hddt' "$exec" || fail user-alias-default
 grep -Fq 'nohup setsid' "$launcher" || fail detached-launch
+! grep -Fq 'PATH=/usr/bin:/bin umask 077 nohup' "$launcher" || fail env-cannot-exec-shell-builtin
 grep -Fq -- '--operation-id' "$launcher" || fail launcher-argv
 grep -Fq 'HANDSHAKE_SECONDS=30' "$launcher" || fail handshake
 for f in runner.launch.json runner.started.json runner.exit.json; do grep -Fq "$f" "$launcher" || fail "missing $f"; done

@@ -18,6 +18,7 @@ dispatch title-topic bash ops/tests/test_moss_title_topic_contract.sh "$root"
 dispatch binding bash ops/tests/test_validate_moss_release_binding.sh
 dispatch closure bash ops/tests/test_moss_release_source_closure.sh
 dispatch bootstrap bash ops/tests/test_bootstrap_hddt_moss_root.sh
+dispatch launcher-spawn-handshake bash ops/tests/test_hddt_launcher_spawn_handshake.sh
 dispatch hddt bash ops/tests/test_hddt_moss.sh
 dispatch recovery bash ops/tests/test_hddt_moss_recovery.sh
 dispatch cas bash ops/tests/test_hddt_moss.sh cas
@@ -26,4 +27,4 @@ dispatch control bash ops/tests/test_hddt_moss.sh control
 dispatch oracles bash ops/tests/test_hddt_moss.sh oracles
 dispatch adapter bash ops/tests/test_hddt_adapter.sh
 dispatch mutations bash ops/tests/test_hddt_mutations.sh
-printf '%s\n' 'moss-release-tests: PASS suites=package-a,build,deploy-decoupling,smoke-contract,supervisor-api-key,title-topic,binding,closure,bootstrap,hddt,recovery,cas,signals,control,oracles,adapter,mutations T01-T83'
+printf '%s\n' 'moss-release-tests: PASS suites=package-a,build,deploy-decoupling,smoke-contract,supervisor-api-key,title-topic,binding,closure,bootstrap,launcher-spawn-handshake,hddt,recovery,cas,signals,control,oracles,adapter,mutations T01-T83'
