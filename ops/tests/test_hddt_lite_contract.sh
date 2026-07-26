@@ -8,6 +8,13 @@ closure=$root/ops/scripts/lib/hddt-moss-closure.sh
 fail(){ printf 'LITE CONTRACT: %s\n' "$*" >&2; exit 1; }
 for f in "$exec" "$producer" "$launcher" "$closure"; do [[ -x $f ]] || fail "missing executable $f"; done
 bash -n "$exec" "$producer" "$launcher" "$closure"
+launcher_err=$(mktemp /tmp/hddt-launcher-init.XXXXXX); trap 'rm -f -- "$launcher_err"' EXIT
+set +e
+"$launcher" 2>"$launcher_err"
+launcher_rc=$?
+set -e
+[[ $launcher_rc == 64 ]] || fail "launcher initialization rc=$launcher_rc: $(<"$launcher_err")"
+grep -Fxq 'HDDT launcher: usage: --operation-id ID' "$launcher_err" || fail launcher-initialization-diagnostic
 grep -Fq 'DEFAULT_ROOT=/mnt/ssd/appdata/the-ai-crowd-hddt' "$exec" || fail fixed-root
 grep -Fq 'DEFAULT_STACK_INPUTS=/mnt/ssd/appdata/the-ai-crowd' "$exec" || fail fixed-stack
 for f in "$exec" "$producer"; do grep -Fq 'hddt-moss-closure.sh' "$f" || fail "shared closure not used: $f"; done

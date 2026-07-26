@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
-readonly ROOT=/mnt/ssd/appdata/the-ai-crowd-hddt STATE=$ROOT/state EXECUTOR=$ROOT/bin/hddt-moss.sh SELF=$ROOT/bin/hddt-moss-launcher.sh HANDSHAKE_SECONDS=30
+readonly ROOT=/mnt/ssd/appdata/the-ai-crowd-hddt
+readonly STATE=$ROOT/state EXECUTOR=$ROOT/bin/hddt-moss.sh SELF=$ROOT/bin/hddt-moss-launcher.sh HANDSHAKE_SECONDS=30
 fail(){ printf 'HDDT launcher: %s\n' "$1" >&2; exit "${2:-65}"; }
 [[ $# == 2 && $1 == --operation-id && $2 =~ ^[a-z0-9][a-z0-9-]{7,63}$ ]] || fail 'usage: --operation-id ID' 64
 opid=$2; op=$STATE/operations/$opid; auth=$STATE/authorizations/$opid.ready; receipt=$op/candidate-provenance.json
