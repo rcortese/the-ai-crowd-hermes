@@ -62,6 +62,6 @@ WORKDIR /agents/richmond/private
 
 USER 99:100
 
-# The AI Crowd image owns Richmond's long-lived Hermes dashboard command.
-ENV HERMES_DASHBOARD_TUI=1
-CMD ["dashboard", "--host", "0.0.0.0", "--port", "9120", "--insecure", "--no-open", "--tui", "--skip-build"]
+# The image owns the long-lived gateway/API runtime command; Compose supplies
+# only the immutable image selector.
+CMD ["gateway", "run"]
