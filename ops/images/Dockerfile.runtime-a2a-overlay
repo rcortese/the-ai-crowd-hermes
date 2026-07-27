@@ -22,4 +22,6 @@ RUN /opt/hermes/.venv/bin/python3 -m py_compile \
       /opt/hermes/tools/persona_rpc.py \
       /opt/hermes/toolsets.py
 
+CMD ["gateway", "run"]
+
 USER hermes

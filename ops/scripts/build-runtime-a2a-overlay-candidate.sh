@@ -7,7 +7,14 @@ CURRENT_TAG="${2:?usage: $0 PERSONA CURRENT_IMAGE CURRENT_IMAGE_ID OUTPUT_TAG}"
 EXPECTED_CURRENT_ID="${3:?usage: $0 PERSONA CURRENT_IMAGE CURRENT_IMAGE_ID OUTPUT_TAG}"
 TAG="${4:?usage: $0 PERSONA CURRENT_IMAGE CURRENT_IMAGE_ID OUTPUT_TAG}"
 case "$PERSONA" in
-  moss|jen|denholm|roy|richmond|the-elders) ;;
+  moss|roy)
+    DOCKERFILE=ops/images/Dockerfile.moss-a2a-overlay
+    CURRENT_IMAGE_ARG=CURRENT_MOSS_IMAGE
+    ;;
+  jen|denholm|richmond|the-elders)
+    DOCKERFILE=ops/images/Dockerfile.runtime-a2a-overlay
+    CURRENT_IMAGE_ARG=CURRENT_RUNTIME_IMAGE
+    ;;
   *) printf 'unsupported runtime persona: %s\n' "$PERSONA" >&2; exit 2 ;;
 esac
 LOCK="$ROOT/ops/manifests/base-images.lock.json"
@@ -32,9 +39,9 @@ CTX="$(mktemp -d "${TMPDIR:-/tmp}/runtime-a2a-overlay.XXXXXX")"
 trap 'rm -rf "$CTX"' EXIT
 git -C "$ROOT" archive --format=tar "$COMMIT" | tar -xf - -C "$CTX"
 docker build --pull=false \
-  --file "$CTX/ops/images/Dockerfile.runtime-a2a-overlay" \
+  --file "$CTX/$DOCKERFILE" \
   --tag "$TAG" \
-  --build-arg "CURRENT_RUNTIME_IMAGE=$CURRENT_TAG" \
+  --build-arg "$CURRENT_IMAGE_ARG=$CURRENT_TAG" \
   --build-arg "HERMES_AGENT_IMAGE=$HERMES_TAG" \
   --label "the-ai-crowd.persona=$PERSONA" \
   --label "the-ai-crowd.source-commit=$COMMIT" \
