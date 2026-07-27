@@ -24,6 +24,10 @@ services:
     restart: always
     user: 0:0
     environment:
+      HERMES_KANBAN_DISPATCH_OWNER: "moss"
+      # Required by the all-in-one supervisor interpolation. Keep unowned
+      # boards fail-closed even though this Kanban root is now Moss-local.
+      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
       TZ: ${TZ:-UTC}
       HERMES_UID: 99
       HERMES_GID: 100
