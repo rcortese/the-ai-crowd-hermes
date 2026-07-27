@@ -41,7 +41,7 @@ assert 'EXPECTED_CURRENT_ID="${CURRENT_MOSS_IMAGE_ID:?set CURRENT_MOSS_IMAGE_ID 
 assert 'docker image inspect "$CURRENT_TAG"' in overlay_helper
 assert 'docker image inspect "$HERMES_TAG"' in overlay_helper
 assert 'case "$PERSONA" in' in runtime_overlay_helper
-assert 'moss|roy)' in runtime_overlay_helper
+assert 'moss|jen|denholm|roy|richmond|the-elders)' in runtime_overlay_helper
 assert 'CURRENT_RUNTIME_IMAGE=$CURRENT_TAG' in runtime_overlay_helper
 assert 'the-ai-crowd.current-runtime-base-id=$EXPECTED_CURRENT_ID' in runtime_overlay_helper
 for persona in ("denholm", "richmond", "the-elders"):
