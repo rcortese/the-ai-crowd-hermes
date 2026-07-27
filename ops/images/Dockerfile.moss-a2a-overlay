@@ -5,6 +5,12 @@ FROM ${CURRENT_MOSS_IMAGE}
 
 USER root
 
+ARG RUNTIME_PERSONA
+COPY --chown=root:root ops/images/roy-all-in-one.supervisor.conf /tmp/roy-all-in-one.supervisor.conf
+RUN if [ "$RUNTIME_PERSONA" = "roy" ]; then \
+      install -m 0644 /tmp/roy-all-in-one.supervisor.conf /etc/supervisor/conf.d/roy-all-in-one.conf; \
+    fi && rm -f /tmp/roy-all-in-one.supervisor.conf
+
 # The current all-in-one shell already contains the reviewed WebUI, supervisor,
 # Playwright and private build inputs. Its Hermes parent is byte-identical to
 # the parent of the approved RPC commit, so overlay only that commit's runtime

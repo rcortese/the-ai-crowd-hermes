@@ -42,6 +42,7 @@ docker build --pull=false \
   --file "$CTX/$DOCKERFILE" \
   --tag "$TAG" \
   --build-arg "$CURRENT_IMAGE_ARG=$CURRENT_TAG" \
+  --build-arg "RUNTIME_PERSONA=$PERSONA" \
   --build-arg "HERMES_AGENT_IMAGE=$HERMES_TAG" \
   --label "the-ai-crowd.persona=$PERSONA" \
   --label "the-ai-crowd.source-commit=$COMMIT" \
