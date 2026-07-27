@@ -36,10 +36,20 @@ allowed_targets = {
     '/mnt/hermes-shared',
     '/agents/moss/public',
     '/agents/moss/private',
+    '/agents/jen/public',
+    '/agents/jen/private',
+    '/agents/denholm/public',
+    '/agents/denholm/private',
     '/agents/richmond/public',
     '/agents/richmond/private',
+    '/agents/roy/public',
+    '/agents/roy/private',
     '/agents/the-elders/public',
     '/agents/the-elders/private',
+    '/archiveops/richmond',
+    '/backups/the-ai-crowd',
+    '/mnt/hermes-auth-shared',
+    '/transfer',
     '/workspace/projects/example-project',
 }
 source = None
@@ -68,10 +78,10 @@ for line in text.splitlines():
 for forbidden in ['/workspace/the-ai-crowd', '/mnt/moss-workspace']:
     if forbidden in text:
         raise SystemExit(f'{label}: forbidden retired target {forbidden}')
-for required in ['HERMES_UID: "1000"', 'HERMES_GID: "1000"', 'HOME: /opt/data']:
+for required in ['HERMES_UID: "99"', 'HERMES_GID: "100"', 'HOME: /opt/data']:
     if required not in text:
         raise SystemExit(f'{label}: missing required runtime setting {required}')
-for agent in ['moss', 'richmond', 'the-elders']:
+for agent in ['moss', 'jen', 'denholm', 'richmond', 'roy', 'the-elders']:
     for target in [f'/agents/{agent}/public', f'/agents/{agent}/private']:
         if target not in text:
             raise SystemExit(f'{label}: missing {target}')

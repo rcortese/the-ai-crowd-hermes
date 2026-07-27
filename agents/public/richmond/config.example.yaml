@@ -19,3 +19,18 @@ context:
     protect_last: 30
 
 timezone: UTC
+
+# Persona-to-persona (A2A) ask-only RPC. Richmond is a spoke: it only talks
+# to the Moss hub. Distinct directional secrets come from
+# PERSONA_CALLER_MOSS_TOKEN and PERSONA_TARGET_MOSS_TOKEN (compose.yaml),
+# never inline here.
+persona_api:
+  self_target: richmond
+  inbound:
+    callers:
+      moss:
+        allow_targets: [richmond]
+  outbound:
+    targets:
+      moss:
+        url: http://moss:8648
