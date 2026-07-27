@@ -40,23 +40,32 @@ if grep -Eq '^    build:' "$COMPOSE"; then
 fi
 echo "runtime_build_paths_absent_ok"
 
-# 2. No HERMES_KANBAN_DISPATCH_OWNER or UNOWNED anywhere in the touched configs.
-if grep -Eq 'HERMES_KANBAN_DISPATCH_OWNER|UNOWNED' "$COMPOSE" "$MOSS_CFG" "$RICHMOND_CFG" "$ELDERS_CFG" "$JEN_API" "$DENHOLM_API" "$ROY_API"; then
-  fail "HERMES_KANBAN_DISPATCH_OWNER/UNOWNED reference still present"
-fi
-echo "kanban_owner_unowned_removed_ok"
+# 2. Moss all-in-one supervisord requires both owner-policy variables to exist.
+# Keep the now-local dispatcher explicitly Moss-owned and fail closed for
+# unowned boards. The peer services remain free of all HERMES_KANBAN_* vars.
+moss_block="$(extract_service moss)"
+echo "$moss_block" | grep -q 'HERMES_KANBAN_DISPATCH_OWNER: "moss"' \
+  || fail "moss HERMES_KANBAN_DISPATCH_OWNER must be moss"
+echo "$moss_block" | grep -q 'HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"' \
+  || fail "moss HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS must be false"
+echo "moss_kanban_supervisor_env_ok"
 
 # 3. Moss localizes its kanban home and dispatches in-gateway.
-moss_block="$(extract_service moss)"
 echo "$moss_block" | grep -q 'HERMES_KANBAN_HOME: /opt/data' || fail "moss HERMES_KANBAN_HOME must be /opt/data"
 echo "$moss_block" | grep -Eq "HERMES_KANBAN_DISPATCH_IN_GATEWAY: 'true'" || fail "moss HERMES_KANBAN_DISPATCH_IN_GATEWAY must be true"
 echo "moss_kanban_localized_ok"
 
-# 4. Zero HERMES_KANBAN_* env vars for every peer service.
+# 4. Zero HERMES_KANBAN_* env vars for every peer service and touched
+# peer runtime config. Kanban dispatch is exclusively Moss-local.
 for peer in "${PEERS[@]}"; do
   peer_block="$(extract_service "$peer")"
   if echo "$peer_block" | grep -q 'HERMES_KANBAN_'; then
     fail "peer service $peer must have zero HERMES_KANBAN_* env vars"
+  fi
+done
+for peer_config in "$RICHMOND_CFG" "$ELDERS_CFG" "$JEN_API" "$DENHOLM_API" "$ROY_API"; do
+  if grep -q 'HERMES_KANBAN_' "$peer_config"; then
+    fail "peer config $peer_config must have zero HERMES_KANBAN_* references"
   fi
 done
 echo "peer_kanban_env_absent_ok"
