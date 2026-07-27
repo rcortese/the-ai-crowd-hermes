@@ -13,11 +13,15 @@ COPY --from=hermes_candidate --chown=99:100 /opt/hermes/gateway/platforms/api_se
 COPY --from=hermes_candidate --chown=99:100 /opt/hermes/tools/environments/local.py /opt/hermes/tools/environments/local.py
 COPY --from=hermes_candidate --chown=99:100 /opt/hermes/tools/persona_rpc.py /opt/hermes/tools/persona_rpc.py
 COPY --from=hermes_candidate --chown=99:100 /opt/hermes/toolsets.py /opt/hermes/toolsets.py
+COPY --chown=root:root ops/scripts/materialize-persona-toolset-runtime.py /tmp/materialize-persona-toolset-runtime.py
 
-RUN /opt/hermes/.venv/bin/python3 -m py_compile \
+RUN /opt/hermes/.venv/bin/python3 /tmp/materialize-persona-toolset-runtime.py --root /opt/hermes \
+    && rm -f /tmp/materialize-persona-toolset-runtime.py \
+    && /opt/hermes/.venv/bin/python3 -m py_compile \
       /opt/hermes/gateway/persona_api.py \
       /opt/hermes/gateway/readiness.py \
       /opt/hermes/gateway/platforms/api_server.py \
+      /opt/hermes/hermes_cli/tools_config.py \
       /opt/hermes/tools/environments/local.py \
       /opt/hermes/tools/persona_rpc.py \
       /opt/hermes/toolsets.py

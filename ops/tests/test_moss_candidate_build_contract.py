@@ -10,6 +10,7 @@ roy_supervisor = (root / "ops/images/roy-all-in-one.supervisor.conf").read_text(
 overlay_helper = (root / "ops/scripts/build-moss-a2a-overlay-candidate.sh").read_text(encoding="utf-8")
 runtime_overlay = (root / "ops/images/Dockerfile.runtime-a2a-overlay").read_text(encoding="utf-8")
 runtime_overlay_helper = (root / "ops/scripts/build-runtime-a2a-overlay-candidate.sh").read_text(encoding="utf-8")
+persona_toolset_patch = (root / "ops/scripts/materialize-persona-toolset-runtime.py").read_text(encoding="utf-8")
 compose = (root / "compose.yaml").read_text(encoding="utf-8")
 smoke = (root / "tests/smoke-deploy.sh").read_text(encoding="utf-8")
 manifest = root / "ops/build-inputs/moss-clash-royale-war-bot.sha256"
@@ -55,6 +56,11 @@ assert 'RUNTIME_PERSONA=$PERSONA' in runtime_overlay_helper
 assert 'the-ai-crowd.current-runtime-base-id=$EXPECTED_CURRENT_ID' in runtime_overlay_helper
 assert 'CMD ["gateway", "run"]' in runtime_overlay
 assert 'CMD ["gateway", "run"]' not in overlay
+for image_overlay in (overlay, runtime_overlay):
+    assert "materialize-persona-toolset-runtime.py --root /opt/hermes" in image_overlay
+    assert "/opt/hermes/hermes_cli/tools_config.py" in image_overlay
+assert 'ENTRY = \'    ("persona",' in persona_toolset_patch
+assert '"x_search", "persona"' in persona_toolset_patch
 assert 'if [ "$RUNTIME_PERSONA" = "roy" ]' in overlay
 assert "HERMES_KANBAN_" not in roy_supervisor
 assert "[program:roy-gateway]" in roy_supervisor
