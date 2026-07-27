@@ -11,7 +11,7 @@ from pathlib import Path
 OWNER_ENUM = ["moss", "jen", "denholm", "richmond", "roy", "the-elders", "operator"]
 CARD_STATUSES = ["inbox", "triaged", "owned", "in_progress", "under_review", "changes_required", "blocked", "waiting_user", "approved", "done", "archived"]
 CARD_TYPES = ["migration-task", "ops-task", "handoff", "review-gate", "incident", "decision-record", "automation-run", "blocker"]
-HANDOFF_TYPES = ["consultation", "execution", "ownership_transfer", "return"]
+
 GATE_STATUSES = ["requested", "under_review", "approved", "changes_required", "blocked", "stale"]
 GATE_VERDICTS = ["APPROVED", "CHANGES_REQUIRED", "BLOCKED"]
 HASH_RE = re.compile(r'^[0-9a-f]{7,64}$')
@@ -27,7 +27,7 @@ required_files = [
     'docs/architecture/mounts-and-capabilities.md',
     'docs/architecture/kanban-workflow.md',
     'docs/operations/private-memory-migration.md',
-    'docs/operations/backup-restore.md',
+
     'docs/operations/release-process.md',
     'docs/operations/drift-detection.md',
     'docs/decisions/0001-public-scaffold-private-state.md',
@@ -59,18 +59,15 @@ required_files = [
     'ops/policies/capability-policy.md',
     'ops/policies/mount-policy.md',
     'schemas/kanban-card.schema.json',
-    'schemas/handoff.schema.json',
+
     'schemas/review-gate.schema.json',
     'schemas/capability-manifest.schema.json',
     'examples/kanban-card.example.json',
-    'examples/handoff.example.json',
+
     'examples/kanban/migration-task.example.json',
     'examples/kanban/blocker.example.json',
     'examples/kanban/waiting-user.example.json',
-    'examples/handoffs/denholm-to-moss-execution.example.json',
-    'examples/handoffs/moss-to-richmond-technical-support.example.json',
-    'examples/handoffs/moss-to-jen-productivity-boundary.example.json',
-    'examples/handoffs/ownership-transfer.example.json',
+
 ]
 
 missing = [p for p in required_files if not Path(p).is_file()]
@@ -138,20 +135,6 @@ for path in kanban_examples:
     if data['type'] in {'ops-task', 'automation-run'} and data.get('risk') == 'high' and not data.get('rollback_ref'):
         raise SystemExit(f'{path}: high-risk ops/automation cards require rollback_ref')
 
-handoff_examples = [Path('examples/handoff.example.json'), *sorted(Path('examples/handoffs').glob('*.json'))]
-for path in handoff_examples:
-    data = json.loads(path.read_text())
-    require_keys(data, schemas['handoff.schema.json'].get('required', []), path)
-    require_public(path, data)
-    if data['handoff_type'] not in HANDOFF_TYPES:
-        raise SystemExit(f'{path}: invalid handoff_type')
-    for key in ('from_owner', 'to_owner', 'decision_owner', 'return_to_owner'):
-        if data[key] not in OWNER_ENUM:
-            raise SystemExit(f'{path}: invalid {key}')
-    if data['handoff_type'] != 'ownership_transfer' and data['decision_owner'] != data['return_to_owner']:
-        raise SystemExit(f'{path}: non-transfer handoffs should return to the decision owner')
-    if not data.get('privacy_constraints'):
-        raise SystemExit(f'{path}: handoff requires privacy_constraints')
 
 review_examples = sorted(Path('examples/review-gates').glob('*.json'))
 for path in review_examples:

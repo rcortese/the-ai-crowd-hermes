@@ -10,8 +10,9 @@ Este repositório guarda a parte pública e reproduzível desse sistema: contrat
 
 - Define assistentes com responsabilidades diferentes, em vez de um único agente genérico.
 - Roda esses assistentes como serviços separados, com homes, workspaces e contratos próprios.
-- Mantém um canal compartilhado para handoffs, incidentes, artefatos e coordenação entre assistentes.
-- Usa schemas e testes para validar mensagens, exemplos, permissões, mounts e limites de segurança.
+- Usa Persona RPC ask-only sobre os API Servers como canal de coordenação entre assistentes.
+- Usa storage compartilhado apenas para artefatos passivos referenciados.
+- Usa testes para validar rotas, permissões, mounts e limites de segurança.
 - Separa claramente o que pode ser público do que pertence a uma implantação privada.
 - Oferece um ponto de partida prático para evoluir um sistema de assistência pessoal com especialistas colaborando entre si.
 
@@ -30,21 +31,12 @@ Os papéis são intencionais. Quando um assunto pertence a outro assistente, o s
 
 ## Como a colaboração funciona
 
-O projeto inclui um contrato canônico de handoff em `schemas/the-ai-crowd-handoff.schema.json` e uma implementação pública em `shared/protocol/`.
-
-Um handoff registra:
-
-- quem está pedindo;
-- quem deve receber;
-- qual domínio é responsável;
-- quem decide;
-- quem executa;
-- qual é o objetivo;
-- quais artefatos acompanham o pedido;
-- qual retorno é esperado;
-- qual classe de privacidade se aplica.
-
-Hoje o canal público validado é baseado em arquivos compartilhados sob `/mnt/hermes-shared/handoffs`. O Compose também inclui NATS como infraestrutura de mensageria para evolução do barramento interno, sem exigir que o README prometa uma implantação privada específica.
+Cada persona expõe um API Server Hermes. A ferramenta `persona_rpc.ask` usa uma
+rota estática e credenciais direcionais server-side; caller, target, URL,
+provider, modelo e headers não são controlados pelo pedido. Ausência de uma rota
+explicitamente permitida resulta em recusa, sem fallback para arquivo, Kanban ou
+broker. Artefatos grandes podem permanecer no storage compartilhado, mas apenas
+como dados passivos referenciados pela resposta.
 
 ## Estrutura do repositório
 
@@ -52,9 +44,8 @@ Hoje o canal público validado é baseado em arquivos compartilhados sob `/mnt/h
 agents/public/          Contratos públicos de cada assistente
 agents/private/         Espaços privados ignorados pelo git
 runtime/                Homes locais de runtime ignoradas pelo git
-shared/protocol/        Biblioteca e CLI de handoff entre assistentes
-schemas/                Schemas JSON para contratos e exemplos
-examples/               Exemplos públicos de handoff, kanban e review gates
+schemas/                Schemas JSON para contratos públicos remanescentes
+examples/               Exemplos públicos de kanban e review gates
 ops/images/             Dockerfiles dos assistentes
 ops/manifests/          Inventários de ferramentas e exemplos de capacidade
 ops/policies/           Políticas de mounts, capacidades e overlays privados
@@ -71,9 +62,9 @@ O `compose.yaml` descreve uma stack com:
 - homes de runtime por assistente em `runtime/<assistente>-home`;
 - contratos públicos montados como somente leitura;
 - workspaces privados montados como leitura/escrita;
-- estado compartilhado para handoffs;
+- storage compartilhado para artefatos passivos;
 - healthchecks por serviço;
-- NATS para suporte de mensageria interna;
+- Persona RPC ask-only entre API Servers;
 - redes separadas para tráfego interno, proxy privado e LLM local.
 
 Moss também possui uma imagem all-in-one para o runtime operacional, com dashboard, gateway, WebUI e webhook no mesmo serviço. Os outros assistentes rodam com contratos e gateways próprios conforme sua função.

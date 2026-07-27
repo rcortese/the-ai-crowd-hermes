@@ -5,9 +5,6 @@ x-hermes-env:
   HERMES_GID: 100
   HOME: /opt/data
   PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
-  HERMES_KANBAN_HOME: /mnt/hermes-shared
-  HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
-  HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
 x-hermes-llm-env-files:
 - ./env/fleet.env
 x-hermes-common:
@@ -18,9 +15,6 @@ x-hermes-common:
     HERMES_UID: 99
     HERMES_GID: 100
     HOME: /opt/data
-    HERMES_KANBAN_HOME: /mnt/hermes-shared
-    HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
-    HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
   networks: &id001
   - internal
 x-openai-codex-auth-home: /mnt/hermes-auth-shared
@@ -35,10 +29,9 @@ services:
       HERMES_GID: 100
       HOME: /opt/data
       PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
+      HERMES_KANBAN_HOME: /opt/data
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: 'true'
       HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/moss/private:/tmp
-      HERMES_KANBAN_DISPATCH_OWNER: moss
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       AGENT_NAME: moss
       AGENT_ROOT: /agents/moss
       AGENT_PUBLIC: /agents/moss/public
@@ -89,6 +82,18 @@ services:
       TELEGRAM_HOME_CHANNEL_THREAD_ID: ${MOSS_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
       ANTHROPIC_API_KEY: ${MOSS_ANTHROPIC_API_KEY:-}
       ANTHROPIC_TOKEN: ${MOSS_ANTHROPIC_TOKEN:-}
+      # Persona RPC credentials are directional: each caller identity has a
+      # distinct secret at the target. Values are injected externally only.
+      PERSONA_CALLER_JEN_TOKEN: ${JEN_TO_MOSS_PERSONA_TOKEN:-}
+      PERSONA_TARGET_JEN_TOKEN: ${MOSS_TO_JEN_PERSONA_TOKEN:-}
+      PERSONA_CALLER_DENHOLM_TOKEN: ${DENHOLM_TO_MOSS_PERSONA_TOKEN:-}
+      PERSONA_TARGET_DENHOLM_TOKEN: ${MOSS_TO_DENHOLM_PERSONA_TOKEN:-}
+      PERSONA_CALLER_ROY_TOKEN: ${ROY_TO_MOSS_PERSONA_TOKEN:-}
+      PERSONA_TARGET_ROY_TOKEN: ${MOSS_TO_ROY_PERSONA_TOKEN:-}
+      PERSONA_CALLER_RICHMOND_TOKEN: ${RICHMOND_TO_MOSS_PERSONA_TOKEN:-}
+      PERSONA_TARGET_RICHMOND_TOKEN: ${MOSS_TO_RICHMOND_PERSONA_TOKEN:-}
+      PERSONA_CALLER_THE_ELDERS_TOKEN: ${THE_ELDERS_TO_MOSS_PERSONA_TOKEN:-}
+      PERSONA_TARGET_THE_ELDERS_TOKEN: ${MOSS_TO_THE_ELDERS_PERSONA_TOKEN:-}
     networks:
       internal: null
       private_proxy:
@@ -98,17 +103,7 @@ services:
     env_file:
     - ./env/fleet.env
     - ./env/moss-webui.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.moss-all-in-one
-      args:
-        MOSS_BASE_IMAGE: ${MOSS_BASE_IMAGE:?set MOSS_BASE_IMAGE to the reviewed immutable Moss base image}
-      # Builds must supply the private Node dependency explicitly.  The default
-      # is an intentionally incomplete public placeholder, so a missing input
-      # fails during Docker COPY rather than silently baking a substitute.
-      additional_contexts:
-        clash_royale_build_input: ${CLASH_ROYALE_BUILD_INPUT_DIR:-./ops/build-inputs/empty}
-    image: the-ai-crowd/moss-all-in-one:${THE_AI_CROWD_IMAGE_TAG}
+    image: ${MOSS_IMAGE_REF:?set MOSS_IMAGE_REF to the approved immutable Moss image ID}
     working_dir: /agents/moss/private
     volumes:
     - ./runtime/moss-home:/opt/data
@@ -116,7 +111,7 @@ services:
     - ./agents/private/moss:/agents/moss/private:rw
     - ./state/shared:/mnt/hermes-shared
     - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
-    - ${THE_AI_CROWD_BACKUP_ROOT:-./state/private/backups}:/mnt/user/backups/the-ai-crowd:rw
+    - ${THE_AI_CROWD_BACKUP_ROOT:-./state/private/backups}:/backups/the-ai-crowd:rw
     expose:
     - '8787'
     - '9119'
@@ -142,9 +137,6 @@ services:
       HERMES_GID: 100
       HOME: /opt/data
       PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
-      HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
       AGENT_NAME: jen
       AGENT_ROOT: /agents/jen
       AGENT_PUBLIC: /agents/jen/public
@@ -153,7 +145,6 @@ services:
       AGENT_SHARED: /mnt/hermes-shared
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/jen/private
-      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
       API_SERVER_ENABLED: 'true'
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: '8642'
@@ -174,13 +165,13 @@ services:
       GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
       ANTHROPIC_API_KEY: ${JEN_ANTHROPIC_API_KEY:-}
       ANTHROPIC_TOKEN: ${JEN_ANTHROPIC_TOKEN:-}
+      PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_JEN_PERSONA_TOKEN:-}
+      PERSONA_TARGET_MOSS_TOKEN: ${JEN_TO_MOSS_PERSONA_TOKEN:-}
     networks: *id001
     env_file:
     - ./env/fleet.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.jen
-    image: the-ai-crowd/jen:${THE_AI_CROWD_IMAGE_TAG}
+
+    image: ${JEN_IMAGE_REF:?set JEN_IMAGE_REF to the approved immutable Jen image ID}
     working_dir: /agents/jen/private
     volumes:
     - ./runtime/jen-home:/opt/data
@@ -209,9 +200,6 @@ services:
       HERMES_GID: 100
       HOME: /opt/data
       PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
-      HERMES_KANBAN_DISPATCH_OWNER: ${HERMES_KANBAN_DISPATCH_OWNER:-}
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: ${HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS:-true}
       AGENT_NAME: denholm
       AGENT_ROOT: /agents/denholm
       AGENT_PUBLIC: /agents/denholm/public
@@ -220,7 +208,6 @@ services:
       AGENT_SHARED: /mnt/hermes-shared
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/denholm/private
-      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
       API_SERVER_ENABLED: 'true'
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: '8643'
@@ -232,13 +219,13 @@ services:
       TELEGRAM_HOME_CHANNEL_NAME: ${DENHOLM_TELEGRAM_HOME_CHANNEL_NAME:-}
       ANTHROPIC_API_KEY: ${DENHOLM_ANTHROPIC_API_KEY:-}
       ANTHROPIC_TOKEN: ${DENHOLM_ANTHROPIC_TOKEN:-}
+      PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_DENHOLM_PERSONA_TOKEN:-}
+      PERSONA_TARGET_MOSS_TOKEN: ${DENHOLM_TO_MOSS_PERSONA_TOKEN:-}
     networks: *id001
     env_file:
     - ./env/fleet.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.denholm
-    image: the-ai-crowd/denholm:${THE_AI_CROWD_IMAGE_TAG}
+
+    image: ${DENHOLM_IMAGE_REF:?set DENHOLM_IMAGE_REF to the approved immutable Denholm image ID}
     working_dir: /agents/denholm/private
     volumes:
     - ./runtime/denholm-home:/opt/data
@@ -267,12 +254,9 @@ services:
       HERMES_GID: 100
       HOME: /opt/data
       PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
-      HERMES_KANBAN_HOME: /mnt/hermes-shared/kanban/roy
-      HERMES_KANBAN_DISPATCH_OWNER: roy
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       HERMES_HOME: /opt/data
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
-      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/roy/private:/mnt/user/transfer
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/roy/private:/transfer
       GOG_HOME: /opt/data/gog
       GOG_KEYRING_BACKEND: file
       GOG_CLIENT: roy-google
@@ -281,7 +265,6 @@ services:
       ROY_VIVIANE_GOOGLE_BACKEND: gog
       ROY_VIVIANE_DRIVE_FOLDER_ID: ${ROY_VIVIANE_DRIVE_FOLDER_ID:-}
       ROY_VIVIANE_SHEET_ID: ${ROY_VIVIANE_SHEET_ID:-}
-      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
       AGENT_NAME: roy
       AGENT_ROOT: /agents/roy
       AGENT_PUBLIC: /agents/roy/public
@@ -299,7 +282,7 @@ services:
       HERMES_WEBUI_PORT: '8787'
       HERMES_WEBUI_STATE_DIR: /opt/data/webui
       HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/roy/private
-      ROY_DELIVERY_TRANSFER_DIR: /mnt/user/transfer
+      ROY_DELIVERY_TRANSFER_DIR: /transfer
       ROY_DELIVERY_WORKSPACE_ROOT: /agents/roy/private
       HERMES_WEBUI_CHAT_BACKEND: legacy-direct
       HERMES_WEBUI_GATEWAY_BASE_URL: http://roy:8645
@@ -311,6 +294,8 @@ services:
       TELEGRAM_HOME_CHANNEL_THREAD_ID: ${ROY_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
       ANTHROPIC_API_KEY: ${ROY_ANTHROPIC_API_KEY:-}
       ANTHROPIC_TOKEN: ${ROY_ANTHROPIC_TOKEN:-}
+      PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_ROY_PERSONA_TOKEN:-}
+      PERSONA_TARGET_MOSS_TOKEN: ${ROY_TO_MOSS_PERSONA_TOKEN:-}
     networks:
       internal: null
       private_proxy:
@@ -319,17 +304,14 @@ services:
     env_file:
     - ./env/fleet.env
     - ./env/roy.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.roy-all-in-one
-    image: the-ai-crowd/roy-all-in-one:${THE_AI_CROWD_IMAGE_TAG}
+    image: ${ROY_IMAGE_REF:?set ROY_IMAGE_REF to the approved immutable Roy image ID}
     working_dir: /agents/roy/private
     volumes:
     - ./runtime/roy-home:/opt/data
     - ./agents/public/roy:/agents/roy/public:ro
     - ./agents/private/roy:/agents/roy/private:rw
     - ./state/shared:/mnt/hermes-shared
-    - ${ROY_TRANSFER_ROOT:-./state/private/roy-transfer}:/mnt/user/transfer:rw
+    - ${ROY_TRANSFER_ROOT:-./state/private/roy-transfer}:/transfer:rw
     - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
     - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
@@ -354,10 +336,7 @@ services:
       HERMES_GID: 100
       HOME: /opt/data
       PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
       HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/richmond/private:/mnt/hermes-shared/richmond
-      HERMES_KANBAN_DISPATCH_OWNER: richmond
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       AGENT_NAME: richmond
       AGENT_ROOT: /agents/richmond
       AGENT_PUBLIC: /agents/richmond/public
@@ -366,20 +345,19 @@ services:
       AGENT_SHARED: /mnt/hermes-shared
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/richmond/private
-      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
       API_SERVER_ENABLED: 'true'
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: '8646'
       RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
       RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
       RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
+      PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_RICHMOND_PERSONA_TOKEN:-}
+      PERSONA_TARGET_MOSS_TOKEN: ${RICHMOND_TO_MOSS_PERSONA_TOKEN:-}
     networks: *id001
     env_file:
     - ./env/fleet.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.richmond
-    image: the-ai-crowd/richmond:${THE_AI_CROWD_IMAGE_TAG}
+
+    image: ${RICHMOND_IMAGE_REF:?set RICHMOND_IMAGE_REF to the approved immutable Richmond image ID}
     working_dir: /agents/richmond/private
     volumes:
     - ./runtime/richmond-home:/opt/data
@@ -408,9 +386,6 @@ services:
       HERMES_GID: 100
       HOME: /opt/data
       PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
-      HERMES_KANBAN_HOME: /mnt/hermes-shared
-      HERMES_KANBAN_DISPATCH_OWNER: the-elders
-      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: 'false'
       AGENT_NAME: the-elders
       AGENT_ROOT: /agents/the-elders
       AGENT_PUBLIC: /agents/the-elders/public
@@ -419,20 +394,19 @@ services:
       AGENT_SHARED: /mnt/hermes-shared
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/the-elders/private
-      HERMES_KANBAN_DISPATCH_IN_GATEWAY: '0'
       API_SERVER_ENABLED: 'true'
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: '8647'
       RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
       RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
       RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
+      PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_THE_ELDERS_PERSONA_TOKEN:-}
+      PERSONA_TARGET_MOSS_TOKEN: ${THE_ELDERS_TO_MOSS_PERSONA_TOKEN:-}
     networks: *id001
     env_file:
     - ./env/fleet.env
-    build:
-      context: .
-      dockerfile: ops/images/Dockerfile.the-elders
-    image: the-ai-crowd/the-elders:${THE_AI_CROWD_IMAGE_TAG}
+
+    image: ${THE_ELDERS_IMAGE_REF:?set THE_ELDERS_IMAGE_REF to the approved immutable The Elders image ID}
     working_dir: /agents/the-elders/private
     read_only: true
     tmpfs:
@@ -456,34 +430,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 60s
-  nats:
-    image: nats:2.10-alpine
-    command:
-    - -js
-    - -sd
-    - /data
-    - -m
-    - '8222'
-    - -n
-    - nats
-    restart: unless-stopped
-    networks:
-    - internal
-    volumes:
-    - nats_data:/data
-    expose:
-    - '4222'
-    - '8222'
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - wget -q --spider http://127.0.0.1:8222/healthz?js-enabled=true || exit 1
-      interval: 30s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
-volumes:
-  nats_data: null
 networks:
   internal:
     name: the-ai-crowd_internal

@@ -65,7 +65,7 @@ MOCK
 runtime="$tmpdir/mock-runtime"
 log="$tmpdir/attempts.log"
 state="$tmpdir/state.json"
-handoff="$tmpdir/handoff.json"
+
 make_runtime "$runtime" ok
 
 out=$(JEN_SELF_HEAL_TEST_MODE=ok JEN_SELF_HEAL_TEST_LOG="$log" "$helper" health --runtime "$runtime" --state-file "$state")
@@ -85,19 +85,20 @@ if [[ $(wc -l < "$log") -ne 2 ]]; then
 fi
 
 set +e
-out=$(JEN_SELF_HEAL_TEST_MODE=transient_fail JEN_SELF_HEAL_TEST_LOG="$log" "$helper" read-active --runtime "$runtime" --state-file "$state" --max-retries 2 --pending-item 'capturar token abc123abc123abc123abc123abc123abc123' --handoff-file "$handoff")
+out=$(JEN_SELF_HEAL_TEST_MODE=transient_fail JEN_SELF_HEAL_TEST_LOG="$log" "$helper" read-active --runtime "$runtime" --state-file "$state" --max-retries 2 --pending-item 'capturar token abc123abc123abc123abc123abc123abc123')
 rc=$?
 set -e
 [[ $rc -eq 1 ]] || { echo "assertion failed: transient unresolved exits 1" >&2; echo "$out" >&2; exit 1; }
 assert_jq "$out" '.status == "unresolved" and .failure_group == "transient" and .attempt_count == 3' 'transient unresolved classification and retry limit'
 assert_jq "$out" '.incident.requested_moss_action == "Restore the already-approved Todoist integration through Jen'"'"'s canonical runtime path."' 'transient Moss restore request'
 assert_jq "$out" '.incident.runtime_output_summary.stderr | contains("[REDACTED]")' 'stderr redacted'
-if grep -q 'abc123abc123abc123abc123abc123abc123' "$handoff"; then
-  echo "assertion failed: handoff leaked raw token" >&2
-  cat "$handoff" >&2
+if grep -q 'abc123abc123abc123abc123abc123abc123' <<<"$out"; then
+  echo "assertion failed: escalation output leaked raw token" >&2
+  echo "$out" >&2
   exit 1
 fi
-assert_jq "$(cat "$handoff")" '.fixed_state_vocabulary | index("runtime restaurado; verificação pendente")' 'runtime restored vocabulary present'
+assert_jq "$out" '.incident.fixed_state_vocabulary | index("runtime restaurado; verificação pendente")' 'runtime restored vocabulary present'
+assert_jq "$out" 'has("handoff_file") | not' 'file handoff output removed'
 
 set +e
 out=$(JEN_SELF_HEAL_TEST_MODE=runtime_config JEN_SELF_HEAL_TEST_LOG="$log" "$helper" read-active --runtime "$runtime" --state-file "$state" --max-retries 2 --pending-item 'pending item')

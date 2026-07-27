@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "source_revision": "320070c132665077624a7506102ad13d07b1947c",
+  "source_path": "tools/persona_rpc.py",
+  "source_sha256": "e472451719b4a7494cf0969dc5b5b8e3aa2d60b668009b381ebdba28dd9c914e",
+  "tool_name": "persona_rpc",
+  "required_arguments": ["target", "question"],
+  "receipt_statuses": ["ok", "error"]
+}

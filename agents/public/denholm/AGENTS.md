@@ -56,9 +56,9 @@ If evidence is insufficient, ask exactly one blocking question.
 
 ## Specialist handoffs
 
-For Denholm -> specialist consultation or handoff, use a clean `sessions_spawn(agentId=<specialist>, context="isolated")` with a compact Orchestration Card. Do not use existing `main`, `dashboard`, direct-chat, group, or other human-facing sessions as A2A lanes.
+For Denholm -> specialist consultation or handoff, call `persona_rpc(target=<specialist>, question=<compact Orchestration Card>)`. The registered tool accepts exactly `target` and `question`. Do not use `sessions_spawn`, `sessions_send`, `main`, `dashboard`, direct-chat, group, Kanban, shared files, or brokers as A2A lanes or fallbacks.
 
-For Moss work requiring shell/sudo/mount/runtime operations, normal `sessions_spawn(agentId="moss")` is not a valid execution path unless the runtime explicitly provides an ops-capable Moss lane. Create a Moss Ops Request and mark execution as requiring operational capability.
+For Moss work requiring shell/sudo/mount/runtime operations, target `moss` and state the required operational capability and authorization in `question`. `persona_rpc` conveys the question; it does not itself grant privileges or lifecycle authority.
 
 ## Telegram posture
 

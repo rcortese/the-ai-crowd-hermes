@@ -5,6 +5,8 @@ import sys
 root = pathlib.Path(sys.argv[1])
 dockerfile = (root / "ops/images/Dockerfile.moss-all-in-one").read_text(encoding="utf-8")
 helper = (root / "ops/scripts/build-moss-all-in-one-candidate.sh").read_text(encoding="utf-8")
+overlay = (root / "ops/images/Dockerfile.moss-a2a-overlay").read_text(encoding="utf-8")
+overlay_helper = (root / "ops/scripts/build-moss-a2a-overlay-candidate.sh").read_text(encoding="utf-8")
 compose = (root / "compose.yaml").read_text(encoding="utf-8")
 smoke = (root / "tests/smoke-deploy.sh").read_text(encoding="utf-8")
 manifest = root / "ops/build-inputs/moss-clash-royale-war-bot.sha256"
@@ -23,9 +25,21 @@ assert '--build-arg "MOSS_BASE_IMAGE=$BASE_IMAGE"' in helper
 assert "git -C \"$ROOT\" archive --format=tar \"$COMMIT\"" in helper
 assert "sha256sum -c \"$CTX/$MANIFEST_REL\"" in helper
 assert "--build-context \"clash_royale_build_input=$INPUT_DIR\"" in helper
-assert "additional_contexts:" in compose
-assert "clash_royale_build_input: ${CLASH_ROYALE_BUILD_INPUT_DIR:-./ops/build-inputs/empty}" in compose
-assert "MOSS_BASE_IMAGE: ${MOSS_BASE_IMAGE:?set MOSS_BASE_IMAGE to the reviewed immutable Moss base image}" in compose
+for runtime_path in (
+    "/opt/hermes/gateway/persona_api.py",
+    "/opt/hermes/gateway/platforms/api_server.py",
+    "/opt/hermes/tools/environments/local.py",
+    "/opt/hermes/tools/persona_rpc.py",
+    "/opt/hermes/toolsets.py",
+):
+    assert runtime_path in overlay
+assert 'CURRENT_TAG="${CURRENT_MOSS_IMAGE:?set CURRENT_MOSS_IMAGE to the reviewed current all-in-one image tag}"' in overlay_helper
+assert 'EXPECTED_CURRENT_ID="${CURRENT_MOSS_IMAGE_ID:?set CURRENT_MOSS_IMAGE_ID to its immutable image ID}"' in overlay_helper
+assert 'docker image inspect "$CURRENT_TAG"' in overlay_helper
+assert 'docker image inspect "$HERMES_TAG"' in overlay_helper
+assert "image: ${MOSS_IMAGE_REF:?" in compose
+assert "additional_contexts:" not in compose
+assert "MOSS_BASE_IMAGE:" not in compose
 assert "ports: !reset []" in smoke
 assert 'user: "99:100"' in smoke
 assert "networks: !reset [smoke]" in smoke
@@ -45,7 +59,8 @@ assert "for env_file in env/fleet.env env/moss-webui.env env/roy.env; do" in smo
 assert 'rm -f "${created_env_files[@]}"' in smoke
 assert 'compose=(docker compose -p "$project" -f compose.yaml -f "$override_out")' in smoke
 assert '"${compose[@]}" down --remove-orphans' in smoke
-assert 'started=true\n"${compose[@]}" up -d --build moss' in smoke
+assert 'if [[ -z "${MOSS_IMAGE_REF:-}" ]]; then' in smoke
+assert 'started=true\n"${compose[@]}" up -d moss' in smoke
 assert 'curl -fsS http://127.0.0.1:8787/health' in smoke
 assert 'curl -fsS http://127.0.0.1:8648/health' in smoke
 assert 'curl -fsS http://127.0.0.1:8644/health' not in smoke

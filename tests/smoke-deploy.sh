@@ -32,6 +32,18 @@ if ! docker info >/dev/null 2>&1; then
   exit 2
 fi
 
+if [[ -z "${MOSS_IMAGE_REF:-}" ]]; then
+  echo "smoke_deploy_blocked: set MOSS_IMAGE_REF to the reviewed immutable Moss image ID"
+  exit 2
+fi
+# Compose validates required selectors for every declared service even when the
+# smoke starts only Moss. Reuse the same immutable ID for non-started services.
+export JEN_IMAGE_REF="${JEN_IMAGE_REF:-$MOSS_IMAGE_REF}"
+export DENHOLM_IMAGE_REF="${DENHOLM_IMAGE_REF:-$MOSS_IMAGE_REF}"
+export ROY_IMAGE_REF="${ROY_IMAGE_REF:-$MOSS_IMAGE_REF}"
+export RICHMOND_IMAGE_REF="${RICHMOND_IMAGE_REF:-$MOSS_IMAGE_REF}"
+export THE_ELDERS_IMAGE_REF="${THE_ELDERS_IMAGE_REF:-$MOSS_IMAGE_REF}"
+
 # Compose validates env_file paths before service overrides. Create empty
 # placeholders only for missing ignored files and remove them on exit.
 for env_file in env/fleet.env env/moss-webui.env env/roy.env; do
@@ -77,7 +89,7 @@ services:
       - ./agents/private/moss:/agents/moss/private:rw
       - ./state/shared:/mnt/hermes-shared
       - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
-      - ${THE_AI_CROWD_BACKUP_ROOT:-./state/private/backups}:/mnt/user/backups/the-ai-crowd:rw
+      - ${THE_AI_CROWD_BACKUP_ROOT:-./state/private/backups}:/backups/the-ai-crowd:rw
 networks:
   smoke: {}
 YAML
@@ -87,7 +99,7 @@ compose=(docker compose -p "$project" -f compose.yaml -f "$override_out")
 # Arm cleanup before up: Compose can create a subset of resources and then
 # fail, and that partial state must not survive a smoke failure.
 started=true
-"${compose[@]}" up -d --build moss
+"${compose[@]}" up -d moss
 "${compose[@]}" exec -T moss sh -lc 'test "${API_SERVER_KEY:-}" = moss-smoke-isolated-api-key' || {
   echo "smoke_deploy_failed: isolated API key missing from moss container" >&2
   exit 1

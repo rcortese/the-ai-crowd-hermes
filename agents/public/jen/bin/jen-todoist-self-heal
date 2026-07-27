@@ -223,14 +223,14 @@ def build_incident(args: argparse.Namespace, attempt: dict[str, Any], failure_cl
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Probe Jen Todoist runtime and emit sanitized Moss handoff when unresolved.")
+    parser = argparse.ArgumentParser(description="Probe Jen Todoist runtime and return a sanitized local escalation payload when unresolved.")
     parser.add_argument("probe", choices=["health", "read-active", "read-recent-completed"], help="Read-only canonical runtime probe to perform.")
     parser.add_argument("--runtime", default=str(DEFAULT_RUNTIME), help="Canonical Jen runtime path; override only in tests.")
     parser.add_argument("--max-retries", type=int, default=2, help="Retries for transient failures only, 0-3.")
     parser.add_argument("--retry-sleep", type=float, default=0.0, help="Seconds between transient retries; default 0 for fast contract use.")
     parser.add_argument("--pending-item", default="", help="Pending unresolved item text to include in sanitized incident evidence.")
     parser.add_argument("--user-visible-context", default="", help="Short sanitized context for why Jen needed Todoist.")
-    parser.add_argument("--handoff-file", default="", help="Optional file path for unresolved incident payload.")
+
     parser.add_argument("--state-file", default=str(DEFAULT_STATE_FILE), help="Durable verification state file path.")
     parser.add_argument("--since", default="", help="RFC3339 since for read-recent-completed; optional.")
     parser.add_argument("--until", default="", help="RFC3339 until for read-recent-completed; optional.")
@@ -297,11 +297,6 @@ def main(argv: list[str]) -> int:
 
     final_attempt = attempts[-1]
     incident = build_incident(args, final_attempt, final_failure, final_group)
-    if args.handoff_file:
-        handoff_path = Path(args.handoff_file).expanduser()
-        handoff_path.parent.mkdir(parents=True, exist_ok=True)
-        handoff_path.write_text(json.dumps(incident, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-
     status = "blocked" if incident["human_authorization_required"] else "unresolved"
     print(json.dumps({
         "contract_version": CONTRACT_VERSION,
@@ -310,7 +305,6 @@ def main(argv: list[str]) -> int:
         "failure_group": final_group,
         "attempt_count": len(attempts),
         "incident": incident,
-        "handoff_file": args.handoff_file or None,
     }, ensure_ascii=False, sort_keys=True))
     return 2 if status == "blocked" else 1
 
