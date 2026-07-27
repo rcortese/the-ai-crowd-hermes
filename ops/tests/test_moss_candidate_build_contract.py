@@ -6,6 +6,7 @@ root = pathlib.Path(sys.argv[1])
 dockerfile = (root / "ops/images/Dockerfile.moss-all-in-one").read_text(encoding="utf-8")
 helper = (root / "ops/scripts/build-moss-all-in-one-candidate.sh").read_text(encoding="utf-8")
 overlay = (root / "ops/images/Dockerfile.moss-a2a-overlay").read_text(encoding="utf-8")
+roy_supervisor = (root / "ops/images/roy-all-in-one.supervisor.conf").read_text(encoding="utf-8")
 overlay_helper = (root / "ops/scripts/build-moss-a2a-overlay-candidate.sh").read_text(encoding="utf-8")
 runtime_overlay = (root / "ops/images/Dockerfile.runtime-a2a-overlay").read_text(encoding="utf-8")
 runtime_overlay_helper = (root / "ops/scripts/build-runtime-a2a-overlay-candidate.sh").read_text(encoding="utf-8")
@@ -50,9 +51,13 @@ assert 'CURRENT_IMAGE_ARG=CURRENT_MOSS_IMAGE' in runtime_overlay_helper
 assert 'CURRENT_IMAGE_ARG=CURRENT_RUNTIME_IMAGE' in runtime_overlay_helper
 assert 'CURRENT_IMAGE_ARG=$CURRENT_IMAGE_ARG' not in runtime_overlay_helper
 assert '"$CURRENT_IMAGE_ARG=$CURRENT_TAG"' in runtime_overlay_helper
+assert 'RUNTIME_PERSONA=$PERSONA' in runtime_overlay_helper
 assert 'the-ai-crowd.current-runtime-base-id=$EXPECTED_CURRENT_ID' in runtime_overlay_helper
 assert 'CMD ["gateway", "run"]' in runtime_overlay
 assert 'CMD ["gateway", "run"]' not in overlay
+assert 'if [ "$RUNTIME_PERSONA" = "roy" ]' in overlay
+assert "HERMES_KANBAN_" not in roy_supervisor
+assert "[program:roy-gateway]" in roy_supervisor
 for persona in ("denholm", "richmond", "the-elders"):
     dockerfile_text = (root / f"ops/images/Dockerfile.{persona}").read_text(encoding="utf-8")
     assert 'CMD ["gateway", "run"]' in dockerfile_text
