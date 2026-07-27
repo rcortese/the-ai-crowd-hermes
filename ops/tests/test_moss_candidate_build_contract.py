@@ -29,6 +29,7 @@ assert "sha256sum -c \"$CTX/$MANIFEST_REL\"" in helper
 assert "--build-context \"clash_royale_build_input=$INPUT_DIR\"" in helper
 for runtime_path in (
     "/opt/hermes/gateway/persona_api.py",
+    "/opt/hermes/gateway/readiness.py",
     "/opt/hermes/gateway/platforms/api_server.py",
     "/opt/hermes/tools/environments/local.py",
     "/opt/hermes/tools/persona_rpc.py",

@@ -10,6 +10,7 @@ USER root
 # the parent of the approved RPC commit, so overlay only that commit's runtime
 # files and preserve every unrelated dependency.
 COPY --from=hermes_candidate --chown=99:100 /opt/hermes/gateway/persona_api.py /opt/hermes/gateway/persona_api.py
+COPY --from=hermes_candidate --chown=99:100 /opt/hermes/gateway/readiness.py /opt/hermes/gateway/readiness.py
 COPY --from=hermes_candidate --chown=99:100 /opt/hermes/gateway/platforms/api_server.py /opt/hermes/gateway/platforms/api_server.py
 COPY --from=hermes_candidate --chown=99:100 /opt/hermes/tools/environments/local.py /opt/hermes/tools/environments/local.py
 COPY --from=hermes_candidate --chown=99:100 /opt/hermes/tools/persona_rpc.py /opt/hermes/tools/persona_rpc.py
@@ -17,6 +18,7 @@ COPY --from=hermes_candidate --chown=99:100 /opt/hermes/toolsets.py /opt/hermes/
 
 RUN /opt/hermes/.venv/bin/python3 -m py_compile \
       /opt/hermes/gateway/persona_api.py \
+      /opt/hermes/gateway/readiness.py \
       /opt/hermes/gateway/platforms/api_server.py \
       /opt/hermes/tools/environments/local.py \
       /opt/hermes/tools/persona_rpc.py \
