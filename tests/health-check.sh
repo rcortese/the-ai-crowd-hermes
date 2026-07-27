@@ -73,13 +73,11 @@ require_dockerfile_contract Dockerfile.jen \
   'HERMES_DASHBOARD_PORT=9121' \
   'CMD ["gateway", "run"]'
 require_dockerfile_contract Dockerfile.denholm \
-  'ENV HERMES_DASHBOARD_TUI=1' \
-  'CMD ["dashboard", "--host", "0.0.0.0", "--port", "9122"'
+  'CMD ["gateway", "run"]'
 require_dockerfile_contract Dockerfile.richmond \
-  'ENV HERMES_DASHBOARD_TUI=1' \
-  'CMD ["dashboard", "--host", "0.0.0.0", "--port", "9120"'
+  'CMD ["gateway", "run"]'
 require_dockerfile_contract Dockerfile.the-elders \
-  'CMD ["dashboard", "--host", "0.0.0.0", "--port", "9130"'
+  'CMD ["gateway", "run"]'
 
 echo "image_runtime_contract_ok"
 echo "health_check_ok"

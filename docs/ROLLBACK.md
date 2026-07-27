@@ -43,15 +43,16 @@ git status --short
 git diff > <private-secrets-or-backups-dir>/pre-reset-$(date +%Y%m%d%H%M%S).patch
 ```
 
-Then revert to the pushed production reference:
+Then restore the captured source reference only when source rollback is required. Restore the ignored pre-cutover `*_IMAGE_REF` selector values from the rollback tuple and recreate from those already-present immutable images:
 
 ```bash
 git fetch origin
 git reset --hard origin/main
-docker compose up -d --build moss
+docker compose config  # verify prior immutable image IDs and no build entries
+docker compose up -d --no-build <affected-service...>
 ```
 
-Only use `git reset --hard` on the production checkout after confirming there are no local uncommitted production edits that need preserving.
+Never rebuild during rollback. Only use `git reset --hard` on the production checkout after confirming there are no local uncommitted production edits that need preserving. A rollback receipt must bind the restored selector file, prior image IDs, Compose render, and resulting running image IDs.
 
 ## Data deletion
 

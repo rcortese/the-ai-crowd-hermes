@@ -7,6 +7,8 @@ dockerfile = (root / "ops/images/Dockerfile.moss-all-in-one").read_text(encoding
 helper = (root / "ops/scripts/build-moss-all-in-one-candidate.sh").read_text(encoding="utf-8")
 overlay = (root / "ops/images/Dockerfile.moss-a2a-overlay").read_text(encoding="utf-8")
 overlay_helper = (root / "ops/scripts/build-moss-a2a-overlay-candidate.sh").read_text(encoding="utf-8")
+runtime_overlay = (root / "ops/images/Dockerfile.runtime-a2a-overlay").read_text(encoding="utf-8")
+runtime_overlay_helper = (root / "ops/scripts/build-runtime-a2a-overlay-candidate.sh").read_text(encoding="utf-8")
 compose = (root / "compose.yaml").read_text(encoding="utf-8")
 smoke = (root / "tests/smoke-deploy.sh").read_text(encoding="utf-8")
 manifest = root / "ops/build-inputs/moss-clash-royale-war-bot.sha256"
@@ -33,10 +35,19 @@ for runtime_path in (
     "/opt/hermes/toolsets.py",
 ):
     assert runtime_path in overlay
+    assert runtime_path in runtime_overlay
 assert 'CURRENT_TAG="${CURRENT_MOSS_IMAGE:?set CURRENT_MOSS_IMAGE to the reviewed current all-in-one image tag}"' in overlay_helper
 assert 'EXPECTED_CURRENT_ID="${CURRENT_MOSS_IMAGE_ID:?set CURRENT_MOSS_IMAGE_ID to its immutable image ID}"' in overlay_helper
 assert 'docker image inspect "$CURRENT_TAG"' in overlay_helper
 assert 'docker image inspect "$HERMES_TAG"' in overlay_helper
+assert 'case "$PERSONA" in' in runtime_overlay_helper
+assert 'moss|roy)' in runtime_overlay_helper
+assert 'CURRENT_RUNTIME_IMAGE=$CURRENT_TAG' in runtime_overlay_helper
+assert 'the-ai-crowd.current-runtime-base-id=$EXPECTED_CURRENT_ID' in runtime_overlay_helper
+for persona in ("denholm", "richmond", "the-elders"):
+    dockerfile_text = (root / f"ops/images/Dockerfile.{persona}").read_text(encoding="utf-8")
+    assert 'CMD ["gateway", "run"]' in dockerfile_text
+assert "command:\n    - gateway\n    - run" not in compose
 assert "image: ${MOSS_IMAGE_REF:?" in compose
 assert "additional_contexts:" not in compose
 assert "MOSS_BASE_IMAGE:" not in compose

@@ -49,5 +49,6 @@ WORKDIR /workspace
 
 USER 99:100
 
-# The AI Crowd image owns The Elders' long-lived Hermes dashboard command.
-CMD ["dashboard", "--host", "0.0.0.0", "--port", "9130", "--insecure", "--no-open", "--skip-build"]
+# The image owns the long-lived gateway/API runtime command; Compose supplies
+# only the immutable image selector.
+CMD ["gateway", "run"]
