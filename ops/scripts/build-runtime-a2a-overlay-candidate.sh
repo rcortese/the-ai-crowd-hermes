@@ -7,8 +7,8 @@ CURRENT_TAG="${2:?usage: $0 PERSONA CURRENT_IMAGE CURRENT_IMAGE_ID OUTPUT_TAG}"
 EXPECTED_CURRENT_ID="${3:?usage: $0 PERSONA CURRENT_IMAGE CURRENT_IMAGE_ID OUTPUT_TAG}"
 TAG="${4:?usage: $0 PERSONA CURRENT_IMAGE CURRENT_IMAGE_ID OUTPUT_TAG}"
 case "$PERSONA" in
-  moss|roy) ;;
-  *) printf 'unsupported all-in-one persona: %s\n' "$PERSONA" >&2; exit 2 ;;
+  moss|jen|denholm|roy|richmond|the-elders) ;;
+  *) printf 'unsupported runtime persona: %s\n' "$PERSONA" >&2; exit 2 ;;
 esac
 LOCK="$ROOT/ops/manifests/base-images.lock.json"
 
