@@ -39,41 +39,31 @@ Do not use an Orchestration Card for:
 - review gates, which use the independent review-gate contract instead;
 - emergency containment, where safety instructions should be direct and minimal.
 
-## Session hygiene
+## RPC hygiene
 
-A new Orchestration Card should start in a **fresh specialist session** by default, created with `sessions_spawn(agentId=<specialist>, context="isolated")`.
+A new Orchestration Card is sent with one bounded `persona_rpc(target=<specialist>, question=<card>)` call to the owning specialist.
 
-Do not send a new card into an old, topic-dirty, or human-facing specialist session just because it already exists. `main`, `dashboard`, direct-chat, group, and any active Rodolfo conversation are forbidden A2A handoff targets. A dirty session can make the specialist carry stale assumptions, prior incident posture, unrelated partial plans, or old emotional/contextual momentum into a new phase.
+Do not route the card through `sessions_spawn`, `sessions_send`, `main`, `dashboard`, direct-chat, group, Kanban, shared files, a broker, or any active Rodolfo conversation. The RPC request is self-contained and the target's private session history is not an input.
 
-Use an existing specialist session only when all of these are true: it is not human-facing, it is not `main`/`dashboard`, and one of these continuity reasons applies:
-
-- the card is the next phase of the same active run;
-- the card is a small clarification/correction to the immediately previous card;
-- Denholm explicitly wants continuity and the previous context is part of the task evidence.
-
-When reusing a session, Denholm must say so in the card:
+When continuity matters, state it explicitly in the card without selecting or reusing a session:
 
 ```text
-Sessão: reutilizar sessão existente porque <reason>
 Contexto a preservar: <specific context>
 Contexto a ignorar: <old/incidental context to disregard>
 ```
 
-For a new task, Denholm is responsible for session acquisition. Do **not** ask Rodolfo to create or choose the clean specialist session as the default next step.
-
 Default path:
 
-1. Create a clean specialist execution session directly with `sessions_spawn(agentId=<specialist>, context="isolated")`.
-2. Put the Orchestration Card in that clean child session.
-3. Collect completion through `sessions_yield`, subagent status, or the child session history.
-4. If session creation fails because of a tool/runtime defect, report the precise capability failure to Moss/control-plane and stop; do not turn the substantive phase work into a dirty-session handoff.
+1. Select the accountable specialist target.
+2. Put the complete Orchestration Card in the required `question` field of `persona_rpc`; `target` and `question` are the only accepted arguments.
+3. Treat the returned receipt with `status: ok | error` as the only result for that call.
+4. If RPC fails, report the precise capability failure and stop; do not route the work through another channel.
 
 The card itself should carry the required context; it should not depend on old session history.
 
 ## Card template
 
 ```text
-Sessão: nova sessão limpa | reutilizar sessão existente porque <reason>
 Fase: <number/name>
 Objetivo: <one sentence>
 Escopo permitido: <what the specialist may inspect/change>

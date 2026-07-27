@@ -27,3 +27,34 @@ context:
     protect_last: 20
 
 timezone: UTC
+
+# Persona-to-persona (A2A) ask-only RPC. Moss is the hub: it accepts asks
+# from every spoke and can ask every spoke in turn. Each caller direction has
+# a distinct secret; production tokens come from PERSONA_CALLER_<ID>_TOKEN /
+# PERSONA_TARGET_<ID>_TOKEN env vars set in compose.yaml, never inline here.
+persona_api:
+  self_target: moss
+  inbound:
+    callers:
+      jen:
+        allow_targets: [moss]
+      denholm:
+        allow_targets: [moss]
+      roy:
+        allow_targets: [moss]
+      richmond:
+        allow_targets: [moss]
+      the-elders:
+        allow_targets: [moss]
+  outbound:
+    targets:
+      jen:
+        url: http://jen:8642
+      denholm:
+        url: http://denholm:8643
+      roy:
+        url: http://roy:8645
+      richmond:
+        url: http://richmond:8646
+      the-elders:
+        url: http://the-elders:8647

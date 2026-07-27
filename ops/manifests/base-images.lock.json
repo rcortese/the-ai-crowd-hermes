@@ -1,18 +1,22 @@
 {
   "schema": "the-ai-crowd-hermes.base-images-lock.v1",
   "status": "pinned-for-public-scaffold",
-  "updated_at": "2026-05-22T13:00:00Z",
+  "updated_at": "2026-07-27T14:42:10Z",
   "images": [
     {
       "name": "hermes-agent",
-      "image": "nousresearch/hermes-agent@sha256:b6e41c155d6bfce5ad83c5d0fec670086db8a43250e4511c9474134be5482d33",
-      "source_tag_checked": "nousresearch/hermes-agent:latest",
+      "image": "the-ai-crowd/hermes-agent:a2a-320070c",
+      "image_id": "sha256:3744fe3baff924a092b995494cecae118dc46c103d9e68b2d78379ddd3124a5b",
+      "source_revision": "320070c132665077624a7506102ad13d07b1947c",
       "used_by": [
+        "ops/images/Dockerfile.denholm",
+        "ops/images/Dockerfile.jen",
         "ops/images/Dockerfile.moss",
         "ops/images/Dockerfile.richmond",
+        "ops/images/Dockerfile.roy",
         "ops/images/Dockerfile.the-elders"
       ],
-      "update_policy": "Change only through the release process with validation, review, and rollback notes. Record deployed digest in private deployment evidence."
+      "update_policy": "Change only through the release process with exact source revision, validation, review, and rollback notes. Record deployed digest in private deployment evidence."
     }
   ]
 }

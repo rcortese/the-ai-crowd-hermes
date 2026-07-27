@@ -15,6 +15,9 @@ run agents/public/moss/tools/wrappers/messaging-dry-run.sh --channel direct-mess
 run agents/public/moss/tools/wrappers/ssh-readonly-preflight.sh --host-ref private-ref:private-infra-host --user-ref private-ref:private-infra-user --command-class host-summary --dry-run
 run agents/public/moss/tools/wrappers/compose-readonly-preflight.sh --repo . --mode config --dry-run
 run tests/image-pin.sh
+run /opt/hermes/.venv/bin/python ops/tests/test_persona_api_materializer.py
+run /opt/hermes/.venv/bin/python ops/tests/test_persona_rpc_docs_contract.py
+run tests/persona-rpc-cutover.sh
 run tests/health-check.sh
 run tests/drift-detection.sh
 run tests/validate-schemas.sh

@@ -111,20 +111,6 @@ repair_agent() {
   done
 }
 
-repair_shared() {
-  local shared="$ROOT/state/shared/kanban"
-  [ -e "$shared" ] || return 0
-  local c
-  c=$(count_drift "$shared")
-  log "shared_kanban_drift_count=$c path=$shared"
-  if [ "$c" != "0" ]; then show_sample "$shared"; fi
-  if [ "$APPLY" -eq 1 ]; then
-    chown -R "$UID_EXPECTED:$GID_EXPECTED" "$shared"
-    chmod 0770 "$shared"
-  fi
-  c=$(count_drift "$shared")
-  log "shared_kanban_after_drift_count=$c path=$shared"
-}
 
 if [ "$ALL" -eq 1 ]; then
   for d in "$ROOT"/agents/public/*; do
@@ -134,7 +120,6 @@ if [ "$ALL" -eq 1 ]; then
 else
   repair_agent "$AGENT"
 fi
-repair_shared
 
 if [ "$APPLY" -eq 1 ]; then
   log "mode=apply complete"
