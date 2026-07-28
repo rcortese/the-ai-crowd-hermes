@@ -56,5 +56,27 @@ class InstallerTests(unittest.TestCase):
             cp=self.run_install(root/"pre",env)
             self.assertNotEqual(cp.returncode,0); self.assertEqual(outside.read_text(),"safe")
 
+    def test_symlinked_scripts_ancestor_and_preimage_child_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); _,user,_,env=self.fixture(root)
+            scripts=user/"scripts"; scripts.rmdir(); outside=root/"outside"; outside.mkdir(); scripts.symlink_to(outside,target_is_directory=True)
+            cp=self.run_install(root/"pre1",env); self.assertNotEqual(cp.returncode,0); self.assertEqual(list(outside.iterdir()),[])
+            scripts.unlink(); scripts.mkdir()
+            pre=root/"pre2"; pre.mkdir(); (pre/"scheduler").symlink_to(outside,target_is_directory=True)
+            cp=subprocess.run([str(INSTALLER),str(pre)],env=env,text=True,capture_output=True)
+            self.assertNotEqual(cp.returncode,0); self.assertEqual(list(outside.iterdir()),[])
+
+    def test_update_cron_partial_failure_restores_observed_cron_state(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); _,user,runtime,env=self.fixture(root)
+            dest=user/"scripts/runtime_backup_retention"; dest.mkdir(); (dest/"script").write_text("old-script"); (dest/"name").write_text("old-name")
+            schedule=user/"schedule.json"; old_schedule=b'{"old":true}\n'; schedule.write_bytes(old_schedule); runtime.write_bytes(b'{"runtime":true}\n')
+            cron_state=root/"cron-state"; fail_once=root/"fail-once"; fail_once.write_text("1")
+            update=root/"update-stateful"; update.write_text('#!/bin/sh\ncp "$SCHEDULE_PATH" "$CRON_STATE"\nif [ -f "$FAIL_ONCE" ]; then rm -f "$FAIL_ONCE"; exit 1; fi\n'); update.chmod(0o755)
+            env=env|{"UPDATE_CRON":str(update),"SCHEDULE_PATH":str(schedule),"CRON_STATE":str(cron_state),"FAIL_ONCE":str(fail_once)}
+            cp=self.run_install(root/"pre",env)
+            self.assertNotEqual(cp.returncode,0); self.assertIn("SCHEDULER_RESTORED_AFTER_FAILURE",cp.stderr)
+            self.assertEqual(schedule.read_bytes(),old_schedule); self.assertEqual(cron_state.read_bytes(),old_schedule)
+
 
 if __name__ == "__main__": unittest.main()
