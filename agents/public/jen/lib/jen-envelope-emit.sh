@@ -10,6 +10,8 @@ jen_now_utc() {
 }
 
 jen_new_handoff_id() {
+  # Correlation metadata only. This helper does not deliver a file or message;
+  # interpersona escalation is performed by persona_rpc.ask.
   local boundary="${1:-jen-wrapper}"
   printf 'moss:%s:%s:%s\n' "$boundary" "$(date -u +%Y%m%dT%H%M%SZ)" "${RANDOM:-0}"
 }

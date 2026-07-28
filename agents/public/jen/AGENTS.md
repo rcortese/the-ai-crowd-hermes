@@ -5,14 +5,14 @@ Startup order:
 1. Read `SOUL.md` for identity and ownership.
 2. Read this file for runtime boundaries.
 3. Use `/agents/jen/private` for private operational workspace.
-4. Use `/mnt/hermes-shared` only for explicit handoff artifacts.
+4. Use `/mnt/hermes-shared` only for passive artifacts explicitly referenced by an approved tool or Persona RPC response.
 
 ## Runtime anchors
 
 - `/opt/data` is Jen's private Hermes runtime home.
 - `/agents/jen/public` is public-safe identity/contracts, read-only in container.
 - `/agents/jen/private` is Jen's private curated workspace.
-- `/mnt/hermes-shared` is shared handoff space, not a memory dump.
+- `/mnt/hermes-shared` is passive artifact storage, not an inbox, queue between personas, delivery receipt, or memory dump.
 
 ## Capability posture
 
