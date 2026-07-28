@@ -32,13 +32,26 @@ readonly PREIMAGE_ANCHOR="/proc/$$/fd/$preimage_fd"
 [[ "$(stat -Lc '%d:%i' "$USER_SCRIPTS_ROOT")" == "$(stat -Lc '%d:%i' "$USER_ANCHOR")" ]]
 [[ "$(stat -Lc '%d:%i' "$PREIMAGE_ROOT")" == "$(stat -Lc '%d:%i' "$PREIMAGE_ANCHOR")" ]]
 
-readonly SOURCE_WRAPPER="$STACK_ANCHOR/ops/runtime-backup-retention-wrapper.sh"
-readonly DEST_PARENT="$USER_ANCHOR/scripts"
+[[ -d "$STACK_ANCHOR/ops" && ! -L "$STACK_ANCHOR/ops" ]] || { echo 'ops_parent_missing_or_unsafe' >&2; exit 1; }
+exec {ops_fd}<"$STACK_ANCHOR/ops"
+readonly OPS_ANCHOR="/proc/$$/fd/$ops_fd"
+[[ ! -L "$STACK_ANCHOR/ops" && "$(stat -Lc '%d:%i' "$STACK_ANCHOR/ops")" == "$(stat -Lc '%d:%i' "$OPS_ANCHOR")" ]]
+[[ -d "$USER_ANCHOR/scripts" && ! -L "$USER_ANCHOR/scripts" ]] || { echo 'scripts_parent_missing_or_unsafe' >&2; exit 1; }
+exec {scripts_fd}<"$USER_ANCHOR/scripts"
+readonly SCRIPTS_ANCHOR="/proc/$$/fd/$scripts_fd"
+[[ ! -L "$USER_ANCHOR/scripts" && "$(stat -Lc '%d:%i' "$USER_ANCHOR/scripts")" == "$(stat -Lc '%d:%i' "$SCRIPTS_ANCHOR")" ]]
+if [[ "${ALLOW_TEST_RACE_HOOK:-0}" == 1 ]]; then
+ : "${TEST_RACE_DIR:?TEST_RACE_DIR required}"
+ : > "$TEST_RACE_DIR/scripts-opened"
+ while [[ ! -e "$TEST_RACE_DIR/continue" ]]; do sleep 0.01; done
+fi
+
+readonly SOURCE_WRAPPER="$OPS_ANCHOR/runtime-backup-retention-wrapper.sh"
+readonly DEST_PARENT="$SCRIPTS_ANCHOR"
 readonly DEST_DIR="$DEST_PARENT/runtime_backup_retention"
 readonly SCHEDULE="$USER_ANCHOR/schedule.json"
 readonly RUNTIME_SCHEDULE="$RUNTIME_ANCHOR/$(basename "$RUNTIME_SCHEDULE_LOGICAL")"
 readonly SCRIPT_KEY="$USER_SCRIPTS_ROOT/scripts/runtime_backup_retention/script"
-[[ -d "$DEST_PARENT" && ! -L "$DEST_PARENT" ]] || { echo 'scripts_parent_missing_or_unsafe' >&2; exit 1; }
 [[ -f "$SOURCE_WRAPPER" && ! -L "$SOURCE_WRAPPER" ]] || { echo 'source_wrapper_missing_or_unsafe' >&2; exit 1; }
 [[ -x "$DAILY_RUNNER" && -x "$UPDATE_CRON" ]] || { echo 'scheduler_runtime_missing' >&2; exit 1; }
 [[ ! -L "$DEST_DIR" && ! -L "$SCHEDULE" && ! -L "$RUNTIME_SCHEDULE" ]] || { echo 'scheduler_destination_symlink_rejected' >&2; exit 1; }
@@ -47,9 +60,11 @@ dest_dir_existed=false; [[ -d "$DEST_DIR" ]] && dest_dir_existed=true
 mkdir -m 0700 "$PREIMAGE_ANCHOR/scheduler"
 exec {pre_sched_fd}<"$PREIMAGE_ANCHOR/scheduler"
 readonly PREIMAGE_DIR="/proc/$$/fd/$pre_sched_fd"
+[[ ! -L "$PREIMAGE_ANCHOR/scheduler" && "$(stat -Lc '%d:%i' "$PREIMAGE_ANCHOR/scheduler")" == "$(stat -Lc '%d:%i' "$PREIMAGE_DIR")" ]]
 mkdir -p "$DEST_DIR"
 exec {dest_fd}<"$DEST_DIR"
 readonly DEST_ANCHOR="/proc/$$/fd/$dest_fd"
+[[ ! -L "$DEST_DIR" && "$(stat -Lc '%d:%i' "$DEST_DIR")" == "$(stat -Lc '%d:%i' "$DEST_ANCHOR")" ]]
 readonly DEST_SCRIPT="$DEST_ANCHOR/script"
 readonly DEST_NAME="$DEST_ANCHOR/name"
 [[ ! -L "$DEST_SCRIPT" && ! -L "$DEST_NAME" ]] || { echo 'scheduler_leaf_symlink_rejected' >&2; exit 1; }
@@ -113,6 +128,7 @@ mutated=1
 mv -f "$tmp_script" "$DEST_SCRIPT"; tmp_script=''; mv -f "$tmp_name" "$DEST_NAME"; tmp_name=''; mv -f "$tmp_schedule" "$SCHEDULE"; tmp_schedule=''; mv -f "$tmp_runtime" "$RUNTIME_SCHEDULE"; tmp_runtime=''
 sync -f "$DEST_SCRIPT"; sync -f "$DEST_NAME"; sync -f "$SCHEDULE"; sync -f "$RUNTIME_SCHEDULE"; sync -f "$DEST_ANCHOR"; sync -f "$USER_ANCHOR"
 if [[ "${ALLOW_TEST_FAILPOINT:-0}" == 1 && "${INSTALL_FAILPOINT:-}" == after_schedule ]]; then false; fi
+[[ ! -L "$USER_ANCHOR/scripts" && "$(stat -Lc '%d:%i' "$USER_ANCHOR/scripts")" == "$(stat -Lc '%d:%i' "$SCRIPTS_ANCHOR")" ]] || { echo 'scripts_parent_identity_changed' >&2; false; }
 "$UPDATE_CRON"
 cmp -s "$SCHEDULE" "$RUNTIME_SCHEDULE"
 jq -e --arg key "$SCRIPT_KEY" '.[$key].script==$key and .[$key].frequency=="daily" and .[$key].custom==""' "$SCHEDULE" >/dev/null
