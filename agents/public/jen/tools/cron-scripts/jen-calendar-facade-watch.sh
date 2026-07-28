@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+JEN_PUBLIC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=../../lib/jen-path-policy.sh
+source "$JEN_PUBLIC_ROOT/lib/jen-path-policy.sh"
 
 STATE_DIR="${JEN_CRON_STATE_DIR:-/opt/data/state/jen-cron}"
+STATE_DIR="$(jen_require_local_state_path "$STATE_DIR")"
 STATE_FILE="$STATE_DIR/calendar-facade-watch.json"
 REPEAT_SECONDS="${JEN_CALENDAR_FACADE_WATCH_REPEAT_SECONDS:-21600}"
 CALENDAR_RUNTIME_WRAPPER="${JEN_CALENDAR_RUNTIME_WRAPPER:-/agents/jen/public/tools/wrappers/jen-calendar-runtime}"

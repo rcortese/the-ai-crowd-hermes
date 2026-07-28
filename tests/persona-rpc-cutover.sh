@@ -116,4 +116,40 @@ if grep -nE '_TOKEN:' "$COMPOSE" | grep -v -F ': ${'; then
 fi
 echo "no_secret_literal_ok"
 
+# 7. The active public runtime contract must not reintroduce shared-storage
+# handoff semantics. Shared storage is permitted only for passive referenced
+# artifacts; Persona RPC remains the only interpersona request/response path.
+ACTIVE_CONTRACTS=(
+  agents/public/jen/AGENTS.md
+  agents/public/moss/AGENTS.md
+  agents/public/moss/contracts/operating-contract.md
+  docs/architecture/agent-container-model.md
+  docs/architecture/mounts-and-capabilities.md
+  docs/operations/private-mount-boundary.md
+  ops/policies/mount-policy.md
+  shared/README.md
+)
+if grep -nEi 'shared handoff|handoff space|handoff material' "${ACTIVE_CONTRACTS[@]}"; then
+  fail "shared-storage handoff semantics reintroduced in active contracts"
+fi
+if find shared -type f -perm /111 -print -quit | grep -q .; then
+  fail "shared/ must not publish executable transport or watcher files"
+fi
+mapfile -d '' ACTIVE_JEN_RUNTIME_FILES < <(
+  find agents/public/jen/bin agents/public/jen/lib agents/public/jen/tools/cron-scripts -type f -print0
+)
+if grep -nEi '/mnt/hermes-shared/handoffs|HANDOFF_(ROOT|MODE)|--handoff-file|handoff_file' "${ACTIVE_JEN_RUNTIME_FILES[@]}"; then
+  fail "active Jen executable retains shared-file handoff delivery"
+fi
+calendar_shared_path_error="$(mktemp)"
+if JEN_CRON_STATE_DIR=/mnt/hermes-shared/forbidden \
+  agents/public/jen/tools/cron-scripts/jen-calendar-auth-watch.sh >/dev/null 2>"$calendar_shared_path_error"; then
+  rm -f "$calendar_shared_path_error"
+  fail "calendar auth watch accepted shared state path"
+fi
+grep -q 'shared_state_path_forbidden' "$calendar_shared_path_error" \
+  || fail "calendar auth watch did not fail closed on shared state path"
+rm -f "$calendar_shared_path_error"
+echo "shared_transport_contract_absent_ok"
+
 echo "persona_rpc_cutover_ok"

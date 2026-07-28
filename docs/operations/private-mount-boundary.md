@@ -16,7 +16,7 @@ Inside an agent container, those planes are consumed as:
 /agents/<agent>/public   # read-only public contract
 /agents/<agent>/private  # read-write private workspace
 /opt/data                # read-write runtime home
-/mnt/hermes-shared       # shared handoff area
+/mnt/hermes-shared       # passive referenced artifacts; not interpersona transport
 ```
 
 ## Rule

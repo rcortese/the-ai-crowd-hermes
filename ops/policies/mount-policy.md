@@ -19,7 +19,7 @@ Default public Compose files must not mount:
 |---|---:|---:|---|
 | Public source | read-only | no | public scaffold inspection |
 | Agent home | read-write | no | per-agent runtime state |
-| Shared handoff | scoped | yes for writers | no secrets by default |
+| Shared artifacts | scoped | yes for approved writers | passive referenced artifacts only; no secrets or persona transport |
 | Project mount | opt-in | yes | explicit project and access mode |
 | Private repo | opt-in | yes | private deployment state |
 | SSH material | absent | yes | wrapper-only after review |

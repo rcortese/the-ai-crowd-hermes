@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+JEN_PUBLIC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=../../lib/jen-path-policy.sh
+source "$JEN_PUBLIC_ROOT/lib/jen-path-policy.sh"
 
 # Morning soft-due hygiene runner for Jen.
 # Scheduled operation applies bounded writes by default after Moss code review.
@@ -8,6 +11,7 @@ set -euo pipefail
 
 TZ_NAME="${JEN_MORNING_SOFT_DUE_TZ:-America/Sao_Paulo}"
 STATE_DIR="${JEN_MORNING_SOFT_DUE_STATE_DIR:-/opt/data/state/jen-cron/morning-soft-due-hygiene}"
+STATE_DIR="$(jen_require_local_state_path "$STATE_DIR")"
 ARCHIVE_DIR="$STATE_DIR/archive"
 WRAPPER="${JEN_MORNING_SOFT_DUE_WRAPPER:-/agents/jen/public/bin/jen-morning-due-adjust}"
 RETENTION_DAYS="${JEN_MORNING_SOFT_DUE_RETENTION_DAYS:-30}"
@@ -107,6 +111,7 @@ find "$ARCHIVE_DIR" -maxdepth 1 -type f -name '*.json' -mtime +"$RETENTION_DAYS"
 reanchor_recurring_from_packet() {
   local task_runtime="${JEN_MORNING_RECURRING_TASK_RUNTIME:-/agents/jen/public/bin/jen-task-runtime}"
   local recurring_state_dir="${JEN_MORNING_RECURRING_STATE_DIR:-/opt/data/state/jen-cron/morning-recurring-maintenance-reanchor}"
+  recurring_state_dir="$(jen_require_local_state_path "$recurring_state_dir")" || return 64
   local recurring_audit_dir="$recurring_state_dir/audit"
   local recurring_max="${JEN_MORNING_RECURRING_MAX_CANDIDATES:-25}"
   local recurring_packet="$recurring_state_dir/latest.json"

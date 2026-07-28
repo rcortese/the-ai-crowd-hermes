@@ -11,7 +11,7 @@ Each agent has:
 - a public contract mounted at `/agents/<agent>/public`;
 - a private workspace mounted at `/agents/<agent>/private`;
 - a runtime home mounted at `/opt/data`;
-- optional shared handoff material;
+- optional passive shared artifacts;
 - a tool/capability manifest describing intended powers.
 
 ## Current services
@@ -56,9 +56,9 @@ The private workspace is for curated private operational material. Runtime cache
 
 The runtime home is writable high-churn state mounted at `/opt/data`. Services run as the deployment checkout UID/GID by default so files written through bind mounts remain editable by the host operator.
 
-## Shared handoff mount
+## Shared artifact mount
 
-`state/shared/` is for explicit handoff artifacts that are safe for the configured agents. It is not a secret store and not a replacement for private state repositories.
+`state/shared/` is for passive artifacts that are safe for the configured agents and explicitly referenced by an approved workflow. It is not a secret store, inbox, queue, delivery receipt, interpersona transport, or replacement for private state repositories. Persona-to-persona requests use authenticated Persona RPC.
 
 ## High-impact access
 

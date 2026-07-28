@@ -4,10 +4,14 @@ set -euo pipefail
 CONTRACT_VERSION="jen-morning-due-adjust.v1"
 AUDIT_CONTRACT_VERSION="jen-morning-due-adjust.audit.v1"
 WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=../lib/jen-path-policy.sh
+source "$WORKSPACE_ROOT/lib/jen-path-policy.sh"
 SEMANTICS="${JEN_MORNING_DUE_ADJUST_SEMANTICS:-$WORKSPACE_ROOT/bin/jen-todoist-due-semantics}"
 TASK_RUNTIME="${JEN_MORNING_DUE_ADJUST_TASK_RUNTIME:-$WORKSPACE_ROOT/bin/jen-task-runtime}"
 AUDIT_DIR="${JEN_MORNING_DUE_ADJUST_AUDIT_DIR:-$WORKSPACE_ROOT/memory/morning-due-adjustments}"
 IDEMPOTENCY_DIR="${JEN_MORNING_DUE_ADJUST_IDEMPOTENCY_DIR:-$AUDIT_DIR/idempotency}"
+AUDIT_DIR="$(jen_require_local_state_path "$AUDIT_DIR")"
+IDEMPOTENCY_DIR="$(jen_require_local_state_path "$IDEMPOTENCY_DIR")"
 MAX_CANDIDATES="${JEN_MORNING_DUE_ADJUST_MAX_CANDIDATES:-25}"
 RUN_ID="${JEN_MORNING_DUE_ADJUST_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 

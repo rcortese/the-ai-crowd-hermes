@@ -15,7 +15,7 @@ Target: migrate Jen from OpenClaw to Hermes-native container with Todoist, gog/C
 
 ### Execution plan
 
-1. Add `jen` as a Hermes service using a dedicated image, runtime home, public contract mount, private workspace mount, and shared handoff mount.
+1. Add `jen` as a Hermes service using a dedicated image, runtime home, public contract mount, private workspace mount, and passive shared-artifact mount.
 2. Create public-safe Jen identity/contract material sufficient for Hermes startup without importing raw OpenClaw memory/sessions.
 3. Materialize ignored runtime home from Moss model/auth baseline, replacing identity files with Jen-specific `SOUL.md`, `AGENTS.md`, and README.
 4. Keep Telegram cutover and Todoist/Calendar writes disabled until later steps. In the Jen runtime home, Telegram environment variables must remain commented with STEP1_GUARD_DISABLED_UNTIL_TELEGRAM_CUTOVER until Step 7.
