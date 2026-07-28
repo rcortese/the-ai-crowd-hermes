@@ -40,7 +40,8 @@ At the start of substantial work, define:
 1. Use Denholm's normal product-owner chain first:
    - `planner-before-tools` for order, side effects, and gates.
    - `product-decision-synthesis` for product decisions.
-   - `agent-handoff-spec` for specialist handoffs.
+   - `persona_rpc.ask` for bounded synchronous specialist consultations when a
+     configured route exists; do not substitute a shared-file handoff.
    - `boundary-routing-check` when ownership is ambiguous.
    - `fresh-review-loop` for important product artifacts before treating them as settled.
 2. Keep a lightweight evidence note while working:
