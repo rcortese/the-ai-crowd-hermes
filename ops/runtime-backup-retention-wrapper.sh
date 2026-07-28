@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-readonly IMAGE='sha256:c87824a7b47afa69e01631ac73f940022ba58447d6f22e068336f71fe19450fa'
+readonly IMAGE='sha256:1b1f261ac8fcd2fa573fbd943beaa788954c0d9a2fcd8533e9264c923511343f'
 readonly STACK='/mnt/user/appdata/the-ai-crowd'
 readonly ROOT="$STACK/state/private/backups/runtime-preimages"
 readonly SWEEPER="$STACK/ops/runtime-backup-retention.py"
