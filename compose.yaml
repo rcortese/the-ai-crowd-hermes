@@ -290,6 +290,9 @@ services:
       ROY_VIVIANE_GOOGLE_BACKEND: gog
       ROY_VIVIANE_DRIVE_FOLDER_ID: ${ROY_VIVIANE_DRIVE_FOLDER_ID:-}
       ROY_VIVIANE_SHEET_ID: ${ROY_VIVIANE_SHEET_ID:-}
+      ROY_VIVIANE_DRIVE_FOLDER_ID_SHA256: e76a9fa04eb51f2dec1d140b8509427013bcf09b6392b0e6766d82a941ddba18
+      ROY_VIVIANE_SHEET_ID_SHA256: 6f3e308759c8ff8c7d99a8c0743a08a25b816a3f7456910a3267083a06a96711
+      ROY_FISCAL_ALLOWED_ROOTS: /opt/data/cache/documents:/opt/data/cache/images:/agents/roy/private:/transfer
       AGENT_NAME: roy
       AGENT_ROOT: /agents/roy
       AGENT_PRIVATE: /agents/roy/private
