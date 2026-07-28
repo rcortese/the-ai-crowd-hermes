@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 
 SCRIPT = Path(__file__).parents[1] / "runtime-backup-retention.py"
@@ -58,6 +60,30 @@ class RetentionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); op=self.make_set(root,"expired")
             cp=self.run_script(root,dry=True); self.assertEqual(cp.returncode,0); self.assertTrue(op.exists())
+
+    def test_duplicate_payload_name_rejected_before_any_unlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); op=self.make_set(root,"duplicate")
+            manifest=json.loads((op/"manifest.json").read_text()); manifest["payloads"].append(dict(manifest["payloads"][0]))
+            (op/"manifest.json").write_text(json.dumps(manifest))
+            cp=self.run_script(root); self.assertEqual(cp.returncode,0,cp.stderr)
+            self.assertTrue((op/"preimage.tar").exists()); self.assertIn("duplicate_payload_name",cp.stdout)
+
+    def test_operation_replacement_after_open_is_not_deleted(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); original=self.make_set(root,"expired"); race=root/"race"; race.mkdir()
+            env=os.environ|{"ALLOW_TEST_RACE_HOOK":"1","RETENTION_TEST_RACE_DIR":str(race)}
+            proc=subprocess.Popen(["python3",str(SCRIPT),"--root",str(root),"--now","1000"],env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            marker=race/"expired.opened"
+            for _ in range(500):
+                if marker.exists(): break
+                if proc.poll() is not None: break
+                time.sleep(0.01)
+            self.assertTrue(marker.exists())
+            held=root/"held"; original.rename(held); replacement=root/"expired"; replacement.mkdir(); (replacement/"sentinel").write_text("safe")
+            (race/"continue").write_text("1"); stdout,stderr=proc.communicate(timeout=10)
+            self.assertEqual(proc.returncode,0,stderr); self.assertTrue((replacement/"sentinel").exists()); self.assertTrue((held/"preimage.tar").exists())
+            self.assertIn("operation_identity_changed",stdout)
 
 
 if __name__ == "__main__": unittest.main()

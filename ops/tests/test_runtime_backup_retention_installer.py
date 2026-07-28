@@ -49,6 +49,14 @@ class InstallerTests(unittest.TestCase):
             for path,(data,mode) in before.items():
                 self.assertEqual(path.read_bytes(),data); self.assertEqual(path.stat().st_mode&0o777,mode)
 
+    def test_corrupt_preimage_blocks_restoration_before_overwrite(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); _,user,_,env=self.fixture(root)
+            dest=user/"scripts/runtime_backup_retention"; dest.mkdir(); script=dest/"script"; script.write_bytes(b"old-script")
+            cp=self.run_install(root/"pre",env,ALLOW_TEST_FAILPOINT="1",INSTALL_FAILPOINT="after_schedule",INSTALL_CORRUPT_PREIMAGE_LABEL="script")
+            self.assertEqual(cp.returncode,70); self.assertIn("SCHEDULER_RESTORATION_UNRESOLVED",cp.stderr)
+            self.assertNotEqual(script.read_bytes(),b"old-script")
+
     def test_symlink_destination_rejected_without_mutation(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); _,user,_,env=self.fixture(root)

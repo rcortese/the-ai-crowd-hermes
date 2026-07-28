@@ -70,6 +70,8 @@ def _eligible(op_name: str, op_fd: int, now: int) -> tuple[bool, list[str], str]
         expected_size = item.get("bytes")
         if not isinstance(name, str) or not isinstance(expected_hash, str) or len(expected_hash) != 64 or not isinstance(expected_size, int):
             raise ValueError("invalid_payload_metadata")
+        if name in expected_names:
+            raise ValueError("duplicate_payload_name")
         fd = _open_regular(op_fd, name)
         try:
             content = _read_all(fd)
@@ -119,11 +121,29 @@ def prune(root: Path, now: int, dry_run: bool) -> dict[str, object]:
                     if dry_run:
                         preserved.append({"operation_id": name, "reason": "dry_run_eligible"})
                         continue
+                    if os.getenv("ALLOW_TEST_RACE_HOOK") == "1":
+                        race_dir = Path(os.environ["RETENTION_TEST_RACE_DIR"])
+                        (race_dir / f"{name}.opened").write_text("1")
+                        while not (race_dir / "continue").exists():
+                            time.sleep(0.01)
+                    tomb_name = f".prune-{os.getpid()}-{name}"
+                    if tomb_name in os.listdir(root_fd):
+                        raise ValueError("prune_tombstone_collision")
+                    original_identity = (os.fstat(op_fd).st_dev, os.fstat(op_fd).st_ino)
+                    os.rename(name, tomb_name, src_dir_fd=root_fd, dst_dir_fd=root_fd)
+                    tomb_fd = os.open(tomb_name, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=root_fd)
+                    try:
+                        tomb_identity = (os.fstat(tomb_fd).st_dev, os.fstat(tomb_fd).st_ino)
+                    finally:
+                        os.close(tomb_fd)
+                    if tomb_identity != original_identity:
+                        os.rename(tomb_name, name, src_dir_fd=root_fd, dst_dir_fd=root_fd)
+                        raise ValueError("operation_identity_changed")
                     for payload_name in payload_names:
                         os.unlink(payload_name, dir_fd=op_fd)
                     os.unlink(MANIFEST, dir_fd=op_fd)
                     os.fsync(op_fd)
-                    os.rmdir(name, dir_fd=root_fd)
+                    os.rmdir(tomb_name, dir_fd=root_fd)
                     os.fsync(root_fd)
                     deleted.append({"operation_id": name, "manifest_sha256": detail})
                 except Exception as exc:  # fail closed per operation
