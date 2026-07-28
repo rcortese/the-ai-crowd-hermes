@@ -1,38 +1,28 @@
 name: the-ai-crowd
-x-hermes-env:
+# Hermes images enter through s6/supervisord as root and drop their managed
+# application processes to HERMES_UID:HERMES_GID. Do not change the Compose
+# user to the runtime UID: s6 needs root to set supplementary groups.
+x-hermes-runtime: &hermes-runtime
+  restart: always
+  user: "0:0"
+x-hermes-runtime-env: &hermes-runtime-env
   TZ: ${TZ:-UTC}
   HERMES_UID: 99
   HERMES_GID: 100
   HOME: /opt/data
   PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
-x-hermes-llm-env-files:
-- ./env/fleet.env
-x-hermes-common:
-  restart: always
-  user: 99:100
-  environment:
-    TZ: ${TZ:-UTC}
-    HERMES_UID: 99
-    HERMES_GID: 100
-    HOME: /opt/data
-  networks: &id001
+x-hermes-internal-networks: &hermes-internal-networks
   - internal
-x-openai-codex-auth-home: /mnt/hermes-auth-shared
-x-openai-codex-auth-volume: ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+x-hermes-fleet-env-file: &hermes-fleet-env-file ./env/fleet.env
 services:
   moss:
-    restart: always
-    user: 0:0
+    <<: *hermes-runtime
     environment:
+      <<: *hermes-runtime-env
       HERMES_KANBAN_DISPATCH_OWNER: "moss"
       # Required by the all-in-one supervisor interpolation. Keep unowned
       # boards fail-closed even though this Kanban root is now Moss-local.
       HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
-      TZ: ${TZ:-UTC}
-      HERMES_UID: 99
-      HERMES_GID: 100
-      HOME: /opt/data
-      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
       HERMES_KANBAN_HOME: /opt/data
       HERMES_KANBAN_DISPATCH_IN_GATEWAY: 'true'
       HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/moss/private:/tmp
@@ -105,7 +95,7 @@ services:
         - hermes
       local_llm: null
     env_file:
-    - ./env/fleet.env
+    - *hermes-fleet-env-file
     - ./env/moss-webui.env
     image: ${MOSS_IMAGE_REF:?set MOSS_IMAGE_REF to the approved immutable Moss image ID}
     working_dir: /agents/moss/private
@@ -133,14 +123,9 @@ services:
       retries: 10
       start_period: 90s
   jen:
-    restart: always
-    user: 0:0
+    <<: *hermes-runtime
     environment:
-      TZ: ${TZ:-UTC}
-      HERMES_UID: 99
-      HERMES_GID: 100
-      HOME: /opt/data
-      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      <<: *hermes-runtime-env
       AGENT_NAME: jen
       AGENT_ROOT: /agents/jen
       AGENT_PUBLIC: /agents/jen/public
@@ -171,9 +156,9 @@ services:
       ANTHROPIC_TOKEN: ${JEN_ANTHROPIC_TOKEN:-}
       PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_JEN_PERSONA_TOKEN:-}
       PERSONA_TARGET_MOSS_TOKEN: ${JEN_TO_MOSS_PERSONA_TOKEN:-}
-    networks: *id001
+    networks: *hermes-internal-networks
     env_file:
-    - ./env/fleet.env
+    - *hermes-fleet-env-file
 
     image: ${JEN_IMAGE_REF:?set JEN_IMAGE_REF to the approved immutable Jen image ID}
     working_dir: /agents/jen/private
@@ -196,14 +181,9 @@ services:
       retries: 10
       start_period: 60s
   denholm:
-    restart: always
-    user: 0:0
+    <<: *hermes-runtime
     environment:
-      TZ: ${TZ:-UTC}
-      HERMES_UID: 99
-      HERMES_GID: 100
-      HOME: /opt/data
-      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      <<: *hermes-runtime-env
       AGENT_NAME: denholm
       AGENT_ROOT: /agents/denholm
       AGENT_PUBLIC: /agents/denholm/public
@@ -225,9 +205,9 @@ services:
       ANTHROPIC_TOKEN: ${DENHOLM_ANTHROPIC_TOKEN:-}
       PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_DENHOLM_PERSONA_TOKEN:-}
       PERSONA_TARGET_MOSS_TOKEN: ${DENHOLM_TO_MOSS_PERSONA_TOKEN:-}
-    networks: *id001
+    networks: *hermes-internal-networks
     env_file:
-    - ./env/fleet.env
+    - *hermes-fleet-env-file
 
     image: ${DENHOLM_IMAGE_REF:?set DENHOLM_IMAGE_REF to the approved immutable Denholm image ID}
     working_dir: /agents/denholm/private
@@ -250,14 +230,9 @@ services:
       retries: 10
       start_period: 60s
   roy:
-    restart: always
-    user: 0:0
+    <<: *hermes-runtime
     environment:
-      TZ: ${TZ:-UTC}
-      HERMES_UID: 99
-      HERMES_GID: 100
-      HOME: /opt/data
-      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      <<: *hermes-runtime-env
       HERMES_HOME: /opt/data
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/roy/private:/transfer
@@ -306,7 +281,7 @@ services:
         aliases:
         - roy
     env_file:
-    - ./env/fleet.env
+    - *hermes-fleet-env-file
     - ./env/roy.env
     image: ${ROY_IMAGE_REF:?set ROY_IMAGE_REF to the approved immutable Roy image ID}
     working_dir: /agents/roy/private
@@ -332,14 +307,9 @@ services:
       retries: 10
       start_period: 90s
   richmond:
-    restart: always
-    user: 0:0
+    <<: *hermes-runtime
     environment:
-      TZ: ${TZ:-UTC}
-      HERMES_UID: 99
-      HERMES_GID: 100
-      HOME: /opt/data
-      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      <<: *hermes-runtime-env
       HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/richmond/private:/mnt/hermes-shared/richmond
       AGENT_NAME: richmond
       AGENT_ROOT: /agents/richmond
@@ -357,9 +327,9 @@ services:
       RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
       PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_RICHMOND_PERSONA_TOKEN:-}
       PERSONA_TARGET_MOSS_TOKEN: ${RICHMOND_TO_MOSS_PERSONA_TOKEN:-}
-    networks: *id001
+    networks: *hermes-internal-networks
     env_file:
-    - ./env/fleet.env
+    - *hermes-fleet-env-file
 
     image: ${RICHMOND_IMAGE_REF:?set RICHMOND_IMAGE_REF to the approved immutable Richmond image ID}
     working_dir: /agents/richmond/private
@@ -382,14 +352,9 @@ services:
       retries: 10
       start_period: 60s
   the-elders:
-    restart: always
-    user: 0:0
+    <<: *hermes-runtime
     environment:
-      TZ: ${TZ:-UTC}
-      HERMES_UID: 99
-      HERMES_GID: 100
-      HOME: /opt/data
-      PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+      <<: *hermes-runtime-env
       AGENT_NAME: the-elders
       AGENT_ROOT: /agents/the-elders
       AGENT_PUBLIC: /agents/the-elders/public
@@ -406,9 +371,9 @@ services:
       RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
       PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_THE_ELDERS_PERSONA_TOKEN:-}
       PERSONA_TARGET_MOSS_TOKEN: ${THE_ELDERS_TO_MOSS_PERSONA_TOKEN:-}
-    networks: *id001
+    networks: *hermes-internal-networks
     env_file:
-    - ./env/fleet.env
+    - *hermes-fleet-env-file
 
     image: ${THE_ELDERS_IMAGE_REF:?set THE_ELDERS_IMAGE_REF to the approved immutable The Elders image ID}
     working_dir: /agents/the-elders/private
