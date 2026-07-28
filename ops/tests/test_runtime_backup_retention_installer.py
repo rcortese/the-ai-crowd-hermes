@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 
 INSTALLER = Path(__file__).parents[1] / "install-runtime-backup-retention.sh"
@@ -77,6 +78,23 @@ class InstallerTests(unittest.TestCase):
             cp=self.run_install(root/"pre",env)
             self.assertNotEqual(cp.returncode,0); self.assertIn("SCHEDULER_RESTORED_AFTER_FAILURE",cp.stderr)
             self.assertEqual(schedule.read_bytes(),old_schedule); self.assertEqual(cron_state.read_bytes(),old_schedule)
+
+    def test_scripts_replacement_after_descriptor_open_is_confined_and_rolled_back(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); _,user,_,env=self.fixture(root); pre=root/"pre"; pre.mkdir(); race=root/"race"; race.mkdir()
+            env=env|{"ALLOW_TEST_RACE_HOOK":"1","TEST_RACE_DIR":str(race)}
+            proc=subprocess.Popen([str(INSTALLER),str(pre)],env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            marker=race/"scripts-opened"
+            for _ in range(500):
+                if marker.exists(): break
+                if proc.poll() is not None: break
+                time.sleep(0.01)
+            self.assertTrue(marker.exists())
+            scripts=user/"scripts"; held=user/"scripts-held"; outside=root/"outside"; outside.mkdir()
+            scripts.rename(held); scripts.symlink_to(outside,target_is_directory=True); (race/"continue").write_text("1")
+            stdout,stderr=proc.communicate(timeout=10)
+            self.assertNotEqual(proc.returncode,0); self.assertIn("scripts_parent_identity_changed",stderr)
+            self.assertEqual(list(outside.iterdir()),[]); self.assertEqual(list(held.iterdir()),[])
 
 
 if __name__ == "__main__": unittest.main()
