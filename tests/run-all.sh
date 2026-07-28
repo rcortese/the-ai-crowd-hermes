@@ -19,6 +19,7 @@ run /opt/hermes/.venv/bin/python ops/tests/test_moss_candidate_build_contract.py
 run /opt/hermes/.venv/bin/python ops/tests/test_persona_toolset_runtime_materializer.py
 run /opt/hermes/.venv/bin/python ops/tests/test_persona_api_materializer.py
 run /opt/hermes/.venv/bin/python ops/tests/test_persona_rpc_docs_contract.py
+run /opt/hermes/.venv/bin/python tests/protocol/test_no_alternative_a2a.py
 run tests/persona-rpc-cutover.sh
 run tests/health-check.sh
 run tests/drift-detection.sh
