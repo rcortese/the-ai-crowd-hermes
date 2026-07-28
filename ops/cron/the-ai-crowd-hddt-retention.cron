@@ -1,0 +1,1 @@
+17 * * * * /usr/bin/flock -n /mnt/ssd/appdata/the-ai-crowd-hddt/state/retention-scheduler.lock /mnt/ssd/appdata/the-ai-crowd-hddt/bin/hddt-moss.sh prune >/dev/null 2>&1

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+fail() { printf 'binding-tests: RED %s\n' "$*" >&2; exit 1; }
 
 script=$(realpath "${1:-ops/scripts/validate-moss-release-binding.sh}")
 tmp=$(mktemp -d)
@@ -49,7 +50,7 @@ output=$(PATH="$bin:$PATH" FAKE_ENV_FILE="$tmp/wrong.env" bash "$script" \
   --expected-image-ref "$candidate" --expected-rollback-image-ref "$rollback" 2>&1)
 rc=$?
 set -e
-[[ $rc -eq 65 && "$output" == *'does not bind the expected candidate'* ]]
+[[ $rc -eq 65 && "$output" == *'does not bind the expected candidate'* ]] || fail candidate-selector-accepted
 
 set +e
 output=$(PATH="$bin:$PATH" FAKE_ENV_FILE="$tmp/release.env" FAKE_MISSING_IMAGE="$rollback" bash "$script" \
