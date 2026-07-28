@@ -90,10 +90,21 @@ jq -Rn --argjson dest_dir_existed "$dest_dir_existed" '[inputs|split("\t")|{labe
 chmod 0600 "$state_file"; sync -f "$PREIMAGE_DIR"; sync -f "$PREIMAGE_ANCHOR"
 
 mutated=0; restoring=0; tmp_script=''; tmp_name=''; tmp_schedule=''; tmp_runtime=''
+verify_preimages() {
+  local label state _logical _mode expected_hash expected_size source
+  while IFS=$'\t' read -r label state _logical _mode expected_hash expected_size; do
+    [[ "$state" == present ]] || continue
+    source="$PREIMAGE_DIR/$label"
+    [[ -f "$source" && ! -L "$source" && "$(stat -c %a "$source")" == 600 ]] || return 1
+    [[ "$(stat -c %s "$source")" == "$expected_size" ]] || return 1
+    [[ "$(sha256sum "$source" | cut -d' ' -f1)" == "$expected_hash" ]] || return 1
+  done < "$records"
+}
 restore_preimage() {
   restoring=1
-  local label state _logical mode _rest target tmp
-  while IFS=$'\t' read -r label state _logical mode _rest; do
+  verify_preimages || return 1
+  local label state _logical mode _hash _size target tmp
+  while IFS=$'\t' read -r label state _logical mode _hash _size; do
     target=$(anchored_target "$label")
     [[ ! -L "$target" ]] || return 1
     if [[ "$state" == present ]]; then
@@ -127,7 +138,10 @@ install -m 0644 "$tmp_schedule" "$tmp_runtime"
 mutated=1
 mv -f "$tmp_script" "$DEST_SCRIPT"; tmp_script=''; mv -f "$tmp_name" "$DEST_NAME"; tmp_name=''; mv -f "$tmp_schedule" "$SCHEDULE"; tmp_schedule=''; mv -f "$tmp_runtime" "$RUNTIME_SCHEDULE"; tmp_runtime=''
 sync -f "$DEST_SCRIPT"; sync -f "$DEST_NAME"; sync -f "$SCHEDULE"; sync -f "$RUNTIME_SCHEDULE"; sync -f "$DEST_ANCHOR"; sync -f "$USER_ANCHOR"
-if [[ "${ALLOW_TEST_FAILPOINT:-0}" == 1 && "${INSTALL_FAILPOINT:-}" == after_schedule ]]; then false; fi
+if [[ "${ALLOW_TEST_FAILPOINT:-0}" == 1 && "${INSTALL_FAILPOINT:-}" == after_schedule ]]; then
+  if [[ -n "${INSTALL_CORRUPT_PREIMAGE_LABEL:-}" ]]; then printf 'corrupt' > "$PREIMAGE_DIR/$INSTALL_CORRUPT_PREIMAGE_LABEL"; fi
+  false
+fi
 [[ ! -L "$USER_ANCHOR/scripts" && "$(stat -Lc '%d:%i' "$USER_ANCHOR/scripts")" == "$(stat -Lc '%d:%i' "$SCRIPTS_ANCHOR")" ]] || { echo 'scripts_parent_identity_changed' >&2; false; }
 "$UPDATE_CRON"
 cmp -s "$SCHEDULE" "$RUNTIME_SCHEDULE"
