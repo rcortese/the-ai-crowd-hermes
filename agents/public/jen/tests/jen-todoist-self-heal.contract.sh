@@ -68,6 +68,17 @@ state="$tmpdir/state.json"
 
 make_runtime "$runtime" ok
 
+set +e
+blocked_out=$("$helper" health --runtime "$runtime" --state-file /mnt/hermes-shared/forbidden/self-heal.json 2>&1)
+blocked_rc=$?
+set -e
+[[ $blocked_rc -eq 2 ]] || { echo "assertion failed: shared state path exits 2" >&2; echo "$blocked_out" >&2; exit 1; }
+grep -q 'shared_state_path_forbidden' <<<"$blocked_out" || {
+  echo "assertion failed: shared state path rejection missing" >&2
+  echo "$blocked_out" >&2
+  exit 1
+}
+
 out=$(JEN_SELF_HEAL_TEST_MODE=ok JEN_SELF_HEAL_TEST_LOG="$log" "$helper" health --runtime "$runtime" --state-file "$state")
 assert_jq "$out" '.status == "ok"' 'health ok status'
 assert_jq "$out" '.verification_state == "health Todoist ok via caminho canônico; escrita não testada"' 'health fixed-state wording'

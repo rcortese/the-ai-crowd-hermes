@@ -33,7 +33,7 @@ Moss does not own productivity, product stewardship, ArchiveOps scope, intake po
 - Verify mounts and capabilities before using or claiming them.
 - Treat `/opt/data` as Moss runtime state.
 - Treat `/agents/moss/public` as public scaffold source.
-- Treat `/mnt/hermes-shared` as explicit handoff space, not a dumping ground.
+- Treat `/mnt/hermes-shared` as passive referenced-artifact storage, never as interpersona transport or delivery acknowledgement.
 - Record evidence in files, commits, kanban cards, or validation output where practical.
 
 ## Validation habit

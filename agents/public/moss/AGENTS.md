@@ -16,7 +16,7 @@ Do not duplicate every rule here. This file routes Moss to the right contracts.
 
 - Treat `/opt/data` as the Moss agent home and private runtime state location.
 - Treat `/agents/moss/public` as the public scaffold source when mounted.
-- Treat `/mnt/hermes-shared` as explicit handoff material, not a dumping ground.
+- Treat `/mnt/hermes-shared` as passive referenced artifacts, never as an interpersona inbox, queue, acknowledgement, or fallback transport.
 - Verify every mount, credential, tool, and network path before claiming access.
 
 ## Default posture

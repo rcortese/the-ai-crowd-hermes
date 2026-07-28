@@ -4,11 +4,15 @@ set -euo pipefail
 CONTRACT_VERSION="jen-task-runtime.v1"
 AUTHORITY="workspace-todoist-adapter"
 WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=../lib/jen-path-policy.sh
+source "$WORKSPACE_ROOT/lib/jen-path-policy.sh"
 STATE_FILE="${JEN_TASK_RUNTIME_STATE_FILE:-/opt/data/state/jen/heartbeat-state.json}"
 TODOIST_SCRIPT="${JEN_TASK_RUNTIME_TODOIST_SCRIPT:-$WORKSPACE_ROOT/tools/todoist/todoist-api.sh}"
 TODOIST_ENV_FILE="${TODOIST_ENV_FILE:-/opt/data/.env}"
 MUTATION_HELPER="${JEN_TASK_RUNTIME_MUTATION_HELPER:-$WORKSPACE_ROOT/bin/jen-mutation-runtime-helper}"
 OBSERVATION_STATE_FILE="${JEN_TODOIST_OBSERVATION_STATE_FILE:-/opt/data/state/jen/todoist-observation-snapshot.json}"
+STATE_FILE="$(jen_require_local_state_path "$STATE_FILE")"
+OBSERVATION_STATE_FILE="$(jen_require_local_state_path "$OBSERVATION_STATE_FILE")"
 
 now_utc() {
   if [[ -n "${JEN_TASK_RUNTIME_NOW_UTC:-}" ]]; then

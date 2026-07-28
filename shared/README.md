@@ -1,5 +1,5 @@
 # Shared Hermes material
 
-Shared, non-secret handoff material for Hermes agents.
+Shared, non-secret passive artifacts for approved workflows.
 
-Do not place credentials, raw private chat exports, or broad archive dumps here. Prefer scoped packets and explicit handoff files.
+Do not place credentials, raw private chat exports, broad archive dumps, persona inboxes, delivery acknowledgements, or interpersona queues here. Persona requests and responses use authenticated Persona RPC. Store only bounded artifacts that an approved workflow references explicitly.

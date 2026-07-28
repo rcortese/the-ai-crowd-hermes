@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
+JEN_PUBLIC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=../../lib/jen-path-policy.sh
+source "$JEN_PUBLIC_ROOT/lib/jen-path-policy.sh"
 
 CONTRACT_VERSION="jen-morning-recurring-maintenance-reanchor.v2"
 TZ_NAME="${JEN_MORNING_RECURRING_TZ:-America/Sao_Paulo}"
 LOOKBACK_DAYS="${JEN_MORNING_RECURRING_LOOKBACK_DAYS:-14}"
 MAX_CANDIDATES="${JEN_MORNING_RECURRING_MAX_CANDIDATES:-25}"
 STATE_DIR="${JEN_MORNING_RECURRING_STATE_DIR:-/opt/data/state/jen-cron/morning-recurring-maintenance-reanchor}"
+STATE_DIR="$(jen_require_local_state_path "$STATE_DIR")"
 AUDIT_DIR="$STATE_DIR/audit"
 SEMANTICS="${JEN_MORNING_RECURRING_SEMANTICS:-/agents/jen/public/bin/jen-todoist-due-semantics}"
 TASK_RUNTIME="${JEN_MORNING_RECURRING_TASK_RUNTIME:-/agents/jen/public/bin/jen-task-runtime}"

@@ -3,7 +3,8 @@
 
 This helper intentionally talks to Todoist only through Jen's canonical
 `bin/jen-task-runtime` boundary. It performs read-only probes, bounded retries
-for transient failures, emits sanitized Moss handoff payloads when unresolved,
+for transient failures, emits sanitized escalation metadata for the caller to
+route through Persona RPC when unresolved,
 and records durable verification state only after canonical verification.
 """
 from __future__ import annotations
@@ -20,6 +21,9 @@ from pathlib import Path
 from typing import Any
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(WORKSPACE_ROOT / "lib"))
+from jen_path_policy import require_local_state_path
+
 DEFAULT_RUNTIME = WORKSPACE_ROOT / "bin" / "jen-task-runtime"
 DEFAULT_STATE_FILE = WORKSPACE_ROOT / ".local" / "state" / "todoist-self-heal-verification.json"
 CONTRACT_VERSION = "jen-todoist-self-heal.v1"
@@ -235,6 +239,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--since", default="", help="RFC3339 since for read-recent-completed; optional.")
     parser.add_argument("--until", default="", help="RFC3339 until for read-recent-completed; optional.")
     args = parser.parse_args(argv)
+    try:
+        args.state_file = str(require_local_state_path(args.state_file))
+    except ValueError as exc:
+        parser.error(str(exc))
     args.max_retries = max(0, min(args.max_retries, 3))
     return args
 

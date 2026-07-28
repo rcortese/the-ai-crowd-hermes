@@ -9,7 +9,7 @@ Capabilities are explicit. A container does not receive host power just because 
 | Public contract | `/agents/moss/public` | read-only | tracked public agent contract |
 | Private workspace | `/agents/moss/private` | read-write | ignored private operational workspace |
 | Agent runtime home | `/opt/data` | read-write | caches, generated state, runtime home |
-| Shared handoff | `/mnt/hermes-shared` | scoped | handoff artifacts, not secrets |
+| Shared artifacts | `/mnt/hermes-shared` | scoped | passive referenced artifacts; never interpersona transport |
 | Project mount | `/workspace/projects/<name>` | opt-in | explicit named workspaces |
 | SSH material | `/run/secrets/ssh` | absent | wrapper-only after review |
 | Docker control | remote wrapper or socket | absent | prefer wrappers; socket last |

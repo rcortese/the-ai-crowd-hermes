@@ -11,6 +11,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(WORKSPACE_ROOT / "lib"))
+from jen_path_policy import require_local_state_path
+
 CONTRACT_VERSION = "jen-idempotency-store.v0"
 DEFAULT_DIR = Path(os.environ.get("JEN_IDEMPOTENCY_DIR", "/opt/data/state/jen/idempotency"))
 
@@ -201,6 +205,10 @@ def main(argv: list[str]) -> int:
     check.set_defaults(func=cmd_check)
 
     args = parser.parse_args(argv)
+    try:
+        args.dir = str(require_local_state_path(args.dir))
+    except ValueError as exc:
+        parser.error(str(exc))
     return args.func(args)
 
 
