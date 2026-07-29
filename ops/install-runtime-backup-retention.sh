@@ -2,11 +2,13 @@
 set -euo pipefail
 
 readonly STACK_ROOT="${STACK_ROOT:-/mnt/user/appdata/the-ai-crowd}"
+readonly STACK_ROOT_CANONICAL="${STACK_ROOT_CANONICAL:-$STACK_ROOT}"
 readonly USER_SCRIPTS_ROOT="${USER_SCRIPTS_ROOT:-/boot/config/plugins/user.scripts}"
 readonly RUNTIME_SCHEDULE_LOGICAL="${RUNTIME_SCHEDULE:-/tmp/user.scripts/schedule.json}"
 readonly DAILY_RUNNER="${DAILY_RUNNER:-/etc/cron.daily/user.script.start.daily.sh}"
 readonly UPDATE_CRON="${UPDATE_CRON:-/usr/local/sbin/update_cron}"
 readonly PREIMAGE_ROOT="${1:?usage: install-runtime-backup-retention.sh PREIMAGE_ROOT}"
+readonly PREIMAGE_ROOT_CANONICAL="${PREIMAGE_ROOT_CANONICAL:-$PREIMAGE_ROOT}"
 
 assert_safe_chain() {
   local path="$1" current=''
@@ -19,11 +21,19 @@ assert_safe_chain() {
     [[ -e "$current" ]] || break
   done
 }
-assert_safe_chain "$STACK_ROOT"; assert_safe_chain "$USER_SCRIPTS_ROOT"; assert_safe_chain "$RUNTIME_SCHEDULE_LOGICAL"; assert_safe_chain "$PREIMAGE_ROOT"
-[[ -d "$STACK_ROOT" && -d "$USER_SCRIPTS_ROOT" && -d "$PREIMAGE_ROOT" ]] || { echo 'required_root_missing' >&2; exit 1; }
+assert_safe_chain "$STACK_ROOT_CANONICAL"; assert_safe_chain "$USER_SCRIPTS_ROOT"; assert_safe_chain "$RUNTIME_SCHEDULE_LOGICAL"
+[[ -d "$STACK_ROOT" && -d "$STACK_ROOT_CANONICAL" && -d "$USER_SCRIPTS_ROOT" && -d "$PREIMAGE_ROOT" ]] || { echo 'required_root_missing' >&2; exit 1; }
+[[ "$STACK_ROOT_CANONICAL" == "$(readlink -f "$STACK_ROOT_CANONICAL")" ]] || { echo 'canonical_stack_root_not_canonical' >&2; exit 1; }
+[[ "$(readlink -f "$STACK_ROOT")" == "$STACK_ROOT_CANONICAL" ]] || { echo 'stack_root_canonical_mismatch' >&2; exit 1; }
+[[ "$(stat -Lc '%d:%i' "$STACK_ROOT")" == "$(stat -Lc '%d:%i' "$STACK_ROOT_CANONICAL")" ]] || { echo 'stack_root_identity_mismatch' >&2; exit 1; }
+assert_safe_chain "$PREIMAGE_ROOT_CANONICAL"
+[[ -d "$PREIMAGE_ROOT_CANONICAL" ]] || { echo 'canonical_preimage_root_missing' >&2; exit 1; }
+[[ "$PREIMAGE_ROOT_CANONICAL" == "$(readlink -f "$PREIMAGE_ROOT_CANONICAL")" ]] || { echo 'canonical_preimage_root_not_canonical' >&2; exit 1; }
+[[ "$(readlink -f "$PREIMAGE_ROOT")" == "$PREIMAGE_ROOT_CANONICAL" ]] || { echo 'preimage_canonical_mismatch' >&2; exit 1; }
+[[ "$(stat -Lc '%d:%i' "$PREIMAGE_ROOT")" == "$(stat -Lc '%d:%i' "$PREIMAGE_ROOT_CANONICAL")" ]] || { echo 'preimage_identity_mismatch' >&2; exit 1; }
 runtime_parent_logical=$(dirname "$RUNTIME_SCHEDULE_LOGICAL")
 [[ -d "$runtime_parent_logical" ]] || { echo 'runtime_schedule_parent_missing' >&2; exit 1; }
-exec {stack_fd}<"$STACK_ROOT"; exec {user_fd}<"$USER_SCRIPTS_ROOT"; exec {runtime_fd}<"$runtime_parent_logical"; exec {preimage_fd}<"$PREIMAGE_ROOT"
+exec {stack_fd}<"$STACK_ROOT_CANONICAL"; exec {user_fd}<"$USER_SCRIPTS_ROOT"; exec {runtime_fd}<"$runtime_parent_logical"; exec {preimage_fd}<"$PREIMAGE_ROOT_CANONICAL"
 readonly STACK_ANCHOR="/proc/$$/fd/$stack_fd"
 readonly USER_ANCHOR="/proc/$$/fd/$user_fd"
 readonly RUNTIME_ANCHOR="/proc/$$/fd/$runtime_fd"

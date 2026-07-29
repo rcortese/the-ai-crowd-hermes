@@ -37,6 +37,30 @@ class InstallerTests(unittest.TestCase):
             second=self.run_install(root/"pre2",env); self.assertEqual(second.returncode,0,second.stderr)
             self.assertEqual(schedule.read_bytes(),runtime.read_bytes())
 
+    def test_explicit_canonical_stack_alias_is_accepted_and_identity_bound(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); stack,user,runtime,env=self.fixture(root)
+            canonical=root/"stack-canonical"; stack.rename(canonical)
+            stack.symlink_to(canonical,target_is_directory=True)
+            env=env|{"STACK_ROOT":str(stack),"STACK_ROOT_CANONICAL":str(canonical),"PREIMAGE_ROOT_CANONICAL":str(canonical/"pre")}
+            cp=self.run_install(stack/"pre",env)
+            self.assertEqual(cp.returncode,0,cp.stderr)
+            key=str(user/"scripts/runtime_backup_retention/script")
+            self.assertEqual(json.loads((user/"schedule.json").read_text())[key]["frequency"],"daily")
+            self.assertEqual((user/"schedule.json").read_bytes(),runtime.read_bytes())
+
+    def test_canonical_stack_alias_mismatch_is_rejected_without_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); stack,user,_,env=self.fixture(root)
+            canonical=root/"stack-canonical"; stack.rename(canonical)
+            stack.symlink_to(canonical,target_is_directory=True)
+            wrong=root/"wrong"; (wrong/"ops").mkdir(parents=True)
+            env=env|{"STACK_ROOT":str(stack),"STACK_ROOT_CANONICAL":str(wrong)}
+            cp=self.run_install(stack/"pre",env)
+            self.assertNotEqual(cp.returncode,0)
+            self.assertIn("stack_root_canonical_mismatch",cp.stderr)
+            self.assertEqual(list((user/"scripts").iterdir()),[])
+
     def test_post_mutation_failure_restores_conflicting_preimages(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); _,user,runtime,env=self.fixture(root)
