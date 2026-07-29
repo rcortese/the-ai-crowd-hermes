@@ -315,6 +315,7 @@ services:
     - /tmp:exec,nosuid,size=1g
     - /run:exec
     volumes:
+    - ./agents/private/roy-v3:/opt/personal-assistant:ro
     - ./runtime/roy-v3-home:/opt/data
     - ./state/private/roy-v3-workspace:/agents/roy/private:rw
     - ${ROY_TRANSFER_ROOT:-./state/private/roy-transfer}:/transfer:rw

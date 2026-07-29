@@ -36,6 +36,7 @@ class MinimalReleaseComposeTests(unittest.TestCase):
 
     def test_roy_mounts_only_v3_and_selected_shared_roots(self):
         block = service_block("roy")
+        self.assertIn("./agents/private/roy-v3:/opt/personal-assistant:ro", block)
         self.assertIn("./runtime/roy-v3-home:/opt/data", block)
         self.assertIn("./state/private/roy-v3-workspace:/agents/roy/private:rw", block)
         self.assertIn("./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared:ro", block)
