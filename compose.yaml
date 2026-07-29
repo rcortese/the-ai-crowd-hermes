@@ -282,18 +282,6 @@ services:
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       HERMES_DISABLE_LAZY_INSTALLS: '1'
       HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/roy/private:/transfer
-      GOG_HOME: /opt/data/gog
-      GOG_KEYRING_BACKEND: file
-      GOG_CLIENT: roy-google
-      ROY_GOG_ACCOUNT: ''
-      ROY_GOOGLE_WORKSPACE_ACCOUNT: ${ROY_GOOGLE_WORKSPACE_ACCOUNT:-}
-      ROY_VIVIANE_GOOGLE_BACKEND: gog
-      ROY_VIVIANE_DRIVE_FOLDER_ID: ${ROY_VIVIANE_DRIVE_FOLDER_ID:-}
-      ROY_VIVIANE_SHEET_ID: ${ROY_VIVIANE_SHEET_ID:-}
-      ROY_VIVIANE_DRIVE_FOLDER_ID_SHA256: e76a9fa04eb51f2dec1d140b8509427013bcf09b6392b0e6766d82a941ddba18
-      ROY_VIVIANE_SHEET_ID_SHA256: 6f3e308759c8ff8c7d99a8c0743a08a25b816a3f7456910a3267083a06a96711
-      ROY_FISCAL_STRICT: '1'
-      ROY_FISCAL_ALLOWED_ROOTS: /opt/data/cache/documents:/opt/data/cache/images:/agents/roy/private:/transfer
       AGENT_NAME: roy
       AGENT_ROOT: /agents/roy
       AGENT_PRIVATE: /agents/roy/private
@@ -313,18 +301,13 @@ services:
       ROY_DELIVERY_TRANSFER_DIR: /transfer
       ROY_DELIVERY_WORKSPACE_ROOT: /agents/roy/private
       ROY_DELIVERY_WEBUI_BASE_URL: https://roy.rodolflix.com
-      TELEGRAM_BOT_TOKEN: ${ROY_TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_ALLOWED_USERS: ${ROY_TELEGRAM_ALLOWED_USERS:-}
-      TELEGRAM_HOME_CHANNEL: ${ROY_TELEGRAM_HOME_CHANNEL:-}
-      TELEGRAM_HOME_CHANNEL_THREAD_ID: ${ROY_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
     networks:
       internal: null
       private_proxy:
         aliases:
         - roy
     env_file:
-    - *hermes-fleet-env-file
-    - ./env/roy.env
+    - ./env/roy-v3.env
     image: ${ROY_IMAGE_REF:?set ROY_IMAGE_REF to the approved immutable Roy v3 image ID}
     working_dir: /agents/roy/private
     read_only: true
