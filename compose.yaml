@@ -274,6 +274,63 @@ services:
       timeout: 5s
       retries: 10
       start_period: 60s
+  roy:
+    <<: *hermes-runtime
+    environment:
+      <<: *hermes-runtime-env
+      HERMES_HOME: /opt/data
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      HERMES_DISABLE_LAZY_INSTALLS: '1'
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/roy/private:/transfer
+      AGENT_NAME: roy
+      AGENT_ROOT: /agents/roy
+      AGENT_PRIVATE: /agents/roy/private
+      AGENT_RUNTIME: /opt/data
+      TERMINAL_CWD: /agents/roy/private
+      API_SERVER_ENABLED: 'true'
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: '8645'
+      HERMES_WEBUI_AGENT_DIR: /opt/hermes
+      HERMES_WEBUI_HOST: 0.0.0.0
+      HERMES_WEBUI_PORT: '8787'
+      HERMES_WEBUI_STATE_DIR: /opt/data/webui
+      HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/roy/private
+      HERMES_WEBUI_CHAT_BACKEND: legacy-direct
+      HERMES_WEBUI_GATEWAY_BASE_URL: http://roy:8645
+      HERMES_WEBUI_ISOLATED_PROFILE: '1'
+      ROY_DELIVERY_TRANSFER_DIR: /transfer
+      ROY_DELIVERY_WORKSPACE_ROOT: /agents/roy/private
+      ROY_DELIVERY_WEBUI_BASE_URL: https://roy.rodolflix.com
+    networks:
+      internal: null
+      private_proxy:
+        aliases:
+        - roy
+    env_file:
+    - ./env/roy-v3.env
+    image: ${ROY_IMAGE_REF:?set ROY_IMAGE_REF to the approved immutable Roy v3 image ID}
+    working_dir: /agents/roy/private
+    read_only: true
+    tmpfs:
+    - /tmp:exec,nosuid,size=1g
+    - /run:exec
+    volumes:
+    - ./agents/private/roy-v3:/opt/personal-assistant:ro
+    - ./runtime/roy-v3-home:/opt/data
+    - ./state/private/roy-v3-workspace:/agents/roy/private:rw
+    - ${ROY_TRANSFER_ROOT:-./state/private/roy-transfer}:/transfer:rw
+    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared:ro
+    expose:
+    - '8787'
+    - '8645'
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:8645/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
   the-elders:
     <<: *hermes-runtime
     environment:
