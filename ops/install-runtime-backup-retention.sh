@@ -6,7 +6,7 @@ readonly STACK_ROOT_CANONICAL="${STACK_ROOT_CANONICAL:-$STACK_ROOT}"
 readonly USER_SCRIPTS_ROOT="${USER_SCRIPTS_ROOT:-/boot/config/plugins/user.scripts}"
 readonly RUNTIME_SCHEDULE_LOGICAL="${RUNTIME_SCHEDULE:-/tmp/user.scripts/schedule.json}"
 readonly DAILY_RUNNER="${DAILY_RUNNER:-/etc/cron.daily/user.script.start.daily.sh}"
-readonly UPDATE_CRON="${UPDATE_CRON:-/usr/local/sbin/update_cron}"
+
 readonly PREIMAGE_ROOT="${1:?usage: install-runtime-backup-retention.sh PREIMAGE_ROOT}"
 readonly PREIMAGE_ROOT_CANONICAL="${PREIMAGE_ROOT_CANONICAL:-$PREIMAGE_ROOT}"
 
@@ -79,7 +79,7 @@ if [[ "${ALLOW_TEST_SOURCE_RACE_HOOK:-0}" == 1 ]]; then
  while [[ ! -e "$TEST_RACE_DIR/continue" ]]; do sleep 0.01; done
 fi
 source_wrapper_identity_current || { echo 'source_wrapper_identity_changed' >&2; exit 1; }
-[[ -x "$DAILY_RUNNER" && -x "$UPDATE_CRON" ]] || { echo 'scheduler_runtime_missing' >&2; exit 1; }
+[[ -x "$DAILY_RUNNER" ]] || { echo 'scheduler_runtime_missing' >&2; exit 1; }
 [[ ! -L "$DEST_DIR" && ! -L "$SCHEDULE" && ! -L "$RUNTIME_SCHEDULE" ]] || { echo 'scheduler_destination_symlink_rejected' >&2; exit 1; }
 
 dest_dir_existed=false; [[ -d "$DEST_DIR" ]] && dest_dir_existed=true
@@ -141,7 +141,6 @@ restore_preimage() {
     fi
   done < "$records"
   if [[ "$dest_dir_existed" == false ]]; then rmdir "$DEST_DIR"; fi
-  "$UPDATE_CRON"
   sync -f "$USER_ANCHOR"
 }
 on_exit() {
@@ -170,7 +169,6 @@ if [[ "${ALLOW_TEST_FAILPOINT:-0}" == 1 && "${INSTALL_FAILPOINT:-}" == after_sch
 fi
 [[ ! -L "$USER_ANCHOR/scripts" && "$(stat -Lc '%d:%i' "$USER_ANCHOR/scripts")" == "$(stat -Lc '%d:%i' "$SCRIPTS_ANCHOR")" ]] || { echo 'scripts_parent_identity_changed' >&2; false; }
 source_wrapper_identity_current || { echo 'source_wrapper_identity_changed' >&2; false; }
-"$UPDATE_CRON"
 cmp -s "$SCHEDULE" "$RUNTIME_SCHEDULE"
 jq -e --arg key "$SCRIPT_KEY" '.[$key].script==$key and .[$key].frequency=="daily" and .[$key].custom==""' "$SCHEDULE" >/dev/null
 [[ -x "$DEST_SCRIPT" && "$(sha256sum "$DEST_SCRIPT"|cut -d' ' -f1)" == "$SOURCE_WRAPPER_SHA256" ]]
