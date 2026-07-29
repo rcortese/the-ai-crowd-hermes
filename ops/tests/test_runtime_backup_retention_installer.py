@@ -9,12 +9,13 @@ import time
 import unittest
 
 INSTALLER = Path(__file__).parents[1] / "install-runtime-backup-retention.sh"
+SOURCE_WRAPPER = Path(__file__).parents[1] / "runtime-backup-retention-wrapper.sh"
 
 
 class InstallerTests(unittest.TestCase):
     def fixture(self, root: Path):
         stack=root/"stack"; ops=stack/"ops"; ops.mkdir(parents=True)
-        wrapper=ops/"runtime-backup-retention-wrapper.sh"; wrapper.write_text("#!/bin/sh\nexit 0\n"); wrapper.chmod(0o755)
+        wrapper=ops/"runtime-backup-retention-wrapper.sh"; wrapper.write_bytes(SOURCE_WRAPPER.read_bytes()); wrapper.chmod(0o755)
         user=root/"user.scripts"; (user/"scripts").mkdir(parents=True)
         runtime=root/"runtime/schedule.json"; runtime.parent.mkdir()
         daily=root/"daily"; daily.write_text("#!/bin/sh\nexit 0\n"); daily.chmod(0o755)
@@ -127,6 +128,26 @@ class InstallerTests(unittest.TestCase):
             stdout,stderr=proc.communicate(timeout=10)
             self.assertNotEqual(proc.returncode,0); self.assertIn("scripts_parent_identity_changed",stderr)
             self.assertEqual(list(outside.iterdir()),[]); self.assertEqual(list(held.iterdir()),[])
+
+    def test_source_wrapper_replacement_after_open_is_rejected_without_install(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); stack,user,_,env=self.fixture(root); pre=root/"pre"; pre.mkdir(); race=root/"race"; race.mkdir()
+            env=env|{"ALLOW_TEST_SOURCE_RACE_HOOK":"1","TEST_RACE_DIR":str(race)}
+            proc=subprocess.Popen([str(INSTALLER),str(pre)],env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            marker=race/"source-wrapper-opened"
+            for _ in range(500):
+                if marker.exists(): break
+                if proc.poll() is not None: break
+                time.sleep(0.01)
+            self.assertTrue(marker.exists())
+            source=stack/"ops/runtime-backup-retention-wrapper.sh"; held=stack/"ops/wrapper-held"
+            source.rename(held); source.write_text("#!/bin/sh\nprintf hostile\\n"); source.chmod(0o755)
+            (race/"continue").write_text("1")
+            stdout,stderr=proc.communicate(timeout=10)
+            self.assertNotEqual(proc.returncode,0)
+            self.assertIn("source_wrapper_identity_changed",stderr)
+            self.assertFalse((user/"scripts/runtime_backup_retention").exists())
+            self.assertEqual(held.read_bytes(),SOURCE_WRAPPER.read_bytes())
 
 
 if __name__ == "__main__": unittest.main()

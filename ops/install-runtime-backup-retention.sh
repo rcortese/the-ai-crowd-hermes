@@ -57,12 +57,28 @@ if [[ "${ALLOW_TEST_RACE_HOOK:-0}" == 1 ]]; then
 fi
 
 readonly SOURCE_WRAPPER="$OPS_ANCHOR/runtime-backup-retention-wrapper.sh"
+readonly SOURCE_WRAPPER_SHA256='79533139747afd499faca69157c074a5987b929937a9ee72d263986ebded3e71'
 readonly DEST_PARENT="$SCRIPTS_ANCHOR"
 readonly DEST_DIR="$DEST_PARENT/runtime_backup_retention"
 readonly SCHEDULE="$USER_ANCHOR/schedule.json"
 readonly RUNTIME_SCHEDULE="$RUNTIME_ANCHOR/$(basename "$RUNTIME_SCHEDULE_LOGICAL")"
 readonly SCRIPT_KEY="$USER_SCRIPTS_ROOT/scripts/runtime_backup_retention/script"
 [[ -f "$SOURCE_WRAPPER" && ! -L "$SOURCE_WRAPPER" ]] || { echo 'source_wrapper_missing_or_unsafe' >&2; exit 1; }
+exec {source_wrapper_fd}<"$SOURCE_WRAPPER"
+readonly SOURCE_WRAPPER_ANCHOR="/proc/$$/fd/$source_wrapper_fd"
+[[ "$(stat -Lc '%F' "$SOURCE_WRAPPER_ANCHOR")" == 'regular file' ]] || { echo 'source_wrapper_not_regular' >&2; exit 1; }
+[[ ! -L "$SOURCE_WRAPPER" && "$(stat -Lc '%d:%i' "$SOURCE_WRAPPER")" == "$(stat -Lc '%d:%i' "$SOURCE_WRAPPER_ANCHOR")" ]] || { echo 'source_wrapper_identity_mismatch' >&2; exit 1; }
+[[ "$(sha256sum "$SOURCE_WRAPPER_ANCHOR"|cut -d' ' -f1)" == "$SOURCE_WRAPPER_SHA256" ]] || { echo 'source_wrapper_hash_mismatch' >&2; exit 1; }
+source_wrapper_identity_current() {
+  [[ -f "$SOURCE_WRAPPER" && ! -L "$SOURCE_WRAPPER" ]] \
+    && [[ "$(stat -Lc '%d:%i' "$SOURCE_WRAPPER")" == "$(stat -Lc '%d:%i' "$SOURCE_WRAPPER_ANCHOR")" ]]
+}
+if [[ "${ALLOW_TEST_SOURCE_RACE_HOOK:-0}" == 1 ]]; then
+ : "${TEST_RACE_DIR:?TEST_RACE_DIR required}"
+ : > "$TEST_RACE_DIR/source-wrapper-opened"
+ while [[ ! -e "$TEST_RACE_DIR/continue" ]]; do sleep 0.01; done
+fi
+source_wrapper_identity_current || { echo 'source_wrapper_identity_changed' >&2; exit 1; }
 [[ -x "$DAILY_RUNNER" && -x "$UPDATE_CRON" ]] || { echo 'scheduler_runtime_missing' >&2; exit 1; }
 [[ ! -L "$DEST_DIR" && ! -L "$SCHEDULE" && ! -L "$RUNTIME_SCHEDULE" ]] || { echo 'scheduler_destination_symlink_rejected' >&2; exit 1; }
 
@@ -141,7 +157,7 @@ trap on_exit EXIT
 
 tmp_script=$(mktemp "$DEST_ANCHOR/.script.XXXXXX"); tmp_name=$(mktemp "$DEST_ANCHOR/.name.XXXXXX")
 tmp_schedule=$(mktemp "$USER_ANCHOR/.schedule.XXXXXX"); tmp_runtime=$(mktemp "$RUNTIME_ANCHOR/.schedule.XXXXXX")
-install -m 0755 "$SOURCE_WRAPPER" "$tmp_script"; printf '%s\n' runtime_backup_retention > "$tmp_name"; chmod 0644 "$tmp_name"
+install -m 0755 "$SOURCE_WRAPPER_ANCHOR" "$tmp_script"; [[ "$(sha256sum "$tmp_script"|cut -d' ' -f1)" == "$SOURCE_WRAPPER_SHA256" ]]; printf '%s\n' runtime_backup_retention > "$tmp_name"; chmod 0644 "$tmp_name"
 if [[ -f "$SCHEDULE" ]]; then jq --arg key "$SCRIPT_KEY" '. + {($key): {script:$key,frequency:"daily",id:("schedule"+($key|@base64)),custom:""}}' "$SCHEDULE" > "$tmp_schedule"; else jq -n --arg key "$SCRIPT_KEY" '{($key): {script:$key,frequency:"daily",id:("schedule"+($key|@base64)),custom:""}}' > "$tmp_schedule"; fi
 jq -e --arg key "$SCRIPT_KEY" '.[$key].script==$key and .[$key].frequency=="daily" and .[$key].custom==""' "$tmp_schedule" >/dev/null
 install -m 0644 "$tmp_schedule" "$tmp_runtime"
@@ -153,10 +169,12 @@ if [[ "${ALLOW_TEST_FAILPOINT:-0}" == 1 && "${INSTALL_FAILPOINT:-}" == after_sch
   false
 fi
 [[ ! -L "$USER_ANCHOR/scripts" && "$(stat -Lc '%d:%i' "$USER_ANCHOR/scripts")" == "$(stat -Lc '%d:%i' "$SCRIPTS_ANCHOR")" ]] || { echo 'scripts_parent_identity_changed' >&2; false; }
+source_wrapper_identity_current || { echo 'source_wrapper_identity_changed' >&2; false; }
 "$UPDATE_CRON"
 cmp -s "$SCHEDULE" "$RUNTIME_SCHEDULE"
 jq -e --arg key "$SCRIPT_KEY" '.[$key].script==$key and .[$key].frequency=="daily" and .[$key].custom==""' "$SCHEDULE" >/dev/null
-[[ -x "$DEST_SCRIPT" && "$(sha256sum "$DEST_SCRIPT"|cut -d' ' -f1)" == "$(sha256sum "$SOURCE_WRAPPER"|cut -d' ' -f1)" ]]
+[[ -x "$DEST_SCRIPT" && "$(sha256sum "$DEST_SCRIPT"|cut -d' ' -f1)" == "$SOURCE_WRAPPER_SHA256" ]]
+source_wrapper_identity_current || { echo 'source_wrapper_identity_changed' >&2; false; }
 jq -n --arg script_sha "$(sha256sum "$DEST_SCRIPT"|cut -d' ' -f1)" --arg schedule_sha "$(sha256sum "$SCHEDULE"|cut -d' ' -f1)" --arg runtime_schedule_sha "$(sha256sum "$RUNTIME_SCHEDULE"|cut -d' ' -f1)" '{schema_version:1,status:"installed",script_sha256:$script_sha,schedule_sha256:$schedule_sha,runtime_schedule_sha256:$runtime_schedule_sha}' > "$receipt_file"
 chmod 0600 "$receipt_file"; sync -f "$receipt_file"; sync -f "$PREIMAGE_DIR"; mutated=0
 echo 'RETENTION_SCHEDULER=INSTALLED'
