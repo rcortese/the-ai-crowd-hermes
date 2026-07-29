@@ -10,7 +10,7 @@ import unittest
 ROOT = Path(__file__).parents[1]
 WRAPPER = ROOT / "runtime-backup-retention-wrapper.sh"
 SWEEPER = ROOT / "runtime-backup-retention.py"
-IMAGE = "sha256:358d555feed07110e4c039973daad70ab27950e7a3b472c1b663f497059dd4be"
+IMAGE = "sha256:dace20db1109a3c2ea1da43b5d2fb68d6740ed6cbc15946cd7683d951b4d0e44"
 
 
 class WrapperTests(unittest.TestCase):
