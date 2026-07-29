@@ -100,17 +100,14 @@ class InstallerTests(unittest.TestCase):
             cp=subprocess.run([str(INSTALLER),str(pre)],env=env,text=True,capture_output=True)
             self.assertNotEqual(cp.returncode,0); self.assertEqual(list(outside.iterdir()),[])
 
-    def test_update_cron_partial_failure_restores_observed_cron_state(self):
+    def test_runtime_consumer_schedule_is_restored_after_post_publish_failure(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); _,user,runtime,env=self.fixture(root)
             dest=user/"scripts/runtime_backup_retention"; dest.mkdir(); (dest/"script").write_text("old-script"); (dest/"name").write_text("old-name")
-            schedule=user/"schedule.json"; old_schedule=b'{"old":true}\n'; schedule.write_bytes(old_schedule); runtime.write_bytes(b'{"runtime":true}\n')
-            cron_state=root/"cron-state"; fail_once=root/"fail-once"; fail_once.write_text("1")
-            update=root/"update-stateful"; update.write_text('#!/bin/sh\ncp "$SCHEDULE_PATH" "$CRON_STATE"\nif [ -f "$FAIL_ONCE" ]; then rm -f "$FAIL_ONCE"; exit 1; fi\n'); update.chmod(0o755)
-            env=env|{"UPDATE_CRON":str(update),"SCHEDULE_PATH":str(schedule),"CRON_STATE":str(cron_state),"FAIL_ONCE":str(fail_once)}
-            cp=self.run_install(root/"pre",env)
+            schedule=user/"schedule.json"; old_schedule=b'{"old":true}\n'; old_runtime=b'{"runtime":true}\n'; schedule.write_bytes(old_schedule); runtime.write_bytes(old_runtime)
+            cp=self.run_install(root/"pre",env,ALLOW_TEST_FAILPOINT="1",INSTALL_FAILPOINT="after_schedule")
             self.assertNotEqual(cp.returncode,0); self.assertIn("SCHEDULER_RESTORED_AFTER_FAILURE",cp.stderr)
-            self.assertEqual(schedule.read_bytes(),old_schedule); self.assertEqual(cron_state.read_bytes(),old_schedule)
+            self.assertEqual(schedule.read_bytes(),old_schedule); self.assertEqual(runtime.read_bytes(),old_runtime)
 
     def test_scripts_replacement_after_descriptor_open_is_confined_and_rolled_back(self):
         with tempfile.TemporaryDirectory() as td:
