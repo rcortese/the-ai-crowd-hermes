@@ -171,7 +171,7 @@ fi
 source_wrapper_identity_current || { echo 'source_wrapper_identity_changed' >&2; false; }
 cmp -s "$SCHEDULE" "$RUNTIME_SCHEDULE"
 jq -e --arg key "$SCRIPT_KEY" '.[$key].script==$key and .[$key].frequency=="daily" and .[$key].custom==""' "$SCHEDULE" >/dev/null
-[[ -x "$DEST_SCRIPT" && "$(sha256sum "$DEST_SCRIPT"|cut -d' ' -f1)" == "$SOURCE_WRAPPER_SHA256" ]]
+[[ -f "$DEST_SCRIPT" && ! -L "$DEST_SCRIPT" && "$(stat -c %a "$DEST_SCRIPT")" == 755 && "$(sha256sum "$DEST_SCRIPT"|cut -d' ' -f1)" == "$SOURCE_WRAPPER_SHA256" ]]
 source_wrapper_identity_current || { echo 'source_wrapper_identity_changed' >&2; false; }
 jq -n --arg script_sha "$(sha256sum "$DEST_SCRIPT"|cut -d' ' -f1)" --arg schedule_sha "$(sha256sum "$SCHEDULE"|cut -d' ' -f1)" --arg runtime_schedule_sha "$(sha256sum "$RUNTIME_SCHEDULE"|cut -d' ' -f1)" '{schema_version:1,status:"installed",script_sha256:$script_sha,schedule_sha256:$schedule_sha,runtime_schedule_sha256:$runtime_schedule_sha}' > "$receipt_file"
 chmod 0600 "$receipt_file"; sync -f "$receipt_file"; sync -f "$PREIMAGE_DIR"; mutated=0
