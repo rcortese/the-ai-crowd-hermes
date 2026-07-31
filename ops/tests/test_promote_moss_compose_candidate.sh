@@ -73,7 +73,11 @@ if [[ $1 == compose && " $* " == *' ps -q moss '* ]]; then
   fi
   exit 0
 fi
-if [[ $1 == compose && " $* " == *' up -d '* ]]; then touch "$FAKE_STATE/compose-up"; exit 0; fi
+if [[ $1 == compose && " $* " == *' up -d '* ]]; then
+  [[ " $* " == *' --pull never '* ]] || { echo 'compose up permitted pull' >&2; exit 92; }
+  touch "$FAKE_STATE/compose-up"
+  exit 0
+fi
 if [[ $1 == inspect && ${3:-} == --format ]]; then
   if [[ -e "$FAKE_STATE/compose-up" ]]; then
     printf '%s\n' 'pre-id sha256:image 2026-01-01T00:00:00Z 0 healthy'
@@ -238,6 +242,7 @@ EOF
 export FAKE_HEALTH_SEQUENCE="$tmp/health-clear"
 run_executor >"$tmp/success.out" 2>&1
 [[ -e "$FAKE_STATE/compose-up" ]]
+grep -q '^docker compose .* up -d --no-build --no-deps --pull never --force-recreate --wait --wait-timeout 120 moss$' "$FAKE_STATE/calls"
 [[ $(grep -c '^docker exec the-ai-crowd-moss-1 curl .*127.0.0.1:8787/health' "$FAKE_STATE/calls") -eq 3 ]]
 [[ $(grep -c '^sleep 15$' "$FAKE_STATE/calls") -eq 1 ]]
 terminal_json=$(find "$stack/ops/deploy-runs" -mindepth 2 -maxdepth 2 -name terminal.json -print -quit)
