@@ -62,7 +62,17 @@ if [[ $1 == exec && $3 == curl ]]; then
 fi
 if [[ $1 == exec && $3 == sh ]]; then exit 0; fi
 if [[ $1 == compose && " $* " == *' config -q '* ]]; then exit 0; fi
-if [[ $1 == compose && " $* " == *' ps -q moss '* ]]; then printf '%s\n' "${FAKE_COMPOSE_ID:-pre-id}"; exit 0; fi
+if [[ $1 == compose && " $* " == *' ps -q moss '* ]]; then
+  count=0
+  [[ ! -f "$FAKE_STATE/compose-ps-count" ]] || count=$(<"$FAKE_STATE/compose-ps-count")
+  count=$((count + 1)); printf '%s\n' "$count" >"$FAKE_STATE/compose-ps-count"
+  if [[ $count -ge 2 && -n ${FAKE_CANDIDATE_COMPOSE_ID:-} ]]; then
+    printf '%s\n' "$FAKE_CANDIDATE_COMPOSE_ID"
+  else
+    printf '%s\n' "${FAKE_COMPOSE_ID:-pre-id}"
+  fi
+  exit 0
+fi
 if [[ $1 == compose && " $* " == *' up -d '* ]]; then touch "$FAKE_STATE/compose-up"; exit 0; fi
 if [[ $1 == inspect && ${3:-} == --format ]]; then
   if [[ -e "$FAKE_STATE/compose-up" ]]; then
@@ -100,6 +110,7 @@ chmod +x "$bin"/*
 reset_case() {
   unset FAKE_WRONG_POST_CHECKOUT || true
   unset FAKE_COMPOSE_ID || true
+  unset FAKE_CANDIDATE_COMPOSE_ID || true
   rm -rf "$FAKE_STATE"
   mkdir -p "$FAKE_STATE"
   rm -rf "$stack/ops/deploy-runs"
@@ -181,6 +192,24 @@ set -e
 [[ ! -e "$FAKE_STATE/checked-out" ]]
 grep -q 'active streams appeared immediately before lifecycle' "$tmp/final-active.out"
 grep -q "git -C $stack checkout --detach $candidate" "$FAKE_STATE/calls"
+grep -q "git -C $stack checkout --detach $base" "$FAKE_STATE/calls"
+
+reset_case
+cat >"$tmp/health-candidate-target-mismatch" <<'EOF'
+{"status":"ok","active_streams":0,"active_runs":0,"runs":[]}
+{"status":"ok","active_streams":0,"active_runs":0,"runs":[]}
+{"status":"ok","active_streams":0,"active_runs":0,"runs":[]}
+EOF
+export FAKE_HEALTH_SEQUENCE="$tmp/health-candidate-target-mismatch"
+export FAKE_CANDIDATE_COMPOSE_ID=rebound-container-id
+set +e
+run_executor >"$tmp/candidate-target-mismatch.out" 2>&1
+candidate_target_mismatch_rc=$?
+set -e
+[[ $candidate_target_mismatch_rc -ne 0 ]]
+[[ ! -e "$FAKE_STATE/compose-up" ]]
+[[ ! -e "$FAKE_STATE/checked-out" ]]
+grep -q 'candidate Compose target changed before lifecycle' "$tmp/candidate-target-mismatch.out"
 grep -q "git -C $stack checkout --detach $base" "$FAKE_STATE/calls"
 
 reset_case

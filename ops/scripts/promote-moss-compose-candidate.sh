@@ -169,6 +169,10 @@ printf 'final_streams=%s final_active_runs=%s\n' "${final[0]}" "${final[1]}" | t
 test "${final[0]}" = 0 || fail 'active streams appeared immediately before lifecycle'
 test "${final[1]}" = 0 || fail 'active background runs appeared immediately before lifecycle'
 
+# Re-bind the candidate-side Compose target after checkout and at the mutation boundary.
+candidate_compose_container_id=$(docker compose --project-directory "$stack" -f "$stack/compose.yaml" ps -q "$service")
+[[ -n $candidate_compose_container_id && $candidate_compose_container_id == "$pre_id" ]] || fail 'candidate Compose target changed before lifecycle'
+
 # Exact existing image only: no build, pull, dependency recreation, or sibling service.
 lifecycle_started=1
 docker compose --project-directory "$stack" -f "$stack/compose.yaml" up -d \
