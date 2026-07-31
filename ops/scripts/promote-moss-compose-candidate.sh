@@ -176,7 +176,7 @@ candidate_compose_container_id=$(docker compose --project-directory "$stack" -f 
 # Exact existing image only: no build, pull, dependency recreation, or sibling service.
 lifecycle_started=1
 docker compose --project-directory "$stack" -f "$stack/compose.yaml" up -d \
-  --no-build --no-deps --force-recreate --wait --wait-timeout 120 "$service"
+  --no-build --no-deps --pull never --force-recreate --wait --wait-timeout 120 "$service"
 probe
 
 post=$(docker inspect "$container")
