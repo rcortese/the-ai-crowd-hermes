@@ -154,8 +154,8 @@ docker inspect "$container" --format '{{.Id}} {{.Image}} {{.State.StartedAt}} {{
   grep -F -x "$pre_id $pre_image $pre_started $pre_restarts healthy" >/dev/null || fail 'live Moss changed during drain'
 
 git -C "$stack" checkout --detach "$candidate"
-[[ $(git -C "$stack" rev-parse HEAD) == "$candidate" ]] || fail 'candidate checkout did not bind'
 checkout_changed=1
+[[ $(git -C "$stack" rev-parse HEAD) == "$candidate" ]] || fail 'candidate checkout did not bind'
 git -C "$stack" diff --quiet || fail 'candidate checkout unexpectedly dirty'
 git -C "$stack" diff --cached --quiet || fail 'candidate index unexpectedly dirty'
 docker compose --project-directory "$stack" -f "$stack/compose.yaml" config -q
