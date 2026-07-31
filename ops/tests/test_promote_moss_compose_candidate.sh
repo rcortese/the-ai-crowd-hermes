@@ -62,6 +62,7 @@ if [[ $1 == exec && $3 == curl ]]; then
 fi
 if [[ $1 == exec && $3 == sh ]]; then exit 0; fi
 if [[ $1 == compose && " $* " == *' config -q '* ]]; then exit 0; fi
+if [[ $1 == compose && " $* " == *' ps -q moss '* ]]; then printf '%s\n' "${FAKE_COMPOSE_ID:-pre-id}"; exit 0; fi
 if [[ $1 == compose && " $* " == *' up -d '* ]]; then touch "$FAKE_STATE/compose-up"; exit 0; fi
 if [[ $1 == inspect && ${3:-} == --format ]]; then
   if [[ -e "$FAKE_STATE/compose-up" ]]; then
@@ -98,6 +99,7 @@ chmod +x "$bin"/*
 
 reset_case() {
   unset FAKE_WRONG_POST_CHECKOUT || true
+  unset FAKE_COMPOSE_ID || true
   rm -rf "$FAKE_STATE"
   mkdir -p "$FAKE_STATE"
   rm -rf "$stack/ops/deploy-runs"
@@ -148,6 +150,20 @@ set -e
 [[ $trailing_rc -ne 0 ]]
 [[ ! -e "$FAKE_STATE/compose-up" ]]
 grep -q 'failed to read first WebUI drain snapshot' "$tmp/trailing.out"
+
+reset_case
+cat >"$tmp/health-target-mismatch" <<'EOF'
+{"status":"ok","active_streams":0,"active_runs":0,"runs":[]}
+EOF
+export FAKE_HEALTH_SEQUENCE="$tmp/health-target-mismatch"
+export FAKE_COMPOSE_ID=another-container-id
+set +e
+run_executor >"$tmp/target-mismatch.out" 2>&1
+target_mismatch_rc=$?
+set -e
+[[ $target_mismatch_rc -ne 0 ]]
+[[ ! -e "$FAKE_STATE/compose-up" ]]
+grep -q 'container does not match Compose moss service' "$tmp/target-mismatch.out"
 
 reset_case
 cat >"$tmp/health-final-active" <<'EOF'
