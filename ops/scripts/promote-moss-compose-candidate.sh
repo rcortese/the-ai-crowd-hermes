@@ -45,6 +45,7 @@ done
   echo 'ERROR: invalid service or container name' >&2
   exit 64
 }
+[[ $service == moss ]] || { echo 'ERROR: this executor is restricted to the moss service' >&2; exit 64; }
 [[ -d $stack && ! -L $stack ]] || { echo 'ERROR: stack directory missing or unsafe' >&2; exit 66; }
 stack=$(realpath "$stack")
 [[ -f $stack/compose.yaml && ! -L $stack/compose.yaml ]] || { echo 'ERROR: compose.yaml missing or unsafe' >&2; exit 66; }
@@ -133,6 +134,8 @@ pre_image=$(jq -r '.[0].Image' <<<"$pre")
 pre_id=$(jq -r '.[0].Id' <<<"$pre")
 pre_started=$(jq -r '.[0].State.StartedAt' <<<"$pre")
 pre_restarts=$(jq -r '.[0].RestartCount' <<<"$pre")
+compose_container_id=$(docker compose --project-directory "$stack" -f "$stack/compose.yaml" ps -q "$service")
+[[ -n $compose_container_id && $compose_container_id == "$pre_id" ]] || fail 'container does not match Compose moss service'
 
 first_raw=$(read_drain_snapshot first)
 readarray -t first <<<"$first_raw"
