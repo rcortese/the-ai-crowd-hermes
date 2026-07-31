@@ -7,7 +7,6 @@ import unittest
 ROOT = Path(__file__).parents[2]
 COMPOSE = ROOT / "compose.yaml"
 FORBIDDEN = (
-    "telegram",
     "fiscal",
     "google",
     "oauth",
@@ -26,10 +25,16 @@ def service_block(name: str) -> str:
 
 
 class MinimalReleaseComposeTests(unittest.TestCase):
-    def test_roy_has_no_excluded_bindings(self):
+    def test_roy_binds_only_the_approved_single_user_telegram_channel(self):
         block = service_block("roy").lower()
         for term in FORBIDDEN:
             self.assertNotIn(term, block)
+        self.assertIn("telegram_bot_token: ${roy_telegram_bot_token:?", block)
+        self.assertIn("telegram_allowed_users: ${roy_telegram_home_channel:?", block)
+        self.assertIn("telegram_home_channel: ${roy_telegram_home_channel:?", block)
+        self.assertIn("telegram_home_channel_thread_id: ${roy_telegram_home_channel_thread_id:-}", block)
+        self.assertNotIn("telegram_allow_all_users", block)
+        self.assertNotIn("telegram_allowed_chats", block)
         self.assertIn("- ./env/roy-v3.env", block)
         self.assertNotIn("*hermes-fleet-env-file", block)
         self.assertNotIn("./env/roy.env", block)

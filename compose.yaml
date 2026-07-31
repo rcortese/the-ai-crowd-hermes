@@ -301,6 +301,10 @@ services:
       ROY_DELIVERY_TRANSFER_DIR: /transfer
       ROY_DELIVERY_WORKSPACE_ROOT: /agents/roy/private
       ROY_DELIVERY_WEBUI_BASE_URL: https://roy.rodolflix.com
+      TELEGRAM_BOT_TOKEN: ${ROY_TELEGRAM_BOT_TOKEN:?set ROY_TELEGRAM_BOT_TOKEN to the approved Roy bot token}
+      TELEGRAM_ALLOWED_USERS: ${ROY_TELEGRAM_HOME_CHANNEL:?set ROY_TELEGRAM_HOME_CHANNEL to Viviane's approved Roy chat}
+      TELEGRAM_HOME_CHANNEL: ${ROY_TELEGRAM_HOME_CHANNEL:?set ROY_TELEGRAM_HOME_CHANNEL to Viviane's approved Roy chat}
+      TELEGRAM_HOME_CHANNEL_THREAD_ID: ${ROY_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
     networks:
       internal: null
       private_proxy:
