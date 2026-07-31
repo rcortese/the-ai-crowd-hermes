@@ -21,7 +21,16 @@ printf 'git %s\n' "$*" >>"$FAKE_STATE/calls"
 if [[ $1 == -C ]]; then shift 2; fi
 case "$1 $2" in
   'rev-parse HEAD')
-    if [[ -e "$FAKE_STATE/checked-out" ]]; then printf '%s\n' "$FAKE_CANDIDATE"; else printf '%s\n' "$FAKE_BASE"; fi
+    if [[ -e "$FAKE_STATE/checked-out" ]]; then
+      if [[ ${FAKE_WRONG_POST_CHECKOUT:-0} == 1 && ! -e "$FAKE_STATE/wrong-returned" ]]; then
+        touch "$FAKE_STATE/wrong-returned"
+        printf '%s\n' "$FAKE_BASE"
+      else
+        printf '%s\n' "$FAKE_CANDIDATE"
+      fi
+    else
+      printf '%s\n' "$FAKE_BASE"
+    fi
     ;;
   'diff --quiet') exit 0 ;;
   'diff --cached') [[ ${3:-} == --quiet ]]; exit 0 ;;
@@ -88,6 +97,7 @@ EOF
 chmod +x "$bin"/*
 
 reset_case() {
+  unset FAKE_WRONG_POST_CHECKOUT || true
   rm -rf "$FAKE_STATE"
   mkdir -p "$FAKE_STATE"
   rm -rf "$stack/ops/deploy-runs"
@@ -155,6 +165,23 @@ set -e
 [[ ! -e "$FAKE_STATE/checked-out" ]]
 grep -q 'active streams appeared immediately before lifecycle' "$tmp/final-active.out"
 grep -q "git -C $stack checkout --detach $candidate" "$FAKE_STATE/calls"
+grep -q "git -C $stack checkout --detach $base" "$FAKE_STATE/calls"
+
+reset_case
+cat >"$tmp/health-bind-failure" <<'EOF'
+{"status":"ok","active_streams":0,"active_runs":0,"runs":[]}
+{"status":"ok","active_streams":0,"active_runs":0,"runs":[]}
+EOF
+export FAKE_HEALTH_SEQUENCE="$tmp/health-bind-failure"
+export FAKE_WRONG_POST_CHECKOUT=1
+set +e
+run_executor >"$tmp/bind-failure.out" 2>&1
+bind_failure_rc=$?
+set -e
+[[ $bind_failure_rc -ne 0 ]]
+[[ ! -e "$FAKE_STATE/compose-up" ]]
+[[ ! -e "$FAKE_STATE/checked-out" ]]
+grep -q 'candidate checkout did not bind' "$tmp/bind-failure.out"
 grep -q "git -C $stack checkout --detach $base" "$FAKE_STATE/calls"
 
 reset_case
