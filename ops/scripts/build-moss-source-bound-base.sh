@@ -39,8 +39,8 @@ done
 
 GIT_BIN=${GIT_BIN:-git}
 DOCKER_BIN=${DOCKER_BIN:-docker}
-PYTHON_BIN=${PYTHON_BIN:-python3}
-for bin in "$GIT_BIN" "$DOCKER_BIN" "$PYTHON_BIN"; do command -v "$bin" >/dev/null || { echo "$bin unavailable" >&2; exit 66; }; done
+JQ_BIN=${JQ_BIN:-jq}
+for bin in "$GIT_BIN" "$DOCKER_BIN" "$JQ_BIN"; do command -v "$bin" >/dev/null || { echo "$bin unavailable" >&2; exit 66; }; done
 verify_commit() {
   local repo=$1 rev=$2 name=$3 resolved
   "$GIT_BIN" -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || { echo "$name repository unavailable" >&2; exit 66; }
@@ -106,33 +106,33 @@ IMAGE_ID=$(<"$tmp/image.iid")
 # the produced image's RootFS begins with the exact immutable runtime-base layers.
 "$DOCKER_BIN" image inspect "$RUNTIME_BASE_IMAGE" >"$tmp/runtime-base.inspect.json"
 "$DOCKER_BIN" image inspect "$IMAGE_ID" >"$tmp/candidate.inspect.json"
-"$PYTHON_BIN" - "$tmp/runtime-base.inspect.json" "$tmp/candidate.inspect.json" <<'PY'
-import json, sys
-base=json.load(open(sys.argv[1]))[0]
-candidate=json.load(open(sys.argv[2]))[0]
-base_layers=base.get("RootFS",{}).get("Layers",[])
-candidate_layers=candidate.get("RootFS",{}).get("Layers",[])
-if not base_layers or candidate_layers[:len(base_layers)] != base_layers:
-    raise SystemExit("built image does not inherit the verified runtime-base layers")
-PY
-mkdir -p "$(dirname "$RECEIPT")"
-"$PYTHON_BIN" - "$RECEIPT" "$IMAGE_ID" "$MOSS_REV" "$MOSS_TREE" <<'PY'
-import json, os, pathlib, sys, tempfile
-p,image,commit,tree=sys.argv[1:]
-target=pathlib.Path(p)
-payload=(json.dumps({"schema":"the-ai-crowd.moss-base-provenance.v1","base_image_id":image,"moss":{"commit":commit,"tree":tree}},sort_keys=True,separators=(",",":"))+"\n").encode()
-fd,tmp=tempfile.mkstemp(prefix=f".{target.name}.",dir=target.parent)
-try:
-    with os.fdopen(fd,"wb") as f:
-        f.write(payload); f.flush(); os.fsync(f.fileno())
-    try: os.link(tmp,target)
-    except FileExistsError: raise SystemExit("receipt already exists (write-once)")
-    dfd=os.open(target.parent,os.O_RDONLY|os.O_DIRECTORY)
-    try: os.fsync(dfd)
-    finally: os.close(dfd)
-finally:
-    try: os.unlink(tmp)
-    except FileNotFoundError: pass
-PY
+"$JQ_BIN" -e -n \
+  --slurpfile base "$tmp/runtime-base.inspect.json" \
+  --slurpfile candidate "$tmp/candidate.inspect.json" '
+    ($base[0][0].RootFS.Layers // []) as $b
+    | ($candidate[0][0].RootFS.Layers // []) as $c
+    | ($b | length) > 0 and ($c[0:($b | length)] == $b)
+  ' >/dev/null || { echo 'built image does not inherit the verified runtime-base layers' >&2; exit 66; }
+
+# Publish the closed receipt without ever opening the target: mktemp uses O_EXCL,
+# and hard-link publication is atomic, no-clobber, and no-follow by construction.
+receipt_dir=$(dirname "$RECEIPT")
+receipt_name=$(basename "$RECEIPT")
+mkdir -p "$receipt_dir"
+receipt_tmp=$(mktemp "$receipt_dir/.${receipt_name}.XXXXXXXX")
+[[ -f $receipt_tmp && ! -L $receipt_tmp ]] || { echo 'unsafe receipt temporary file' >&2; exit 66; }
+"$JQ_BIN" -cS -n \
+  --arg image "$IMAGE_ID" --arg commit "$MOSS_REV" --arg tree "$MOSS_TREE" \
+  '{schema:"the-ai-crowd.moss-base-provenance.v1",base_image_id:$image,moss:{commit:$commit,tree:$tree}}' \
+  >"$receipt_tmp"
+chmod 0600 "$receipt_tmp"
+sync -f "$receipt_tmp" 2>/dev/null || sync "$receipt_tmp"
+if ! ln "$receipt_tmp" "$RECEIPT" 2>/dev/null; then
+  rm -f -- "$receipt_tmp"
+  echo 'receipt already exists (write-once)' >&2
+  exit 65
+fi
+rm -f -- "$receipt_tmp"
+sync -f "$receipt_dir" 2>/dev/null || sync "$receipt_dir"
 printf 'moss-source-bound-base-build: PASS image=%s receipt=%s archive_sha256=%s marker_sha256=%s dockerfile_sha256=%s builder_sha256=%s runtime_base=%s\n' \
   "$IMAGE_ID" "$RECEIPT" "$MOSS_ARCHIVE_SHA" "$MOSS_MARKER_SHA" "$DOCKERFILE_SHA" "$running_builder_sha" "$RUNTIME_BASE_IMAGE"
