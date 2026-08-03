@@ -5,22 +5,31 @@ umask 077
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 SCRIPT="$ROOT/ops/scripts/build-moss-integrated-release.sh"
 DOCKERFILE="$ROOT/ops/images/Dockerfile.moss-integrated-release"
-AGENT_REPO=${1:?usage: $0 AGENT_REPO WEBUI_REPO [BUILDER_REV [BUILDER_REPO]]}
-WEBUI_REPO=${2:?usage: $0 AGENT_REPO WEBUI_REPO [BUILDER_REV [BUILDER_REPO]]}
-BUILDER_REV=${3:-$(git -C "$ROOT" rev-parse HEAD)}
-BUILDER_REPO=${4:-$ROOT}
+AGENT_REPO=${1:?usage: $0 AGENT_REPO WEBUI_REPO MOSS_REPO [BUILDER_REV [BUILDER_REPO]]}
+WEBUI_REPO=${2:?usage: $0 AGENT_REPO WEBUI_REPO MOSS_REPO [BUILDER_REV [BUILDER_REPO]]}
+MOSS_REPO=${3:?usage: $0 AGENT_REPO WEBUI_REPO MOSS_REPO [BUILDER_REV [BUILDER_REPO]]}
+BUILDER_REV=${4:-$(git -C "$ROOT" rev-parse HEAD)}
+BUILDER_REPO=${5:-$ROOT}
 readonly AGENT_REV=d07819fd0c5acb98a745dce94d6ddce08e9b4904
 readonly WEBUI_REV=400c2e3f1d779e1a9a961937c4395676088d9f4d
 readonly MOSS_REV=321f1158b2c360a895c4a1679c000aa4ff3b7a9d
+readonly MOSS_TREE=b2fa360209db0da9fe2e69a916a81ab7d00d98cf
 readonly BASE=sha256:f7db73a38d6c82f0534fe9b638f4891972a7714cd2eea0497ab84d5c2c53cc3a
+readonly OTHER=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 readonly IMAGE=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 test "$(git -C "$AGENT_REPO" rev-parse "$AGENT_REV^{commit}")" = "$AGENT_REV"
 test "$(git -C "$WEBUI_REPO" rev-parse "$WEBUI_REV^{commit}")" = "$WEBUI_REV"
+test "$(git -C "$MOSS_REPO" rev-parse "$MOSS_REV^{commit}")" = "$MOSS_REV"
+test "$(git -C "$MOSS_REPO" rev-parse "$MOSS_REV^{tree}")" = "$MOSS_TREE"
 test "$(git -C "$BUILDER_REPO" rev-parse "$BUILDER_REV^{commit}")" = "$BUILDER_REV"
 bash -n "$SCRIPT"
 grep -Fq "readonly HERMES_AGENT_PIN=$AGENT_REV" "$SCRIPT"
 grep -Fq "readonly HERMES_WEBUI_PIN=$WEBUI_REV" "$SCRIPT"
+grep -Fq 'verify_commit "$MOSS_REPO" "$MOSS_REV"' "$SCRIPT"
+grep -Fq 'base provenance does not match image or resolved Moss source' "$SCRIPT"
+grep -Fq 'unique base alias unexpectedly pre-exists; refusing overwrite' "$SCRIPT"
+grep -Fq 'base alias ownership changed; refusing cleanup' "$SCRIPT"
 grep -Fq '"$GIT_BIN" -C "$repo" archive --format=tar "$rev"' "$SCRIPT"
 grep -Fq 'running builder differs from queued builder commit' "$SCRIPT"
 grep -Fq 'receipt already exists (write-once)' "$SCRIPT"
@@ -30,30 +39,61 @@ grep -Fq 'sealed agent marker identity mismatch' "$DOCKERFILE"
 grep -Fq 'tar -xf /tmp/sealed-agent/source.tar -C /tmp/hermes-agent-source' "$DOCKERFILE"
 grep -Fq 'tar -xf /tmp/sealed-webui/source.tar -C /tmp/hermes-webui-source' "$DOCKERFILE"
 grep -Fq 'test ! -e /opt/hermes/.git' "$DOCKERFILE"
+grep -Fq 'org.the-ai-crowd.moss-source-tree' "$DOCKERFILE"
+grep -Fq 'org.the-ai-crowd.moss-base-provenance-sha256' "$DOCKERFILE"
 grep -Fq 'org.the-ai-crowd.builder-source-revision' "$DOCKERFILE"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/bin"
+mkdir -p "$tmp/bin" "$tmp/fake-state/aliases"
+printf '{"schema":"the-ai-crowd.moss-base-provenance.v1","base_image_id":"%s","moss":{"commit":"%s","tree":"%s"}}\n' \
+  "$BASE" "$MOSS_REV" "$MOSS_TREE" >"$tmp/base-provenance.json"
+BASE_PROVENANCE_SHA=$(sha256sum "$tmp/base-provenance.json" | cut -d' ' -f1)
+
 cat >"$tmp/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 BASE=${FAKE_BASE_IMAGE:?}
 IMAGE=${FAKE_IMAGE_ID:?}
+STATE=${FAKE_STATE:?}
+key() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
 if [[ ${1:-} == image && ${2:-} == inspect ]]; then
-  if [[ ${3:-} == candidate:test ]]; then printf '%s\n' "$IMAGE"; else printf '%s\n' "$BASE"; fi
+  ref=${3:-}
+  if [[ $ref == "$BASE" ]]; then printf '%s\n' "$BASE"; exit 0; fi
+  if [[ $ref == candidate:* ]]; then printf '%s\n' "$IMAGE"; exit 0; fi
+  if [[ $ref == the-ai-crowd/moss-build-base:* ]]; then
+    if [[ ${FAKE_PREEXIST_ALIAS:-} == true ]]; then printf '%s\n' "${FAKE_OTHER_IMAGE:?}"; exit 0; fi
+    file="$STATE/aliases/$(key "$ref")"
+    [[ -f $file ]] || exit 1
+    IFS= read -r value <"$file"
+    printf '%s\n' "$value"
+    exit 0
+  fi
+  exit 1
+fi
+if [[ ${1:-} == image && ${2:-} == tag ]]; then
+  src=${3:?}; dst=${4:?}
+  [[ $src == "$BASE" && $dst == the-ai-crowd/moss-build-base:* ]]
+  file="$STATE/aliases/$(key "$dst")"
+  printf '%s\n' "$BASE" >"$file"
+  printf '%s\n' "$dst" >>"$STATE/tagged.log"
   exit 0
 fi
-if [[ ${1:-} == image && ${2:-} == tag ]]; then exit 0; fi
-if [[ ${1:-} == image && ${2:-} == rm ]]; then exit 0; fi
+if [[ ${1:-} == image && ${2:-} == rm ]]; then
+  ref=${3:?}; file="$STATE/aliases/$(key "$ref")"
+  [[ -f $file ]]
+  rm -- "$file"
+  printf '%s\n' "$ref" >>"$STATE/removed.log"
+  exit 0
+fi
 [[ ${1:-} == build ]] || { echo "unexpected fake docker command: $*" >&2; exit 90; }
 shift
 declare -A arg ctx
 main=
 while (($#)); do
   case "$1" in
-    --build-arg) key=${2%%=*}; arg[$key]=${2#*=}; shift 2 ;;
-    --build-context) key=${2%%=*}; ctx[$key]=${2#*=}; shift 2 ;;
+    --build-arg) key_name=${2%%=*}; arg[$key_name]=${2#*=}; shift 2 ;;
+    --build-context) key_name=${2%%=*}; ctx[$key_name]=${2#*=}; shift 2 ;;
     --file|--tag) shift 2 ;;
     --pull=false) shift ;;
     *) main=$1; shift ;;
@@ -93,38 +133,50 @@ for name in agent webui; do
 done
 [[ ${arg[HERMES_AGENT_REV]} == d07819fd0c5acb98a745dce94d6ddce08e9b4904 ]]
 [[ ${arg[HERMES_WEBUI_REV]} == 400c2e3f1d779e1a9a961937c4395676088d9f4d ]]
+[[ ${arg[MOSS_SOURCE_REV]} == 321f1158b2c360a895c4a1679c000aa4ff3b7a9d ]]
+[[ ${arg[MOSS_SOURCE_TREE]} == b2fa360209db0da9fe2e69a916a81ab7d00d98cf ]]
+[[ ${arg[MOSS_BASE_PROVENANCE_SHA256]} == "${FAKE_BASE_PROVENANCE_SHA:?}" ]]
+[[ -n ${FAKE_BUILD_DELAY:-} ]] && sleep "$FAKE_BUILD_DELAY"
 exit 0
 FAKE
 chmod 0755 "$tmp/bin/docker"
 
 run_builder() {
-  local receipt=$1
-  PATH="$tmp/bin:$PATH" FAKE_BASE_IMAGE="$BASE" FAKE_IMAGE_ID="$IMAGE" \
-    "$SCRIPT" --tag candidate:test --base-image "$BASE" \
+  local receipt=$1 provenance=${2:-$tmp/base-provenance.json} provenance_sha=${3:-$BASE_PROVENANCE_SHA} tag=${4:-candidate:test}
+  PATH="$tmp/bin:$PATH" FAKE_BASE_IMAGE="$BASE" FAKE_OTHER_IMAGE="$OTHER" FAKE_IMAGE_ID="$IMAGE" \
+    FAKE_STATE="$tmp/fake-state" FAKE_BASE_PROVENANCE_SHA="$BASE_PROVENANCE_SHA" \
+    "$SCRIPT" --tag "$tag" --base-image "$BASE" \
+    --base-provenance-receipt "$provenance" --base-provenance-sha256 "$provenance_sha" \
     --agent-repo "$AGENT_REPO" --agent-rev "$AGENT_REV" \
     --webui-repo "$WEBUI_REPO" --webui-rev "$WEBUI_REV" \
+    --moss-repo "$MOSS_REPO" --moss-rev "$MOSS_REV" \
     --builder-repo "$BUILDER_REPO" --builder-rev "$BUILDER_REV" \
-    --moss-rev "$MOSS_REV" --receipt "$receipt"
+    --receipt "$receipt"
 }
 
 (
   cd "$tmp"
   run_builder "$tmp/receipt.json"
 )
-python3 - "$tmp/receipt.json" "$IMAGE" "$AGENT_REV" "$WEBUI_REV" "$BUILDER_REV" <<'PY'
+python3 - "$tmp/receipt.json" "$IMAGE" "$AGENT_REV" "$WEBUI_REV" "$MOSS_REV" "$MOSS_TREE" "$BUILDER_REV" "$BASE_PROVENANCE_SHA" <<'PY'
 import json,sys
-p,image,agent,webui,builder=sys.argv[1:]
+p,image,agent,webui,moss,moss_tree,builder,base_provenance=sys.argv[1:]
 d=json.load(open(p))
-assert d["schema_version"] == 2
+assert d["schema_version"] == 3
 assert d["image_id"] == image
+assert d["base_provenance_receipt_sha256"] == base_provenance
 assert d["sources"]["hermes_agent"]["commit"] == agent
 assert d["sources"]["hermes_webui"]["commit"] == webui
+assert d["sources"]["moss"] == {"commit":moss,"tree":moss_tree}
 assert d["sources"]["builder"]["commit"] == builder
 for name in ("hermes_agent","hermes_webui"):
     assert len(d["sources"][name]["archive_sha256"]) == 64
     assert len(d["sources"][name]["marker_sha256"]) == 64
 assert d["production_lifecycle"] is False
 PY
+[[ ! $(find "$tmp/fake-state/aliases" -type f -print -quit) ]]
+[[ $(wc -l <"$tmp/fake-state/tagged.log") -eq 1 && $(wc -l <"$tmp/fake-state/removed.log") -eq 1 ]]
+
 set +e
 out=$(run_builder "$tmp/receipt.json" 2>&1); rc=$?
 set -e
@@ -143,14 +195,59 @@ for scenario in archive marker marker-reseal; do
   [[ ! -e $tmp/$scenario.json ]]
 done
 
+# Pinned receipt byte tamper and semantically wrong but re-sealed provenance both fail.
+cp "$tmp/base-provenance.json" "$tmp/base-provenance-tampered.json"
+printf ' ' >>"$tmp/base-provenance-tampered.json"
 set +e
-out=$(PATH="$tmp/bin:$PATH" FAKE_BASE_IMAGE="$BASE" FAKE_IMAGE_ID="$IMAGE" \
+out=$(run_builder "$tmp/provenance-byte.json" "$tmp/base-provenance-tampered.json" "$BASE_PROVENANCE_SHA" 2>&1); rc=$?
+set -e
+[[ $rc -ne 0 && $out == *'base provenance receipt checksum mismatch'* ]]
+printf '{"schema":"the-ai-crowd.moss-base-provenance.v1","base_image_id":"%s","moss":{"commit":"%s","tree":"%s"}}\n' \
+  "$OTHER" "$MOSS_REV" "$MOSS_TREE" >"$tmp/base-provenance-wrong.json"
+wrong_sha=$(sha256sum "$tmp/base-provenance-wrong.json" | cut -d' ' -f1)
+set +e
+out=$(run_builder "$tmp/provenance-semantic.json" "$tmp/base-provenance-wrong.json" "$wrong_sha" 2>&1); rc=$?
+set -e
+[[ $rc -ne 0 && $out == *'base provenance does not match image or resolved Moss source'* ]]
+ln -s "$tmp/base-provenance.json" "$tmp/base-provenance-link.json"
+set +e
+out=$(run_builder "$tmp/provenance-link.json" "$tmp/base-provenance-link.json" "$BASE_PROVENANCE_SHA" 2>&1); rc=$?
+set -e
+[[ $rc -ne 0 && $out == *'base provenance receipt unavailable'* ]]
+
+# A pre-existing alias is neither overwritten nor removed.
+before_tags=$(wc -l <"$tmp/fake-state/tagged.log")
+before_removes=$(wc -l <"$tmp/fake-state/removed.log")
+set +e
+out=$(FAKE_PREEXIST_ALIAS=true run_builder "$tmp/preexisting.json" 2>&1); rc=$?
+set -e
+[[ $rc -eq 65 && $out == *'unique base alias unexpectedly pre-exists; refusing overwrite'* ]]
+[[ $(wc -l <"$tmp/fake-state/tagged.log") -eq $before_tags ]]
+[[ $(wc -l <"$tmp/fake-state/removed.log") -eq $before_removes ]]
+
+# Concurrent executions receive distinct aliases and each removes only its own alias.
+FAKE_BUILD_DELAY=0.2 run_builder "$tmp/concurrent-one.json" "$tmp/base-provenance.json" "$BASE_PROVENANCE_SHA" candidate:one >"$tmp/concurrent-one.log" 2>&1 &
+pid_one=$!
+FAKE_BUILD_DELAY=0.2 run_builder "$tmp/concurrent-two.json" "$tmp/base-provenance.json" "$BASE_PROVENANCE_SHA" candidate:two >"$tmp/concurrent-two.log" 2>&1 &
+pid_two=$!
+wait "$pid_one"
+wait "$pid_two"
+mapfile -t concurrent_tags < <(tail -n 2 "$tmp/fake-state/tagged.log" | sort -u)
+[[ ${#concurrent_tags[@]} -eq 2 ]]
+for alias in "${concurrent_tags[@]}"; do grep -Fxq "$alias" "$tmp/fake-state/removed.log"; done
+[[ ! $(find "$tmp/fake-state/aliases" -type f -print -quit) ]]
+
+set +e
+out=$(PATH="$tmp/bin:$PATH" FAKE_BASE_IMAGE="$BASE" FAKE_OTHER_IMAGE="$OTHER" FAKE_IMAGE_ID="$IMAGE" \
+  FAKE_STATE="$tmp/fake-state" FAKE_BASE_PROVENANCE_SHA="$BASE_PROVENANCE_SHA" \
   "$SCRIPT" --tag candidate:test --base-image "$BASE" \
+  --base-provenance-receipt "$tmp/base-provenance.json" --base-provenance-sha256 "$BASE_PROVENANCE_SHA" \
   --agent-repo "$AGENT_REPO" --agent-rev 0000000000000000000000000000000000000000 \
   --webui-repo "$WEBUI_REPO" --webui-rev "$WEBUI_REV" \
+  --moss-repo "$MOSS_REPO" --moss-rev "$MOSS_REV" \
   --builder-repo "$BUILDER_REPO" --builder-rev "$BUILDER_REV" \
-  --moss-rev "$MOSS_REV" --receipt "$tmp/wrong-pin.json" 2>&1); rc=$?
+  --receipt "$tmp/wrong-pin.json" 2>&1); rc=$?
 set -e
 [[ $rc -eq 65 && $out == *'Hermes Agent revision differs from the approved pin'* ]]
 [[ ! -e $tmp/wrong-pin.json ]]
-printf '%s\n' 'test-build-moss-integrated-release: PASS sealed-archives=2 causal-tamper=3 write-once=PASS cwd-independent=PASS'
+printf '%s\n' 'test-build-moss-integrated-release: PASS sealed-archives=2 causal-tamper=3 provenance-negatives=3 preexisting-alias=PASS concurrent-aliases=2 cleanup-owned-only=PASS write-once=PASS cwd-independent=PASS'

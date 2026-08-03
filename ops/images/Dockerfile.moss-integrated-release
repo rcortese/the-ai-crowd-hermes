@@ -13,6 +13,8 @@ ARG HERMES_WEBUI_ARCHIVE_SHA256
 ARG HERMES_WEBUI_MARKER_SHA256
 ARG HERMES_WEBUI_VERSION
 ARG MOSS_SOURCE_REV
+ARG MOSS_SOURCE_TREE
+ARG MOSS_BASE_PROVENANCE_SHA256
 ARG BUILDER_SOURCE_REV
 
 COPY --from=agent_source source.tar /tmp/sealed-agent/source.tar
@@ -68,6 +70,8 @@ LABEL org.the-ai-crowd.artifact="moss-all-in-one" \
       org.the-ai-crowd.hermes-agent-revision="${HERMES_AGENT_REV}" \
       org.the-ai-crowd.hermes-webui-revision="${HERMES_WEBUI_REV}" \
       org.the-ai-crowd.moss-source-revision="${MOSS_SOURCE_REV}" \
+      org.the-ai-crowd.moss-source-tree="${MOSS_SOURCE_TREE}" \
+      org.the-ai-crowd.moss-base-provenance-sha256="${MOSS_BASE_PROVENANCE_SHA256}" \
       org.the-ai-crowd.builder-source-revision="${BUILDER_SOURCE_REV}"
 
 USER hermes
