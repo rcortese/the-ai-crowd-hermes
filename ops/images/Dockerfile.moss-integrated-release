@@ -4,43 +4,71 @@ FROM ${MOSS_BASE_IMAGE}
 USER root
 
 ARG HERMES_AGENT_REV
+ARG HERMES_AGENT_TREE
+ARG HERMES_AGENT_ARCHIVE_SHA256
+ARG HERMES_AGENT_MARKER_SHA256
 ARG HERMES_WEBUI_REV
+ARG HERMES_WEBUI_TREE
+ARG HERMES_WEBUI_ARCHIVE_SHA256
+ARG HERMES_WEBUI_MARKER_SHA256
+ARG HERMES_WEBUI_VERSION
 ARG MOSS_SOURCE_REV
+ARG BUILDER_SOURCE_REV
 
-COPY --from=agent_source / /tmp/hermes-agent-source/
-COPY --from=webui_source / /tmp/hermes-webui-source/
+COPY --from=agent_source source.tar /tmp/sealed-agent/source.tar
+COPY --from=agent_source source.marker /tmp/sealed-agent/source.marker
+COPY --from=webui_source source.tar /tmp/sealed-webui/source.tar
+COPY --from=webui_source source.marker /tmp/sealed-webui/source.marker
 
-RUN test "$(git -C /tmp/hermes-agent-source rev-parse HEAD)" = "${HERMES_AGENT_REV}" \
-    && test -z "$(git -C /tmp/hermes-agent-source status --porcelain)" \
-    && test "$(git -C /tmp/hermes-webui-source rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
-    && test -z "$(git -C /tmp/hermes-webui-source status --porcelain)" \
-    && find /opt/hermes -mindepth 1 -maxdepth 1 ! -name .venv -exec rm -rf -- {} + \
-    && cp -a /tmp/hermes-agent-source/. /opt/hermes/ \
-    && rm -rf /opt/hermes-webui \
-    && install -d -m 0755 /opt/hermes-webui \
-    && cp -a /tmp/hermes-webui-source/. /opt/hermes-webui/ \
-    && rm -rf /tmp/hermes-agent-source /tmp/hermes-webui-source \
-    && test "$(git -C /opt/hermes rev-parse HEAD)" = "${HERMES_AGENT_REV}" \
-    && test "$(git -C /opt/hermes-webui rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
-    && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
-    && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt \
-    && /opt/hermes/.venv/bin/hermes --version \
-    && /opt/hermes/.venv/bin/python3 -m py_compile \
+RUN set -eu; \
+    test "$(sha256sum /tmp/sealed-agent/source.marker | cut -d' ' -f1)" = "${HERMES_AGENT_MARKER_SHA256}" \
+      || { echo 'sealed agent marker checksum mismatch' >&2; exit 71; }; \
+    printf 'schema_version=1\ncommit=%s\ntree=%s\narchive_sha256=%s\n' \
+      "${HERMES_AGENT_REV}" "${HERMES_AGENT_TREE}" "${HERMES_AGENT_ARCHIVE_SHA256}" \
+      | cmp -s - /tmp/sealed-agent/source.marker \
+      || { echo 'sealed agent marker identity mismatch' >&2; exit 71; }; \
+    test "$(sha256sum /tmp/sealed-agent/source.tar | cut -d' ' -f1)" = "${HERMES_AGENT_ARCHIVE_SHA256}" \
+      || { echo 'sealed agent archive checksum mismatch' >&2; exit 71; }; \
+    test "$(sha256sum /tmp/sealed-webui/source.marker | cut -d' ' -f1)" = "${HERMES_WEBUI_MARKER_SHA256}" \
+      || { echo 'sealed webui marker checksum mismatch' >&2; exit 71; }; \
+    printf 'schema_version=1\ncommit=%s\ntree=%s\narchive_sha256=%s\n' \
+      "${HERMES_WEBUI_REV}" "${HERMES_WEBUI_TREE}" "${HERMES_WEBUI_ARCHIVE_SHA256}" \
+      | cmp -s - /tmp/sealed-webui/source.marker \
+      || { echo 'sealed webui marker identity mismatch' >&2; exit 71; }; \
+    test "$(sha256sum /tmp/sealed-webui/source.tar | cut -d' ' -f1)" = "${HERMES_WEBUI_ARCHIVE_SHA256}" \
+      || { echo 'sealed webui archive checksum mismatch' >&2; exit 71; }; \
+    install -d -m 0755 /tmp/hermes-agent-source /tmp/hermes-webui-source; \
+    tar -xf /tmp/sealed-agent/source.tar -C /tmp/hermes-agent-source; \
+    tar -xf /tmp/sealed-webui/source.tar -C /tmp/hermes-webui-source; \
+    test ! -e /tmp/hermes-agent-source/.git; \
+    test ! -e /tmp/hermes-webui-source/.git; \
+    find /opt/hermes -mindepth 1 -maxdepth 1 ! -name .venv -exec rm -rf -- {} +; \
+    cp -a /tmp/hermes-agent-source/. /opt/hermes/; \
+    rm -rf /opt/hermes-webui; \
+    install -d -m 0755 /opt/hermes-webui; \
+    cp -a /tmp/hermes-webui-source/. /opt/hermes-webui/; \
+    rm -rf /tmp/sealed-agent /tmp/sealed-webui /tmp/hermes-agent-source /tmp/hermes-webui-source; \
+    test ! -e /opt/hermes/.git; \
+    test ! -e /opt/hermes-webui/.git; \
+    uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes; \
+    uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt; \
+    /opt/hermes/.venv/bin/hermes --version; \
+    /opt/hermes/.venv/bin/python3 -m py_compile \
        /opt/hermes/tools/terminal_tool.py \
        /opt/hermes/tools/web_tools.py \
        /opt/hermes/agent/agent_init.py \
        /opt/hermes-webui/server.py \
        /opt/hermes-webui/api/routes.py \
-       /opt/hermes-webui/api/streaming.py \
-    && WEBUI_VERSION="$(git -C /opt/hermes-webui describe --tags --always --dirty)" \
-    && printf "__version__ = '%s'\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
-    && chown -R 99:100 /opt/hermes /opt/hermes-webui
+       /opt/hermes-webui/api/streaming.py; \
+    printf "__version__ = '%s'\n" "${HERMES_WEBUI_VERSION}" > /opt/hermes-webui/api/_version.py; \
+    chown -R 99:100 /opt/hermes /opt/hermes-webui
 
 LABEL org.the-ai-crowd.artifact="moss-all-in-one" \
       org.the-ai-crowd.release-kind="integrated-agent-webui-moss" \
       org.the-ai-crowd.hermes-agent-revision="${HERMES_AGENT_REV}" \
       org.the-ai-crowd.hermes-webui-revision="${HERMES_WEBUI_REV}" \
-      org.the-ai-crowd.moss-source-revision="${MOSS_SOURCE_REV}"
+      org.the-ai-crowd.moss-source-revision="${MOSS_SOURCE_REV}" \
+      org.the-ai-crowd.builder-source-revision="${BUILDER_SOURCE_REV}"
 
 USER hermes
 WORKDIR /agents/moss/private
