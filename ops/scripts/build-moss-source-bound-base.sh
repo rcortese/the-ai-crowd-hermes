@@ -99,7 +99,7 @@ fi
   --build-context "moss_source=$tmp/moss" "$tmp/builder"
 
 [[ -f $tmp/image.iid && ! -L $tmp/image.iid ]] || { echo 'build did not produce an image ID file' >&2; exit 66; }
-IFS= read -r IMAGE_ID <"$tmp/image.iid"
+IMAGE_ID=$(<"$tmp/image.iid")
 [[ $IMAGE_ID =~ ^sha256:[0-9a-f]{64}$ && $IMAGE_ID != "$RUNTIME_BASE_IMAGE" ]] || { echo 'invalid or unchanged source-bound base image identity' >&2; exit 66; }
 [[ $("$DOCKER_BIN" image inspect "$IMAGE_ID" --format '{{.Id}}') == "$IMAGE_ID" ]] || { echo 'built source-bound base image unavailable by immutable ID' >&2; exit 66; }
 # The alias is only transport for Dockerfile FROM. Close any alias race by proving

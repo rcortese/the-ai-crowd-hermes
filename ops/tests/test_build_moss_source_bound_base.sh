@@ -58,7 +58,7 @@ expected=$(printf 'schema_version=1\ncommit=%s\ntree=%s\narchive_sha256=%s\n' "$
 [[ ${arg[MOSS_SOURCE_REV]} == 321f1158b2c360a895c4a1679c000aa4ff3b7a9d ]]
 [[ ${arg[MOSS_SOURCE_TREE]} == b2fa360209db0da9fe2e69a916a81ab7d00d98cf ]]
 mkdir "$c/out"; tar -xf "$c/source.tar" -C "$c/out"; [[ ! -e $c/out/.git ]]; find "$c/out" -type f -print -quit | grep -q .
-printf '%s\n' "$IMAGE" >"${iidfile:?}"
+printf '%s' "$IMAGE" >"${iidfile:?}"
 FAKE
 chmod 0755 "$tmp/bin/docker"
 run(){ PATH="$tmp/bin:$PATH" FAKE_BASE_IMAGE=$BASE FAKE_IMAGE_ID=$IMAGE FAKE_STATE="$tmp/state" "$SCRIPT" --tag candidate:test --runtime-base-image "$BASE" --moss-repo "$MOSS_REPO" --moss-rev "$MOSS_REV" --builder-repo "$BUILDER_REPO" --builder-rev "$BUILDER_REV" --receipt "$1"; }
