@@ -1,0 +1,46 @@
+ARG MOSS_BASE_IMAGE
+FROM ${MOSS_BASE_IMAGE}
+
+USER root
+
+ARG HERMES_AGENT_REV
+ARG HERMES_WEBUI_REV
+ARG MOSS_SOURCE_REV
+
+COPY --from=agent_source / /tmp/hermes-agent-source/
+COPY --from=webui_source / /tmp/hermes-webui-source/
+
+RUN test "$(git -C /tmp/hermes-agent-source rev-parse HEAD)" = "${HERMES_AGENT_REV}" \
+    && test -z "$(git -C /tmp/hermes-agent-source status --porcelain)" \
+    && test "$(git -C /tmp/hermes-webui-source rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
+    && test -z "$(git -C /tmp/hermes-webui-source status --porcelain)" \
+    && find /opt/hermes -mindepth 1 -maxdepth 1 ! -name .venv -exec rm -rf -- {} + \
+    && cp -a /tmp/hermes-agent-source/. /opt/hermes/ \
+    && rm -rf /opt/hermes-webui \
+    && install -d -m 0755 /opt/hermes-webui \
+    && cp -a /tmp/hermes-webui-source/. /opt/hermes-webui/ \
+    && rm -rf /tmp/hermes-agent-source /tmp/hermes-webui-source \
+    && test "$(git -C /opt/hermes rev-parse HEAD)" = "${HERMES_AGENT_REV}" \
+    && test "$(git -C /opt/hermes-webui rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
+    && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
+    && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt \
+    && /opt/hermes/.venv/bin/hermes --version \
+    && /opt/hermes/.venv/bin/python3 -m py_compile \
+       /opt/hermes/tools/terminal_tool.py \
+       /opt/hermes/tools/web_tools.py \
+       /opt/hermes/agent/agent_init.py \
+       /opt/hermes-webui/server.py \
+       /opt/hermes-webui/api/routes.py \
+       /opt/hermes-webui/api/streaming.py \
+    && WEBUI_VERSION="$(git -C /opt/hermes-webui describe --tags --always --dirty)" \
+    && printf "__version__ = '%s'\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
+    && chown -R 99:100 /opt/hermes /opt/hermes-webui
+
+LABEL org.the-ai-crowd.artifact="moss-all-in-one" \
+      org.the-ai-crowd.release-kind="integrated-agent-webui-moss" \
+      org.the-ai-crowd.hermes-agent-revision="${HERMES_AGENT_REV}" \
+      org.the-ai-crowd.hermes-webui-revision="${HERMES_WEBUI_REV}" \
+      org.the-ai-crowd.moss-source-revision="${MOSS_SOURCE_REV}"
+
+USER hermes
+WORKDIR /agents/moss/private
