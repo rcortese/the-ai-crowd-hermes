@@ -1,0 +1,2 @@
+Foreground (default): commands return immediately when done.
+Long-running bounded tasks MUST set notify_on_complete=true.

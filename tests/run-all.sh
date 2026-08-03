@@ -22,6 +22,7 @@ run /opt/hermes/.venv/bin/python ops/tests/test_persona_rpc_docs_contract.py
 run /opt/hermes/.venv/bin/python tests/protocol/test_no_alternative_a2a.py
 run tests/persona-rpc-cutover.sh
 run agents/public/jen/tests/jen-state-path-policy.contract.sh
+run ops/tests/test_lean_agent_deployment_contracts.sh --mode fixture --self-test
 run tests/health-check.sh
 run tests/drift-detection.sh
 run tests/validate-schemas.sh
