@@ -1,0 +1,41 @@
+ARG MOSS_RUNTIME_BASE
+FROM ${MOSS_RUNTIME_BASE}
+
+USER root
+
+ARG MOSS_RUNTIME_BASE_ID
+ARG MOSS_SOURCE_REV
+ARG MOSS_SOURCE_TREE
+ARG MOSS_SOURCE_ARCHIVE_SHA256
+ARG MOSS_SOURCE_MARKER_SHA256
+ARG BUILDER_SOURCE_REV
+
+COPY --from=moss_source source.tar /tmp/sealed-moss/source.tar
+COPY --from=moss_source source.marker /tmp/sealed-moss/source.marker
+
+RUN set -eu; \
+    test "$(sha256sum /tmp/sealed-moss/source.marker | cut -d' ' -f1)" = "${MOSS_SOURCE_MARKER_SHA256}" \
+      || { echo 'sealed Moss marker checksum mismatch' >&2; exit 71; }; \
+    printf 'schema_version=1\ncommit=%s\ntree=%s\narchive_sha256=%s\n' \
+      "${MOSS_SOURCE_REV}" "${MOSS_SOURCE_TREE}" "${MOSS_SOURCE_ARCHIVE_SHA256}" \
+      | cmp -s - /tmp/sealed-moss/source.marker \
+      || { echo 'sealed Moss marker identity mismatch' >&2; exit 71; }; \
+    test "$(sha256sum /tmp/sealed-moss/source.tar | cut -d' ' -f1)" = "${MOSS_SOURCE_ARCHIVE_SHA256}" \
+      || { echo 'sealed Moss archive checksum mismatch' >&2; exit 71; }; \
+    rm -rf /opt/the-ai-crowd/source/moss; \
+    install -d -m 0755 /opt/the-ai-crowd/source/moss /usr/local/share/the-ai-crowd; \
+    tar -xf /tmp/sealed-moss/source.tar -C /opt/the-ai-crowd/source/moss; \
+    test ! -e /opt/the-ai-crowd/source/moss/.git; \
+    cp /tmp/sealed-moss/source.marker /usr/local/share/the-ai-crowd/moss-source.marker; \
+    chmod 0444 /usr/local/share/the-ai-crowd/moss-source.marker; \
+    chmod -R u=rwX,go=rX /opt/the-ai-crowd/source/moss; \
+    rm -rf /tmp/sealed-moss
+
+LABEL org.the-ai-crowd.artifact="moss-source-bound-base" \
+      org.the-ai-crowd.moss-source-binding-kind="archived-git-source" \
+      org.the-ai-crowd.moss-source-revision="${MOSS_SOURCE_REV}" \
+      org.the-ai-crowd.moss-source-tree="${MOSS_SOURCE_TREE}" \
+      org.the-ai-crowd.moss-source-archive-sha256="${MOSS_SOURCE_ARCHIVE_SHA256}" \
+      org.the-ai-crowd.moss-source-marker-sha256="${MOSS_SOURCE_MARKER_SHA256}" \
+      org.the-ai-crowd.base-runtime-provenance="${MOSS_RUNTIME_BASE_ID}" \
+      org.the-ai-crowd.builder-source-revision="${BUILDER_SOURCE_REV}"
