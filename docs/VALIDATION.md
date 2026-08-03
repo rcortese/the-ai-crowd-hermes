@@ -20,6 +20,7 @@ The entrypoint runs:
 - wrapper preflight template smoke validation;
 - workspace dirty-watch read-only wrapper validation;
 - image pin validation;
+- lean Agent deployment contract fixtures and causal mutants;
 - health check validation;
 - drift detection validation;
 - schema/example validation;
@@ -43,6 +44,7 @@ These checks are intended to be public-safe and non-privileged. They do not star
 ./agents/public/moss/tools/wrappers/ssh-readonly-preflight.sh --host-ref private-ref:private-infra-host --user-ref private-ref:private-infra-user --command-class host-summary --dry-run
 ./agents/public/moss/tools/wrappers/compose-readonly-preflight.sh --repo . --mode config --dry-run
 ./tests/image-pin.sh
+./ops/tests/test_lean_agent_deployment_contracts.sh --mode fixture --self-test
 ./tests/health-check.sh
 ./tests/drift-detection.sh
 ./tests/validate-schemas.sh
@@ -76,6 +78,44 @@ Expected outputs include:
 - `base_mount_policy_ok`
 - `project_example_mount_policy_ok`
 - `history_scan_ok`
+
+## Lean Agent deployment contracts
+
+The offline gate is the canonical source-only check and never contacts Docker:
+
+```bash
+./ops/tests/test_lean_agent_deployment_contracts.sh --mode fixture --self-test
+```
+
+It verifies the downstream named `hermes` identity, upstream terminal-schema
+foreground guidance, the mounted skill's stricter foreground decision gate,
+lazy-install policy/target health, and the separate WebUI ownership boundary.
+The self-test also requires causal identity, schema, skill, and WebUI mutants to
+turn RED.
+
+`HERMES_DISABLE_LAZY_INSTALLS=1` seals the image virtualenv, but it does **not**
+disable lazy installs when `HERMES_LAZY_INSTALL_TARGET` names a durable target
+and `security.allow_lazy_installs` remains true. The gate reports the upstream
+policy decision separately from operational target health (directory exists
+and is writable). It does not attempt an install or network access.
+
+Selector and proxy contracts belong to the separately maintained
+`hermes-webui` source surface. This does not retire the embedded Hermes
+dashboard; the current all-in-one supervisor still runs it as a distinct
+surface until a separately reviewed topology change says otherwise.
+
+Where read-only Docker access is explicitly authorized, the same gate can
+inspect an already-running container without build or lifecycle effects:
+
+```bash
+./ops/tests/test_lean_agent_deployment_contracts.sh \
+  --mode live \
+  --container the-ai-crowd-moss-1
+```
+
+Live mode uses only `docker inspect` and `docker exec` reads. It imports the
+canonical configuration loader but never imports the removed custom lazy
+resolver.
 
 ## Release and history scan policy
 
