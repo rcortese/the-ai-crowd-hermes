@@ -11,6 +11,7 @@ readonly MOSS_REV=321f1158b2c360a895c4a1679c000aa4ff3b7a9d
 readonly MOSS_TREE=b2fa360209db0da9fe2e69a916a81ab7d00d98cf
 readonly BASE=sha256:f7db73a38d6c82f0534fe9b638f4891972a7714cd2eea0497ab84d5c2c53cc3a
 readonly IMAGE=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+JQ_BIN=${JQ_BIN:-$(command -v jq)}
 
 test "$(git -C "$MOSS_REPO" rev-parse "$MOSS_REV^{commit}")" = "$MOSS_REV"
 test "$(git -C "$MOSS_REPO" rev-parse "$MOSS_REV^{tree}")" = "$MOSS_TREE"
@@ -60,20 +61,30 @@ expected=$(printf 'schema_version=1\ncommit=%s\ntree=%s\narchive_sha256=%s\n' "$
 mkdir "$c/out"; tar -xf "$c/source.tar" -C "$c/out"; [[ ! -e $c/out/.git ]]; find "$c/out" -type f -print -quit | grep -q .
 printf '%s' "$IMAGE" >"${iidfile:?}"
 FAKE
-chmod 0755 "$tmp/bin/docker"
-run(){ PATH="$tmp/bin:$PATH" FAKE_BASE_IMAGE=$BASE FAKE_IMAGE_ID=$IMAGE FAKE_STATE="$tmp/state" "$SCRIPT" --tag candidate:test --runtime-base-image "$BASE" --moss-repo "$MOSS_REPO" --moss-rev "$MOSS_REV" --builder-repo "$BUILDER_REPO" --builder-rev "$BUILDER_REV" --receipt "$1"; }
-(cd "$tmp"; run "$tmp/receipt.json")
-python3 - "$tmp/receipt.json" "$IMAGE" "$MOSS_REV" "$MOSS_TREE" <<'PY'
-import json,sys
-p,image,commit,tree=sys.argv[1:]
-d=json.load(open(p))
-assert d=={"schema":"the-ai-crowd.moss-base-provenance.v1","base_image_id":image,"moss":{"commit":commit,"tree":tree}}
-PY
+cat >"$tmp/bin/python3" <<'NO_PYTHON'
+#!/usr/bin/env bash
+printf '%s\n' 'python3 must not be invoked by host builder' >&2
+exit 127
+NO_PYTHON
+chmod 0755 "$tmp/bin/docker" "$tmp/bin/python3"
+run(){ PATH="$tmp/bin:$PATH" JQ_BIN="$JQ_BIN" FAKE_BASE_IMAGE=$BASE FAKE_IMAGE_ID=$IMAGE FAKE_STATE="$tmp/state" "$SCRIPT" --tag candidate:test --runtime-base-image "$BASE" --moss-repo "$MOSS_REPO" --moss-rev "$MOSS_REV" --builder-repo "$BUILDER_REPO" --builder-rev "$BUILDER_REV" --receipt "$1"; }
+(cd "$tmp"; PATH="$tmp/bin:/usr/bin:/bin" run "$tmp/receipt.json")
+"$JQ_BIN" -e --arg image "$IMAGE" --arg commit "$MOSS_REV" --arg tree "$MOSS_TREE" '
+  keys == ["base_image_id","moss","schema"]
+  and .schema == "the-ai-crowd.moss-base-provenance.v1"
+  and .base_image_id == $image
+  and .moss == {commit:$commit,tree:$tree}
+' "$tmp/receipt.json" >/dev/null
 [[ $(find "$tmp/state/aliases" -type f | wc -l) -eq 1 ]]
 set +e; out=$(run "$tmp/receipt.json" 2>&1); rc=$?; set -e
 [[ $rc -eq 65 && $out == *'receipt already exists (write-once)'* ]]
+printf 'protected\n' >"$tmp/symlink-target"
+ln -s "$tmp/symlink-target" "$tmp/symlink-receipt.json"
+set +e; out=$(run "$tmp/symlink-receipt.json" 2>&1); rc=$?; set -e
+[[ $rc -eq 65 && $out == *'receipt already exists (write-once)'* ]]
+[[ $(<"$tmp/symlink-target") == protected ]]
 set +e
 out=$(PATH="$tmp/bin:$PATH" FAKE_BASE_IMAGE=$BASE FAKE_IMAGE_ID=$IMAGE FAKE_STATE="$tmp/state" "$SCRIPT" --tag candidate:test --runtime-base-image "$BASE" --moss-repo "$MOSS_REPO" --moss-rev 0000000000000000000000000000000000000000 --builder-repo "$BUILDER_REPO" --builder-rev "$BUILDER_REV" --receipt "$tmp/wrong.json" 2>&1); rc=$?
 set -e
 [[ $rc -eq 65 && $out == *'Moss revision differs from the approved pin'* && ! -e $tmp/wrong.json ]]
-printf '%s\n' 'test-build-moss-source-bound-base: PASS sealed-archive=1 git-free=PASS runtime-provenance-separated=PASS iidfile-bound=PASS rootfs-prefix=PASS receipt=closed/write-once wrong-pin=PASS resolver-alias-retained=PASS'
+printf '%s\n' 'test-build-moss-source-bound-base: PASS host-python=not-required sealed-archive=1 git-free=PASS runtime-provenance-separated=PASS iidfile-bound=PASS rootfs-prefix=PASS receipt=closed/atomic/write-once/no-follow wrong-pin=PASS resolver-alias-retained=PASS'
