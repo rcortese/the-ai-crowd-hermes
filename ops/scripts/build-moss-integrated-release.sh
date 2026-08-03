@@ -34,11 +34,16 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 DOCKERFILE="$ROOT/ops/images/Dockerfile.moss-integrated-release"
 [[ -f $DOCKERFILE ]] || { echo 'integrated release Dockerfile missing' >&2; exit 66; }
 mkdir -p "$(dirname "$RECEIPT")"
+BASE_ALIAS="the-ai-crowd/moss-build-base:${BASE_IMAGE#sha256:}"
+cleanup() { docker image rm "$BASE_ALIAS" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+docker image tag "$BASE_IMAGE" "$BASE_ALIAS"
+[[ $(docker image inspect "$BASE_ALIAS" --format '{{.Id}}') == "$BASE_IMAGE" ]] || { echo 'temporary base alias identity mismatch' >&2; exit 65; }
 
 docker build --pull=false \
   --file "$DOCKERFILE" \
   --tag "$TAG" \
-  --build-arg "MOSS_BASE_IMAGE=$BASE_IMAGE" \
+  --build-arg "MOSS_BASE_IMAGE=$BASE_ALIAS" \
   --build-arg "HERMES_AGENT_REV=$AGENT_REV" \
   --build-arg "HERMES_WEBUI_REV=$WEBUI_REV" \
   --build-arg "MOSS_SOURCE_REV=$MOSS_REV" \
