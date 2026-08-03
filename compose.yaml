@@ -1,7 +1,8 @@
 name: the-ai-crowd
-# Hermes images enter through s6/supervisord as root and drop their managed
-# application processes to HERMES_UID:HERMES_GID. Do not change the Compose
-# user to the runtime UID: s6 needs root to set supplementary groups.
+# Hermes images enter through s6/supervisord as root; supervisors drop workloads
+# to the named `hermes` account baked downstream as UID:GID 99:100.
+# HERMES_UID/HERMES_GID mirror that identity; they do not perform the remap.
+# Do not change the Compose user: s6 needs root to set supplementary groups.
 x-hermes-runtime: &hermes-runtime
   restart: always
   user: "0:0"

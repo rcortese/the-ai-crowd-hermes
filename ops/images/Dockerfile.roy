@@ -51,10 +51,16 @@ LABEL the-ai-crowd.agent="roy" \
 
 ENV PATH="/opt/hermes/.venv/bin:/opt/data/.local/bin:${PATH}"
 
-# Bake Hermes runtime identity as UID/GID 99:100 so Compose can run
-# the whole container without a root privilege-drop phase.
-RUN usermod -u 99 -g 100 hermes \
-    && chown -R 99:100 /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker 2>/dev/null || true
+# Bake the deployment identity while preserving the named account used by s6.
+# PID 1 still starts as root; s6-setuidgid hermes drops workloads to 99:100.
+RUN groupmod -o -g 100 hermes \
+    && usermod -o -u 99 -g hermes hermes \
+    && test "$(id -u hermes)" = 99 \
+    && test "$(id -g hermes)" = 100 \
+    && test "$(getent group hermes | cut -d: -f3)" = 100 \
+    && for path in /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/skills /opt/hermes/docker; do \
+         [ ! -e "$path" ] || chown -R hermes:hermes "$path"; \
+       done
 
 
 # Runtime processes run as UID/GID 99:100 and cannot mutate the root-owned
@@ -65,7 +71,7 @@ RUN VIRTUAL_ENV=/opt/hermes/.venv uv pip install honcho-ai==2.0.1
 
 WORKDIR /agents/roy/private
 
-USER 99:100
+USER root
 
 # The AI Crowd image owns Roy's long-lived Hermes dashboard command.
 ENV HERMES_DASHBOARD_TUI=1
