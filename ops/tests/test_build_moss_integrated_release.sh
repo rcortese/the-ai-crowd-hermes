@@ -10,7 +10,7 @@ WEBUI_REPO=${2:?usage: $0 AGENT_REPO WEBUI_REPO MOSS_REPO [BUILDER_REV [BUILDER_
 MOSS_REPO=${3:?usage: $0 AGENT_REPO WEBUI_REPO MOSS_REPO [BUILDER_REV [BUILDER_REPO]]}
 BUILDER_REV=${4:-$(git -C "$ROOT" rev-parse HEAD)}
 BUILDER_REPO=${5:-$ROOT}
-readonly AGENT_REV=d07819fd0c5acb98a745dce94d6ddce08e9b4904
+readonly AGENT_REV=8a80035101b1324d0fddb24d382d5c165868a5d0
 readonly WEBUI_REV=400c2e3f1d779e1a9a961937c4395676088d9f4d
 readonly MOSS_REV=321f1158b2c360a895c4a1679c000aa4ff3b7a9d
 readonly MOSS_TREE=b2fa360209db0da9fe2e69a916a81ab7d00d98cf
@@ -131,7 +131,7 @@ for name in agent webui; do
   [[ ! -e $c/reconstructed/.git ]]
   [[ $(find "$c/reconstructed" -type f -print -quit) ]]
 done
-[[ ${arg[HERMES_AGENT_REV]} == d07819fd0c5acb98a745dce94d6ddce08e9b4904 ]]
+[[ ${arg[HERMES_AGENT_REV]} == 8a80035101b1324d0fddb24d382d5c165868a5d0 ]]
 [[ ${arg[HERMES_WEBUI_REV]} == 400c2e3f1d779e1a9a961937c4395676088d9f4d ]]
 [[ ${arg[MOSS_SOURCE_REV]} == 321f1158b2c360a895c4a1679c000aa4ff3b7a9d ]]
 [[ ${arg[MOSS_SOURCE_TREE]} == b2fa360209db0da9fe2e69a916a81ab7d00d98cf ]]

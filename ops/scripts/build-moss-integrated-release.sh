@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 umask 077
 
-readonly HERMES_AGENT_PIN=d07819fd0c5acb98a745dce94d6ddce08e9b4904
+readonly HERMES_AGENT_PIN=8a80035101b1324d0fddb24d382d5c165868a5d0
 readonly HERMES_WEBUI_PIN=400c2e3f1d779e1a9a961937c4395676088d9f4d
 readonly HERMES_WEBUI_VERSION=v0.52.106-the-ai-crowd.1
 
