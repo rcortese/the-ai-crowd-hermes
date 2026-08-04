@@ -55,10 +55,10 @@ done
 
 GIT_BIN=${GIT_BIN:-git}
 DOCKER_BIN=${DOCKER_BIN:-docker}
-PYTHON_BIN=${PYTHON_BIN:-python3}
+JQ_BIN=${JQ_BIN:-jq}
 command -v "$GIT_BIN" >/dev/null || { echo 'git unavailable' >&2; exit 66; }
 command -v "$DOCKER_BIN" >/dev/null || { echo 'docker unavailable' >&2; exit 66; }
-command -v "$PYTHON_BIN" >/dev/null || { echo 'python3 unavailable' >&2; exit 66; }
+command -v "$JQ_BIN" >/dev/null || { echo 'jq unavailable' >&2; exit 66; }
 
 verify_commit() {
   local repo=$1 rev=$2 name=$3 resolved
@@ -101,45 +101,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Capture once through O_NOFOLLOW, verify the externally pinned receipt digest, and
-# require a closed binding between the immutable base image and the resolved Moss object.
-"$PYTHON_BIN" - "$BASE_PROVENANCE_RECEIPT" "$tmp/base-provenance.json" \
-  "$BASE_PROVENANCE_SHA256" "$BASE_IMAGE" "$MOSS_REV" "$MOSS_TREE" <<'PY'
-import hashlib, json, os, pathlib, stat, sys
-src, dst, expected_sha, image, commit, tree = sys.argv[1:]
-try:
-    fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
-except OSError as exc:
-    raise SystemExit(f"base provenance receipt unavailable: {exc}")
-try:
-    if not stat.S_ISREG(os.fstat(fd).st_mode):
-        raise SystemExit("base provenance receipt must be a regular non-symlink file")
-    chunks = []
-    while True:
-        chunk = os.read(fd, 1024 * 1024)
-        if not chunk:
-            break
-        chunks.append(chunk)
-finally:
-    os.close(fd)
-raw = b"".join(chunks)
-actual_sha = hashlib.sha256(raw).hexdigest()
-if actual_sha != expected_sha:
-    raise SystemExit("base provenance receipt checksum mismatch")
-try:
-    data = json.loads(raw)
-except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-    raise SystemExit(f"invalid base provenance receipt: {exc}")
-if set(data) != {"schema", "base_image_id", "moss"} or data.get("schema") != "the-ai-crowd.moss-base-provenance.v1":
-    raise SystemExit("base provenance receipt schema mismatch")
-moss = data.get("moss")
-if not isinstance(moss, dict) or set(moss) != {"commit", "tree"}:
-    raise SystemExit("base provenance receipt Moss binding malformed")
-if data["base_image_id"] != image or moss["commit"] != commit or moss["tree"] != tree:
-    raise SystemExit("base provenance does not match image or resolved Moss source")
-pathlib.Path(dst).write_bytes(raw)
-PY
+# Capture once through a bound descriptor, verify the externally pinned receipt digest,
+# and require a closed binding between the immutable base image and the resolved Moss object.
+[[ -f $BASE_PROVENANCE_RECEIPT && ! -L $BASE_PROVENANCE_RECEIPT ]] || { echo 'base provenance receipt must be a regular non-symlink file' >&2; exit 66; }
+exec {BASE_PROVENANCE_FD}<"$BASE_PROVENANCE_RECEIPT"
+[[ $(stat -Lc '%F' "/proc/$$/fd/$BASE_PROVENANCE_FD") == 'regular file' ]] || { echo 'base provenance receipt must be a regular file' >&2; exit 66; }
+actual_base_provenance_sha=$(sha256sum "/proc/$$/fd/$BASE_PROVENANCE_FD" | cut -d' ' -f1)
+[[ $actual_base_provenance_sha == "$BASE_PROVENANCE_SHA256" ]] || { echo 'base provenance receipt checksum mismatch' >&2; exit 65; }
+cat "/proc/$$/fd/$BASE_PROVENANCE_FD" >"$tmp/base-provenance.json"
 chmod 0444 "$tmp/base-provenance.json"
+"$JQ_BIN" -e --arg image "$BASE_IMAGE" --arg commit "$MOSS_REV" --arg tree "$MOSS_TREE" '
+  (keys | sort) == ["base_image_id","moss","schema"]
+  and .schema == "the-ai-crowd.moss-base-provenance.v1"
+  and .base_image_id == $image
+  and .moss == {commit:$commit,tree:$tree}
+' "$tmp/base-provenance.json" >/dev/null || { echo 'base provenance does not match image or resolved Moss source' >&2; exit 65; }
 
 seal_source() {
   local name=$1 repo=$2 rev=$3
@@ -197,44 +173,38 @@ base_alias_created=true
 
 IMAGE_ID=$("$DOCKER_BIN" image inspect "$TAG" --format '{{.Id}}')
 [[ $IMAGE_ID =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'candidate image identity unavailable' >&2; exit 66; }
-mkdir -p "$(dirname "$RECEIPT")"
-"$PYTHON_BIN" - "$RECEIPT" "$IMAGE_ID" "$BASE_IMAGE" "$BASE_PROVENANCE_SHA256" \
-  "$AGENT_REV" "$AGENT_TREE" "$AGENT_ARCHIVE_SHA" "$AGENT_MARKER_SHA" \
-  "$WEBUI_REV" "$WEBUI_TREE" "$WEBUI_ARCHIVE_SHA" "$WEBUI_MARKER_SHA" \
-  "$MOSS_REV" "$MOSS_TREE" "$BUILDER_REV" "$DOCKERFILE_SHA" "$running_builder_sha" <<'PY'
-import json, os, pathlib, sys, tempfile
-(p,image,base,base_provenance,agent_rev,agent_tree,agent_archive,agent_marker,
- webui_rev,webui_tree,webui_archive,webui_marker,moss_rev,moss_tree,builder_rev,
- dockerfile_sha,builder_sha)=sys.argv[1:]
-data={
-  "schema_version":3,
-  "image_id":image,
-  "base_image_id":base,
-  "base_provenance_receipt_sha256":base_provenance,
-  "sources":{
-    "hermes_agent":{"commit":agent_rev,"tree":agent_tree,"archive_sha256":agent_archive,"marker_sha256":agent_marker},
-    "hermes_webui":{"commit":webui_rev,"tree":webui_tree,"archive_sha256":webui_archive,"marker_sha256":webui_marker},
-    "moss":{"commit":moss_rev,"tree":moss_tree},
-    "builder":{"commit":builder_rev},
-  },
-  "sha256":{"dockerfile":dockerfile_sha,"builder":builder_sha},
-  "production_lifecycle":False,
-}
-target=pathlib.Path(p)
-payload=(json.dumps(data,indent=2,sort_keys=True)+"\n").encode()
-fd,tmp=tempfile.mkstemp(prefix=f".{target.name}.",dir=target.parent)
-try:
-  with os.fdopen(fd,"wb") as f:
-    f.write(payload); f.flush(); os.fsync(f.fileno())
-  try:
-    os.link(tmp,target)
-  except FileExistsError:
-    raise SystemExit("receipt already exists (write-once)")
-  dfd=os.open(target.parent,os.O_RDONLY|os.O_DIRECTORY)
-  try: os.fsync(dfd)
-  finally: os.close(dfd)
-finally:
-  try: os.unlink(tmp)
-  except FileNotFoundError: pass
-PY
+receipt_dir=$(dirname "$RECEIPT")
+receipt_name=$(basename "$RECEIPT")
+mkdir -p "$receipt_dir"
+receipt_tmp=$(mktemp "$receipt_dir/.${receipt_name}.XXXXXXXX")
+[[ -f $receipt_tmp && ! -L $receipt_tmp ]] || { echo 'unsafe receipt temporary file' >&2; exit 66; }
+"$JQ_BIN" -cS -n \
+  --arg image "$IMAGE_ID" --arg base "$BASE_IMAGE" --arg base_provenance "$BASE_PROVENANCE_SHA256" \
+  --arg agent_rev "$AGENT_REV" --arg agent_tree "$AGENT_TREE" --arg agent_archive "$AGENT_ARCHIVE_SHA" --arg agent_marker "$AGENT_MARKER_SHA" \
+  --arg webui_rev "$WEBUI_REV" --arg webui_tree "$WEBUI_TREE" --arg webui_archive "$WEBUI_ARCHIVE_SHA" --arg webui_marker "$WEBUI_MARKER_SHA" \
+  --arg moss_rev "$MOSS_REV" --arg moss_tree "$MOSS_TREE" --arg builder_rev "$BUILDER_REV" \
+  --arg dockerfile_sha "$DOCKERFILE_SHA" --arg builder_sha "$running_builder_sha" \
+  '{schema_version:3,image_id:$image,base_image_id:$base,base_provenance_receipt_sha256:$base_provenance,sources:{hermes_agent:{commit:$agent_rev,tree:$agent_tree,archive_sha256:$agent_archive,marker_sha256:$agent_marker},hermes_webui:{commit:$webui_rev,tree:$webui_tree,archive_sha256:$webui_archive,marker_sha256:$webui_marker},moss:{commit:$moss_rev,tree:$moss_tree},builder:{commit:$builder_rev}},sha256:{dockerfile:$dockerfile_sha,builder:$builder_sha},production_lifecycle:false}' >"$receipt_tmp"
+"$JQ_BIN" -e \
+  --arg image "$IMAGE_ID" --arg base "$BASE_IMAGE" --arg base_provenance "$BASE_PROVENANCE_SHA256" \
+  --arg agent_rev "$AGENT_REV" --arg agent_tree "$AGENT_TREE" --arg agent_archive "$AGENT_ARCHIVE_SHA" --arg agent_marker "$AGENT_MARKER_SHA" \
+  --arg webui_rev "$WEBUI_REV" --arg webui_tree "$WEBUI_TREE" --arg webui_archive "$WEBUI_ARCHIVE_SHA" --arg webui_marker "$WEBUI_MARKER_SHA" \
+  --arg moss_rev "$MOSS_REV" --arg moss_tree "$MOSS_TREE" --arg builder_rev "$BUILDER_REV" \
+  --arg dockerfile_sha "$DOCKERFILE_SHA" --arg builder_sha "$running_builder_sha" '
+    (keys | sort) == ["base_image_id","base_provenance_receipt_sha256","image_id","production_lifecycle","schema_version","sha256","sources"]
+    and .schema_version == 3 and .image_id == $image and .base_image_id == $base and .base_provenance_receipt_sha256 == $base_provenance and .production_lifecycle == false
+    and .sources.hermes_agent == {commit:$agent_rev,tree:$agent_tree,archive_sha256:$agent_archive,marker_sha256:$agent_marker}
+    and .sources.hermes_webui == {commit:$webui_rev,tree:$webui_tree,archive_sha256:$webui_archive,marker_sha256:$webui_marker}
+    and .sources.moss == {commit:$moss_rev,tree:$moss_tree} and .sources.builder == {commit:$builder_rev}
+    and .sha256 == {dockerfile:$dockerfile_sha,builder:$builder_sha}
+  ' "$receipt_tmp" >/dev/null || { rm -f -- "$receipt_tmp"; echo 'generated receipt validation failed' >&2; exit 66; }
+chmod 0600 "$receipt_tmp"
+sync -f "$receipt_tmp" 2>/dev/null || sync "$receipt_tmp"
+if ! ln "$receipt_tmp" "$RECEIPT" 2>/dev/null; then
+  rm -f -- "$receipt_tmp"
+  echo 'receipt already exists (write-once)' >&2
+  exit 65
+fi
+rm -f -- "$receipt_tmp"
+sync -f "$receipt_dir" 2>/dev/null || sync "$receipt_dir"
 printf 'moss-integrated-release-build: PASS image=%s receipt=%s\n' "$IMAGE_ID" "$RECEIPT"

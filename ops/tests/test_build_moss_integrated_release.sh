@@ -17,6 +17,8 @@ readonly MOSS_TREE=b2fa360209db0da9fe2e69a916a81ab7d00d98cf
 readonly BASE=sha256:f7db73a38d6c82f0534fe9b638f4891972a7714cd2eea0497ab84d5c2c53cc3a
 readonly OTHER=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 readonly IMAGE=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+JQ_BIN=${JQ_BIN:-jq}
+command -v "$JQ_BIN" >/dev/null
 
 test "$(git -C "$AGENT_REPO" rev-parse "$AGENT_REV^{commit}")" = "$AGENT_REV"
 test "$(git -C "$WEBUI_REPO" rev-parse "$WEBUI_REV^{commit}")" = "$WEBUI_REV"
@@ -140,6 +142,8 @@ done
 exit 0
 FAKE
 chmod 0755 "$tmp/bin/docker"
+printf '%s\n' '#!/usr/bin/env bash' 'echo python3-must-not-run >&2' 'exit 99' >"$tmp/bin/python3"
+chmod 0755 "$tmp/bin/python3"
 
 run_builder() {
   local receipt=$1 provenance=${2:-$tmp/base-provenance.json} provenance_sha=${3:-$BASE_PROVENANCE_SHA} tag=${4:-candidate:test}
@@ -158,22 +162,15 @@ run_builder() {
   cd "$tmp"
   run_builder "$tmp/receipt.json"
 )
-python3 - "$tmp/receipt.json" "$IMAGE" "$AGENT_REV" "$WEBUI_REV" "$MOSS_REV" "$MOSS_TREE" "$BUILDER_REV" "$BASE_PROVENANCE_SHA" <<'PY'
-import json,sys
-p,image,agent,webui,moss,moss_tree,builder,base_provenance=sys.argv[1:]
-d=json.load(open(p))
-assert d["schema_version"] == 3
-assert d["image_id"] == image
-assert d["base_provenance_receipt_sha256"] == base_provenance
-assert d["sources"]["hermes_agent"]["commit"] == agent
-assert d["sources"]["hermes_webui"]["commit"] == webui
-assert d["sources"]["moss"] == {"commit":moss,"tree":moss_tree}
-assert d["sources"]["builder"]["commit"] == builder
-for name in ("hermes_agent","hermes_webui"):
-    assert len(d["sources"][name]["archive_sha256"]) == 64
-    assert len(d["sources"][name]["marker_sha256"]) == 64
-assert d["production_lifecycle"] is False
-PY
+"$JQ_BIN" -e \
+  --arg image "$IMAGE" --arg agent "$AGENT_REV" --arg webui "$WEBUI_REV" --arg moss "$MOSS_REV" --arg moss_tree "$MOSS_TREE" --arg builder "$BUILDER_REV" --arg provenance "$BASE_PROVENANCE_SHA" '
+    .schema_version == 3 and .image_id == $image and .base_provenance_receipt_sha256 == $provenance
+    and .sources.hermes_agent.commit == $agent and .sources.hermes_webui.commit == $webui
+    and .sources.moss == {commit:$moss,tree:$moss_tree} and .sources.builder.commit == $builder
+    and (.sources.hermes_agent.archive_sha256 | length) == 64 and (.sources.hermes_agent.marker_sha256 | length) == 64
+    and (.sources.hermes_webui.archive_sha256 | length) == 64 and (.sources.hermes_webui.marker_sha256 | length) == 64
+    and .production_lifecycle == false
+  ' "$tmp/receipt.json" >/dev/null
 [[ ! $(find "$tmp/fake-state/aliases" -type f -print -quit) ]]
 [[ $(wc -l <"$tmp/fake-state/tagged.log") -eq 1 && $(wc -l <"$tmp/fake-state/removed.log") -eq 1 ]]
 
@@ -213,7 +210,7 @@ ln -s "$tmp/base-provenance.json" "$tmp/base-provenance-link.json"
 set +e
 out=$(run_builder "$tmp/provenance-link.json" "$tmp/base-provenance-link.json" "$BASE_PROVENANCE_SHA" 2>&1); rc=$?
 set -e
-[[ $rc -ne 0 && $out == *'base provenance receipt unavailable'* ]]
+[[ $rc -ne 0 && $out == *'base provenance receipt must be a regular non-symlink file'* ]]
 
 # A pre-existing alias is neither overwritten nor removed.
 before_tags=$(wc -l <"$tmp/fake-state/tagged.log")
