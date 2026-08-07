@@ -89,6 +89,8 @@ services:
       PERSONA_TARGET_RICHMOND_TOKEN: ${MOSS_TO_RICHMOND_PERSONA_TOKEN:-}
       PERSONA_CALLER_THE_ELDERS_TOKEN: ${THE_ELDERS_TO_MOSS_PERSONA_TOKEN:-}
       PERSONA_TARGET_THE_ELDERS_TOKEN: ${MOSS_TO_THE_ELDERS_PERSONA_TOKEN:-}
+      # A2A phase 1: caller credential only; Moss has no A2A listener.
+      MOSS_TO_DENHOLM_A2A_TOKEN: ${MOSS_TO_DENHOLM_A2A_TOKEN:?set MOSS_TO_DENHOLM_A2A_TOKEN to the approved directional A2A credential}
     networks:
       internal: null
       private_proxy:
@@ -206,6 +208,13 @@ services:
       ANTHROPIC_TOKEN: ${DENHOLM_ANTHROPIC_TOKEN:-}
       PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_DENHOLM_PERSONA_TOKEN:-}
       PERSONA_TARGET_MOSS_TOKEN: ${DENHOLM_TO_MOSS_PERSONA_TOKEN:-}
+      # A2A phase 1 receiver: internal-only listener, one directional identity.
+      A2A_HOST: 0.0.0.0
+      A2A_PORT: '9900'
+      A2A_AGENT_NAME: denholm
+      A2A_PEER_TOKENS: moss:${MOSS_TO_DENHOLM_A2A_TOKEN:?set MOSS_TO_DENHOLM_A2A_TOKEN to the approved directional A2A credential}
+      A2A_TRUSTED_PEERS: moss
+      A2A_ALLOW_ALL_USERS: 'false'
     networks: *hermes-internal-networks
     env_file:
     - *hermes-fleet-env-file
@@ -222,6 +231,7 @@ services:
     expose:
     - '9122'
     - '8643'
+    - '9900'
     healthcheck:
       test:
       - CMD-SHELL
