@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -57,11 +59,13 @@ def write_atomic(path: Path, content: str, backup_dir: Path, backup_name: str) -
     backup = backup_dir / backup_name
     if backup.exists():
         raise ValueError(f"backup already exists: {backup}")
+    original_stat = path.stat()
     shutil.copy2(path, backup)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as fh:
         fh.write(content)
         tmp = Path(fh.name)
-    tmp.chmod(path.stat().st_mode)
+    os.chown(tmp, original_stat.st_uid, original_stat.st_gid)
+    tmp.chmod(stat.S_IMODE(original_stat.st_mode))
     tmp.replace(path)
 
 
