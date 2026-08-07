@@ -1,0 +1,14 @@
+ARG CURRENT_RUNTIME_IMAGE
+FROM ${CURRENT_RUNTIME_IMAGE}
+
+USER root
+
+ARG A2A_TOOLS_SHA256
+COPY --chown=root:root ops/scripts/patch-a2a-moss-denholm-plugin.py /tmp/patch-a2a-moss-denholm-plugin.py
+RUN /opt/hermes/.venv/bin/python3 /tmp/patch-a2a-moss-denholm-plugin.py \
+      --tools /opt/hermes/plugins/platforms/a2a/tools.py \
+      --expected-sha256 "$A2A_TOOLS_SHA256" \
+    && rm -f /tmp/patch-a2a-moss-denholm-plugin.py \
+    && /opt/hermes/.venv/bin/python3 -m py_compile /opt/hermes/plugins/platforms/a2a/tools.py
+
+USER hermes
