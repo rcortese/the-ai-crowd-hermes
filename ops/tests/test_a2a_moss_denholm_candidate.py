@@ -18,6 +18,9 @@ class A2AMossDenholmCandidateTests(unittest.TestCase):
         self.assertIn("A2A_ALLOW_ALL_USERS: 'false'", compose)
         self.assertIn("    - '9900'", compose)
         self.assertNotIn("0.0.0.0:9900:9900", compose)
+        self.assertNotIn("MOSS_TO_DENHOLM_PERSONA_TOKEN", compose)
+        self.assertNotIn("PERSONA_TARGET_DENHOLM_TOKEN", compose)
+        self.assertIn("DENHOLM_TO_MOSS_PERSONA_TOKEN", compose)
 
     def test_overlay_is_preimage_bound_and_restricts_exposure(self) -> None:
         dockerfile = (ROOT / "ops/images/Dockerfile.runtime-a2a-moss-denholm").read_text(encoding="utf-8")
