@@ -16,7 +16,8 @@ JEN_API=agents/public/jen/persona-api.example.yaml
 DENHOLM_API=agents/public/denholm/persona-api.example.yaml
 ROY_API=agents/public/roy/persona-api.example.yaml
 
-PEERS=(jen denholm roy richmond the-elders)
+PEERS=(jen roy richmond the-elders)
+ALL_PEERS=(jen denholm roy richmond the-elders)
 
 extract_service() {
   # Print the top-level "  <name>:" service block from compose.yaml.
@@ -57,7 +58,7 @@ echo "moss_kanban_localized_ok"
 
 # 4. Zero HERMES_KANBAN_* env vars for every peer service and touched
 # peer runtime config. Kanban dispatch is exclusively Moss-local.
-for peer in "${PEERS[@]}"; do
+for peer in "${ALL_PEERS[@]}"; do
   peer_block="$(extract_service "$peer")"
   if echo "$peer_block" | grep -q 'HERMES_KANBAN_'; then
     fail "peer service $peer must have zero HERMES_KANBAN_* env vars"
@@ -75,6 +76,10 @@ for peer in "${PEERS[@]}"; do
   grep -q "^      ${peer}:\$" "$MOSS_CFG" || fail "moss persona_api.inbound.callers missing $peer"
   grep -q "^      ${peer}:\$" "$MOSS_CFG" || fail "moss persona_api.outbound.targets missing $peer"
 done
+grep -q '^      denholm:$' "$MOSS_CFG" || fail "moss persona_api.inbound.callers missing denholm"
+if grep -A20 '^  outbound:$' "$MOSS_CFG" | grep -q '^      denholm:$'; then
+  fail "moss persona_api.outbound.targets must not retain denholm"
+fi
 grep -q 'self_target: moss' "$MOSS_CFG" || fail "moss persona_api.self_target must be moss"
 
 env_suffix() {
@@ -96,7 +101,19 @@ for peer in "${PEERS[@]}"; do
     || fail "$peer compose.yaml missing PERSONA_TARGET_MOSS_TOKEN reference"
 done
 
-for spec in "richmond:$RICHMOND_CFG" "the-elders:$ELDERS_CFG" "jen:$JEN_API" "denholm:$DENHOLM_API" "roy:$ROY_API"; do
+echo "$moss_block_compose" | grep -q 'PERSONA_CALLER_DENHOLM_TOKEN: ${DENHOLM_TO_MOSS_PERSONA_TOKEN:-}' \
+  || fail "moss compose.yaml missing Denholm-to-Moss Persona RPC caller reference"
+if echo "$moss_block_compose" | grep -q 'PERSONA_TARGET_DENHOLM_TOKEN'; then
+  fail "moss compose.yaml retains Moss-to-Denholm Persona RPC target"
+fi
+denholm_block="$(extract_service denholm)"
+if echo "$denholm_block" | grep -q 'PERSONA_CALLER_MOSS_TOKEN'; then
+  fail "denholm compose.yaml retains Moss-to-Denholm Persona RPC caller"
+fi
+echo "$denholm_block" | grep -q 'PERSONA_TARGET_MOSS_TOKEN: ${DENHOLM_TO_MOSS_PERSONA_TOKEN:-}' \
+  || fail "denholm compose.yaml missing Denholm-to-Moss Persona RPC target"
+
+for spec in "richmond:$RICHMOND_CFG" "the-elders:$ELDERS_CFG" "jen:$JEN_API" "roy:$ROY_API"; do
   peer="${spec%%:*}"
   file="${spec#*:}"
   grep -q "self_target: ${peer}" "$file" || fail "$file self_target must be $peer"
@@ -104,6 +121,11 @@ for spec in "richmond:$RICHMOND_CFG" "the-elders:$ELDERS_CFG" "jen:$JEN_API" "de
   grep -q "allow_targets: \[${peer}\]" "$file" || fail "$file allow_targets must be [$peer]"
   grep -q 'url: http://moss:8648' "$file" || fail "$file outbound target url must be http://moss:8648"
 done
+grep -q 'self_target: denholm' "$DENHOLM_API" || fail "$DENHOLM_API self_target must be denholm"
+grep -q '^      moss:$' "$DENHOLM_API" || fail "$DENHOLM_API outbound target must retain moss"
+if grep -q 'allow_targets: \[denholm\]' "$DENHOLM_API"; then
+  fail "$DENHOLM_API must not retain Moss-to-Denholm Persona RPC admission"
+fi
 echo "persona_api_ids_and_env_refs_ok"
 
 # 6. No secret literal: every *_TOKEN reference in the touched files must be a
@@ -111,14 +133,15 @@ echo "persona_api_ids_and_env_refs_ok"
 if grep -nE '^[[:space:]]*token:' "$MOSS_CFG" "$RICHMOND_CFG" "$ELDERS_CFG" "$JEN_API" "$DENHOLM_API" "$ROY_API" | grep -v -F ': ${'; then
   fail "inline token literal found in a config example"
 fi
-if grep -nE '_TOKEN:' "$COMPOSE" | grep -v -F ': ${'; then
+if grep -nE '_TOKEN:' "$COMPOSE" | grep -v -F ': ${' | grep -v -F 'A2A_PEER_TOKENS: moss:${MOSS_TO_DENHOLM_A2A_TOKEN:'; then
   fail "inline *_TOKEN literal found in $COMPOSE"
 fi
 echo "no_secret_literal_ok"
 
 # 7. The active public runtime contract must not reintroduce shared-storage
 # handoff semantics. Shared storage is permitted only for passive referenced
-# artifacts; Persona RPC remains the only interpersona request/response path.
+# artifacts; configured Persona RPC plus the single bounded Moss→Denholm A2A
+# edge are the only interpersona request/response paths.
 ACTIVE_CONTRACTS=(
   agents/public/jen/AGENTS.md
   agents/public/moss/AGENTS.md
