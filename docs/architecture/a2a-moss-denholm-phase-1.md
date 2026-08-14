@@ -61,6 +61,7 @@ This drawing is **not** an enabled topology, a trust grant, or a deployment plan
 6. Recreate **Denholm first**, validate unauthenticated/incorrect-token/untrusted-peer denial and successful Moss identity admission; then recreate Moss.
 7. Perform one real Moss→Denholm product-stewardship request and verify a closed result, task/audit correlation and caller-visible outcome.
 8. Remove the Moss→Denholm `persona_rpc` target, Denholm inbound caller and directional legacy token wiring in the same final candidate. Preserve Denholm→Moss and unrelated Persona RPC edges. No runtime fallback is permitted.
+9. Keep Denholm absent from Moss WebUI profile-proxy environment bindings; product stewardship is not a direct-chat/profile-proxy route.
 
 ## Rollback
 
