@@ -35,6 +35,11 @@ def one(text: str, old: str, new: str, label: str) -> str:
 
 
 def moss_candidate(text: str) -> str:
+    legacy_target = "      denholm:\n        url: http://denholm:8643\n"
+    if legacy_target in text:
+        text = one(text, legacy_target, "", "Moss Persona RPC Denholm target retirement")
+    if "url: http://denholm:8643" in text:
+        raise ValueError("Moss Persona RPC Denholm target has an unknown shape")
     if MARKER in text or "outbound_trusted_peers:\n  - denholm" in text:
         return text
     text = one(text, "toolsets:\n- hermes-cli\n- persona\n", "toolsets:\n- hermes-cli\n- persona\n- a2a\n", "Moss toolsets")
@@ -45,6 +50,14 @@ def moss_candidate(text: str) -> str:
 
 
 def denholm_candidate(text: str) -> str:
+    legacy_caller = "  inbound:\n    callers:\n      moss:\n        allow_targets:\n          - denholm\n"
+    legacy_caller_compact = "  inbound:\n    callers:\n      moss:\n        allow_targets: [denholm]\n"
+    if legacy_caller in text:
+        text = one(text, legacy_caller, "", "Denholm Persona RPC Moss caller retirement")
+    elif legacy_caller_compact in text:
+        text = one(text, legacy_caller_compact, "", "Denholm Persona RPC Moss caller retirement")
+    if "allow_targets: [denholm]" in text or "          - denholm" in text:
+        raise ValueError("Denholm Persona RPC Moss caller has an unknown shape")
     if MARKER in text:
         return text
     text = one(text, "toolsets:\n  - hermes-cli\n  - persona\n", "toolsets:\n  - hermes-cli\n  - persona\n  - a2a\n", "Denholm toolsets")
