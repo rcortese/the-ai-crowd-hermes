@@ -128,12 +128,15 @@ class NoAlternativeA2ATests(unittest.TestCase):
             hits.extend(retired_token_hits(relative, mode, text))
         self.assertEqual([], hits)
 
-    def test_compose_has_only_persona_rpc_interpersona_channel(self) -> None:
+    def test_compose_has_persona_rpc_plus_only_the_bounded_native_a2a_edge(self) -> None:
         compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
         folded = compose.casefold()
         self.assertIn("api_server_enabled", folded)
         self.assertIn("persona_caller_moss_token", folded)
         self.assertIn("persona_target_moss_token", folded)
+        self.assertIn("moss_to_denholm_a2a_token", folded)
+        self.assertIn("a2a_trusted_peers: moss", folded)
+        self.assertNotIn("moss_to_denholm_persona_token", folded)
         for token in ("nats", "jetstream", "a2a-lite", "persona_dispatch"):
             self.assertNotIn(token, folded)
 

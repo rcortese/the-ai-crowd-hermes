@@ -10,7 +10,7 @@ Este repositório guarda a parte pública e reproduzível desse sistema: contrat
 
 - Define assistentes com responsabilidades diferentes, em vez de um único agente genérico.
 - Roda esses assistentes como serviços separados, com homes, workspaces e contratos próprios.
-- Usa Persona RPC ask-only sobre os API Servers como canal de coordenação entre assistentes.
+- Usa rotas ask-only configuradas no servidor: Persona RPC nas arestas legadas e A2A nativo somente de Moss para Denholm.
 - Usa storage compartilhado apenas para artefatos passivos referenciados.
 - Usa testes para validar rotas, permissões, mounts e limites de segurança.
 - Separa claramente o que pode ser público do que pertence a uma implantação privada.
@@ -31,12 +31,12 @@ Os papéis são intencionais. Quando um assunto pertence a outro assistente, o s
 
 ## Como a colaboração funciona
 
-Cada persona expõe um API Server Hermes. A ferramenta `persona_rpc.ask` usa uma
-rota estática e credenciais direcionais server-side; caller, target, URL,
-provider, modelo e headers não são controlados pelo pedido. Ausência de uma rota
-explicitamente permitida resulta em recusa, sem fallback para arquivo, Kanban ou
-broker. Artefatos grandes podem permanecer no storage compartilhado, mas apenas
-como dados passivos referenciados pela resposta.
+Cada persona expõe uma superfície Hermes autenticada. Persona RPC continua nas
+arestas declaradas pelo manifesto; a consulta Moss→Denholm usa apenas A2A nativo
+com alias, URL, caller e credencial fixados no servidor. Ausência da rota
+explicitamente permitida resulta em recusa, sem fallback para outro transporte,
+arquivo, Kanban ou broker. Artefatos grandes podem permanecer no storage
+compartilhado, mas apenas como dados passivos referenciados pela resposta.
 
 ## Estrutura do repositório
 
@@ -64,7 +64,7 @@ O `compose.yaml` descreve uma stack com:
 - workspaces privados montados como leitura/escrita;
 - storage compartilhado para artefatos passivos;
 - healthchecks por serviço;
-- Persona RPC ask-only entre API Servers;
+- Persona RPC ask-only nas arestas remanescentes e A2A nativo apenas em Moss→Denholm;
 - redes separadas para tráfego interno, proxy privado e LLM local.
 
 Moss também possui uma imagem all-in-one para o runtime operacional, com dashboard, gateway, WebUI e webhook no mesmo serviço. Os outros assistentes rodam com contratos e gateways próprios conforme sua função.

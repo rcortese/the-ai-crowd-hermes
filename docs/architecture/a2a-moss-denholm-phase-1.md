@@ -60,7 +60,7 @@ This drawing is **not** an enabled topology, a trust grant, or a deployment plan
 5. Update only `MOSS_IMAGE_REF` and `DENHOLM_IMAGE_REF` to the immutable candidate IDs, render Compose, and verify no host A2A port is published.
 6. Recreate **Denholm first**, validate unauthenticated/incorrect-token/untrusted-peer denial and successful Moss identity admission; then recreate Moss.
 7. Perform one real Moss→Denholm product-stewardship request and verify a closed result, task/audit correlation and caller-visible outcome.
-8. Keep legacy `persona_rpc` configuration unchanged until the A2A edge is proven and the separate retirement decision is approved. No runtime fallback is permitted.
+8. Remove the Moss→Denholm `persona_rpc` target, Denholm inbound caller and directional legacy token wiring in the same final candidate. Preserve Denholm→Moss and unrelated Persona RPC edges. No runtime fallback is permitted.
 
 ## Rollback
 

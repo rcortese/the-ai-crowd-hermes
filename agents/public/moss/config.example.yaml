@@ -50,8 +50,6 @@ persona_api:
     targets:
       jen:
         url: http://jen:8642
-      denholm:
-        url: http://denholm:8643
       roy:
         url: http://roy:8645
       richmond:

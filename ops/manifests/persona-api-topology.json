@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "session_platforms": ["api_server", "cron", "cli", "telegram"],
   "personas": {
     "moss": {
@@ -13,7 +13,6 @@
       },
       "outbound_targets": {
         "jen": {"url": "http://jen:8642", "token_env": "MOSS_TO_JEN_PERSONA_TOKEN"},
-        "denholm": {"url": "http://denholm:8643", "token_env": "MOSS_TO_DENHOLM_PERSONA_TOKEN"},
         "roy": {"url": "http://roy:8645", "token_env": "MOSS_TO_ROY_PERSONA_TOKEN"},
         "richmond": {"url": "http://richmond:8646", "token_env": "MOSS_TO_RICHMOND_PERSONA_TOKEN"},
         "the-elders": {"url": "http://the-elders:8647", "token_env": "MOSS_TO_THE_ELDERS_PERSONA_TOKEN"}
@@ -24,7 +23,7 @@
       "outbound_targets": {"moss": {"url": "http://moss:8648", "token_env": "JEN_TO_MOSS_PERSONA_TOKEN"}}
     },
     "denholm": {
-      "inbound_callers": {"moss": "MOSS_TO_DENHOLM_PERSONA_TOKEN"},
+      "inbound_callers": {},
       "outbound_targets": {"moss": {"url": "http://moss:8648", "token_env": "DENHOLM_TO_MOSS_PERSONA_TOKEN"}}
     },
     "roy": {
