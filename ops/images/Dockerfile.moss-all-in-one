@@ -4,7 +4,7 @@ FROM ${MOSS_BASE_IMAGE}
 USER root
 
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=9099d8e72c844cc6cd2acb80e6fbddd2e305aa03
+ARG HERMES_WEBUI_REV=fe84511935c78533aaf5ab5518411813753416f7
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -51,8 +51,8 @@ COPY ops/hermes-webui-overrides/moss-title-topic-priority.patch /tmp/moss-title-
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
-    && test "$(git rev-parse HEAD)" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
-    && test "${HERMES_WEBUI_REV}" = "9099d8e72c844cc6cd2acb80e6fbddd2e305aa03" \
+    && test "$(git rev-parse HEAD)" = "fe84511935c78533aaf5ab5518411813753416f7" \
+    && test "${HERMES_WEBUI_REV}" = "fe84511935c78533aaf5ab5518411813753416f7" \
     && git apply --check /tmp/moss-agent-health-auth.patch \
     && git apply /tmp/moss-agent-health-auth.patch \
     && git apply --check /tmp/moss-profile-selector-order.patch \

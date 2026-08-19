@@ -1,13 +1,13 @@
 {
   "schema": "the-ai-crowd-hermes.base-images-lock.v1",
   "status": "pinned-for-public-scaffold",
-  "updated_at": "2026-07-27T14:42:10Z",
+  "updated_at": "2026-08-19T00:00:00Z",
   "images": [
     {
       "name": "hermes-agent",
-      "image": "the-ai-crowd/hermes-agent:a2a-320070c",
-      "image_id": "sha256:3744fe3baff924a092b995494cecae118dc46c103d9e68b2d78379ddd3124a5b",
-      "source_revision": "320070c132665077624a7506102ad13d07b1947c",
+      "image": "the-ai-crowd/hermes-agent:20260819-relaxed-a2a",
+      "image_id": "sha256:bf0d3cacbb7f807fa4596dc2e14feefb32895487a531fb72007eed1685d926d7",
+      "source_revision": "27aa96b9ddb09c34f3868f35830368f65892f911",
       "used_by": [
         "ops/images/Dockerfile.denholm",
         "ops/images/Dockerfile.jen",
