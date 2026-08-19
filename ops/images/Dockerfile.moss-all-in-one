@@ -57,13 +57,11 @@ RUN rm -rf /opt/hermes-webui \
         tests/test_agent_health_remote.py \
         tests/test_issue716_agent_heartbeat.py \
         tests/test_kanban_bridge.py \
-        tests/test_profile_proxy_jen.py \
         tests/test_remote_cron_proxy_guard.py \
         tests/test_webui_gateway_chat_backend.py \
         tests/test_stage364_opus_live_sse_event_id.py \
         tests/test_issue5141_terminal_failure_transcript_evaluator.py \
         tests/test_session_channel_option_x.py \
-        tests/test_service_session_launch.py \
     && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
     && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
