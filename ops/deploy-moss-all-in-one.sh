@@ -51,9 +51,8 @@ DOCKER_BUILDKIT=1 docker compose build "$SERVICE"
 log 'one-shot image preflight'
 docker run --rm --entrypoint sh "$IMAGE" -lc '
   set -e
-  cd /opt/hermes
-  git rev-parse HEAD
   test -x /opt/hermes/.venv/bin/hermes
+  /opt/hermes/.venv/bin/hermes --version
   test ! -e /tmp/kanban-dispatch-owner.patch
   test ! -e /tmp/webui-kanban-dispatch-owner-ui.patch
   if [ -e /opt/hermes-webui/api/_version.py ]; then cat /opt/hermes-webui/api/_version.py; fi
