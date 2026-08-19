@@ -129,6 +129,8 @@ services:
       AGENT_PRIVATE: /agents/jen/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
+      # Jen has no dashboard auth provider; expose its dashboard only locally.
+      HERMES_DASHBOARD_HOST: 127.0.0.1
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/jen/private
       API_SERVER_ENABLED: 'true'
