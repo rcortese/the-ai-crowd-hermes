@@ -258,8 +258,8 @@ services:
       AGENT_PRIVATE: /agents/roy/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
-      # Internal dashboard only; no public dashboard auth provider is configured.
-      HERMES_DASHBOARD_HOST: 127.0.0.1
+      # Roy's runtime exposes API/WebUI, not the auxiliary dashboard.
+      HERMES_DASHBOARD: '0'
       TERMINAL_CWD: /agents/roy/private
       WEBHOOK_ENABLED: 'true'
       WEBHOOK_PORT: '8644'
@@ -327,8 +327,8 @@ services:
       AGENT_PRIVATE: /agents/richmond/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
-      # Internal dashboard only; no public dashboard auth provider is configured.
-      HERMES_DASHBOARD_HOST: 127.0.0.1
+      # Richmond's runtime exposes API, not the auxiliary dashboard.
+      HERMES_DASHBOARD: '0'
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/richmond/private
       API_SERVER_ENABLED: 'true'
@@ -373,8 +373,8 @@ services:
       AGENT_PRIVATE: /agents/the-elders/private
       AGENT_RUNTIME: /opt/data
       AGENT_SHARED: /mnt/hermes-shared
-      # Internal dashboard only; no public dashboard auth provider is configured.
-      HERMES_DASHBOARD_HOST: 127.0.0.1
+      # The Elders runtime exposes API, not the auxiliary dashboard.
+      HERMES_DASHBOARD: '0'
       HERMES_AUTH_HOME: /mnt/hermes-auth-shared
       TERMINAL_CWD: /agents/the-elders/private
       API_SERVER_ENABLED: 'true'
