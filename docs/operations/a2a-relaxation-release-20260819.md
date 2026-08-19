@@ -13,6 +13,7 @@ This release removes the private Moss protected-A2A plugin guard that prevented 
 ## Runtime effect
 
 - `MOSS_HERMES_PROTECTED_A2A` and related private seal variables are absent from the release Compose contract.
+- Moss reuses the reviewed all-in-one runtime shell (including its installed Playwright browser) while replacing `/opt/hermes` wholesale from the pinned Agent image and rebuilding `/opt/hermes-webui` from the pinned WebUI revision.
 - Existing profile plugin roots are supported again; Scribe and Reviewer are expected to start normally.
 - Denholm remains the only configured A2A peer for Moss, using the existing internal-only receiver and directional credential.
 
