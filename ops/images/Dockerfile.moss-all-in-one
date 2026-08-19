@@ -1,7 +1,13 @@
+ARG HERMES_AGENT_IMAGE
 ARG MOSS_BASE_IMAGE
+FROM ${HERMES_AGENT_IMAGE} AS hermes_candidate
 FROM ${MOSS_BASE_IMAGE}
 
 USER root
+
+# Reuse the reviewed all-in-one runtime shell (including the already-installed
+# Playwright browser), but replace Hermes wholesale from the pinned Agent image.
+COPY --from=hermes_candidate --chown=99:100 /opt/hermes /opt/hermes
 
 ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
 ARG HERMES_WEBUI_REV=fe84511935c78533aaf5ab5518411813753416f7
@@ -9,25 +15,6 @@ ARG HERMES_WEBUI_REV=fe84511935c78533aaf5ab5518411813753416f7
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
 
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        supervisor \
-    && rm -rf /var/lib/apt/lists/*
-
-# Clash Royale scheduled screening uses Playwright from Moss cron.
-# The private Node input is supplied as a hash-verified named build context;
-# it is not assumed to live inside the exported deployment source tree.
-COPY --from=clash_royale_build_input package.json \
-     package-lock.json \
-     /opt/clash-royale-war-bot-node/
-RUN cd /opt/clash-royale-war-bot-node \
-    && npm ci --omit=dev \
-    && PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers npx playwright install chromium \
-    && CR_WAR_BOT_PLAYWRIGHT_NODE_PATH=/opt/clash-royale-war-bot-node/node_modules \
-       PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers \
-       node -e "const { chromium } = require('/opt/clash-royale-war-bot-node/node_modules/playwright'); (async()=>{ const b=await chromium.launch({headless:true}); await b.close(); })();" \
-    && chown -R 99:100 /opt/clash-royale-war-bot-node /opt/playwright-browsers
 
 RUN cd /opt/hermes \
     && test -x /opt/hermes/.venv/bin/hermes \
@@ -48,7 +35,8 @@ COPY ops/hermes-webui-overrides/moss-terminal-state-false-no-response.patch /tmp
 COPY ops/hermes-webui-overrides/moss-service-session-launch.patch /tmp/moss-service-session-launch.patch
 COPY ops/hermes-webui-overrides/moss-title-topic-priority.patch /tmp/moss-title-topic-priority.patch
 
-RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
+RUN rm -rf /opt/hermes-webui \
+    && git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
     && test "$(git rev-parse HEAD)" = "fe84511935c78533aaf5ab5518411813753416f7" \
