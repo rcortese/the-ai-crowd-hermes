@@ -107,8 +107,7 @@ fi
 log 'validating app-level endpoints inside container'
 docker exec "$CONTAINER" sh -lc '
   set -e
-  cd /opt/hermes
-  printf "hermes="; git rev-parse HEAD
+  printf "hermes="; /opt/hermes/.venv/bin/hermes --version | head -1
   if [ -e /opt/hermes-webui/api/_version.py ]; then printf "webui="; cat /opt/hermes-webui/api/_version.py; fi
   wget -qO- http://127.0.0.1:8644/health >/dev/null
   wget -qO- http://127.0.0.1:8787/health >/dev/null
