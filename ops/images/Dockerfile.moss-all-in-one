@@ -52,7 +52,7 @@ RUN rm -rf /opt/hermes-webui \
        fi \
     && cd /opt/hermes-webui \
     && /opt/hermes/.venv/bin/python3 -m py_compile api/agent_health.py api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/service_session_launch.py api/streaming.py api/gateway_chat.py api/profiles.py server.py \
-    && /opt/hermes/.venv/bin/python3 -c 'from api.streaming import _title_prompts; qa, prompts = _title_prompts("Audit the deployment method for a broken release", "The release failed because runtime and build inputs were coupled"); assert len(prompts) == 2; assert any("main topic and substantive intent" in p for p in prompts); assert all("Do not prioritize method, format, tool, role, audit, review, handoff, or process step" in p for p in prompts); assert all("Return only the title text" in p for p in prompts)' \
+    && /opt/hermes/.venv/bin/python3 -c 'from api.streaming import _title_prompts; qa, prompts = _title_prompts("Audit the deployment method for a broken release", "The release failed because runtime and build inputs were coupled"); assert len(prompts) == 2; assert any("main topic and substantive intent" in p for p in prompts); assert all("Do not prioritize method, format, tool, role, audit, review, handoff, or process step" in p for p in prompts); assert all("title" in p.lower() for p in prompts)' \
     && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
         tests/test_agent_health_remote.py \
         tests/test_issue716_agent_heartbeat.py \
