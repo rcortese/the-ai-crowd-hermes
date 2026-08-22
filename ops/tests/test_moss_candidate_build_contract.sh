@@ -251,7 +251,11 @@ run_base_negative arbitrary-valid-base sha256:cccccccccccccccccccccccccccccccccc
 
 if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
   execroot="$fx/executor-mutroot"
-  mkdir -p "$execroot/ops/scripts/lib"
+  mkdir -p "$execroot/ops/scripts/lib" "$execroot/ops/release" "$execroot/ops/manifests"
+  cp -- "$source_root/ops/release/fleet_hermes_918b_rebind.py" "$execroot/ops/release/"
+  cp -- "$source_root/ops/release/hermes_base_v3.py" "$execroot/ops/release/"
+  cp -- "$source_root/ops/manifests/fleet-hermes-918b-rebind.lock.json" "$execroot/ops/manifests/"
+  cp -- "$source_root/ops/manifests/hermes-base-v3.lock.json" "$execroot/ops/manifests/"
   cp -- "$source_helper" "$execroot/ops/scripts/build-moss-all-in-one-candidate.sh"
   cp -- "$source_hddt" "$execroot/ops/scripts/hddt-moss.sh"
   cp -- "$source_closure" "$execroot/ops/scripts/lib/hddt-moss-closure.sh"
