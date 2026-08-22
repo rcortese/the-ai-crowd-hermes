@@ -1,0 +1,20 @@
+{
+  "schema": "the-ai-crowd.fleet-hermes-918b-rebind-lock.v1",
+  "status": "source-only-quarantined",
+  "base": {
+    "tag": "the-ai-crowd/hermes-base:918b36785653",
+    "local_image_id": null,
+    "source": {
+      "repository": "git@github.com:rcortese/hermes-agent.git",
+      "commit": "918b36785653ec291806558e30b302b8cad10777",
+      "tree": "817966c265522f8a7ae07473284451e17f1e683a",
+      "archive_sha256": "8a26e82ce96b4b5429d0321e19ddb0b01bed9d5925ab2a0ecc89e9201bfe6aee"
+    },
+    "v3_lock": "ops/manifests/hermes-base-v3.lock.json"
+  },
+  "persona_builders": ["moss", "jen", "denholm", "roy", "richmond", "the-elders"],
+  "a2a_overlay": {
+    "disposition": "quarantined",
+    "reason": "A2A overlays copy a reviewed runtime subset and must not be used as the full Hermes-base rebind path."
+  }
+}
