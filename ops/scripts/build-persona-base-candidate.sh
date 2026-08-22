@@ -7,20 +7,16 @@ case "$PERSONA" in moss|jen|denholm|roy|richmond|the-elders) ;; *) printf 'unsup
 command -v jq >/dev/null
 command -v docker >/dev/null
 [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || { printf '%s\n' 'refusing dirty source worktree' >&2; exit 1; }
-LOCK="$ROOT/ops/manifests/base-images.lock.json"
-HERMES_REV=""; HERMES_TREE=""; HERMES_ARCHIVE_SHA256=""
-if [[ -n "${HERMES_BASE_REBIND_LOCK:-}" ]]; then
-  LOCK="$ROOT/${HERMES_BASE_REBIND_LOCK}"
-  "$ROOT/ops/release/fleet_hermes_918b_rebind.py" --lock "$LOCK" --require-local-image-id
-  BASE_TAG="$(jq -er '.base.tag' "$LOCK")"
-  EXPECTED_ID="$(jq -er '.base.local_image_id' "$LOCK")"
-  HERMES_REV="$(jq -er '.base.source.commit' "$LOCK")"
-  HERMES_TREE="$(jq -er '.base.source.tree' "$LOCK")"
-  HERMES_ARCHIVE_SHA256="$(jq -er '.base.source.archive_sha256' "$LOCK")"
-else
-  BASE_TAG="$(jq -er '.images[] | select(.name == "hermes-agent") | .image' "$LOCK")"
-  EXPECTED_ID="$(jq -er '.images[] | select(.name == "hermes-agent") | .image_id' "$LOCK")"
-fi
+HERMES_BASE_REBIND_LOCK="${HERMES_BASE_REBIND_LOCK:?set HERMES_BASE_REBIND_LOCK to the admitted fleet rebind lock relative path}"
+HERMES_BASE_V3_RECEIPT="${HERMES_BASE_V3_RECEIPT:?set HERMES_BASE_V3_RECEIPT to the admitted Hermes-base-v3 receipt}"
+LOCK="$ROOT/$HERMES_BASE_REBIND_LOCK"
+V3_LOCK="$ROOT/ops/manifests/hermes-base-v3.lock.json"
+"$ROOT/ops/release/fleet_hermes_918b_rebind.py" admit --lock "$LOCK" --v3-lock "$V3_LOCK" --receipt "$HERMES_BASE_V3_RECEIPT" --inspect-command docker
+BASE_TAG="$(jq -er '.base.tag' "$LOCK")"
+EXPECTED_ID="$(jq -er '.base.local_image_id' "$LOCK")"
+HERMES_REV="$(jq -er '.base.source.commit' "$LOCK")"
+HERMES_TREE="$(jq -er '.base.source.tree' "$LOCK")"
+HERMES_ARCHIVE_SHA256="$(jq -er '.base.source.archive_sha256' "$LOCK")"
 ACTUAL_ID="$(docker image inspect "$BASE_TAG" --format '{{.Id}}')"
 [[ "$ACTUAL_ID" == "$EXPECTED_ID" ]] || { printf 'base image mismatch: expected %s, got %s\n' "$EXPECTED_ID" "$ACTUAL_ID" >&2; exit 1; }
 COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
