@@ -19,7 +19,7 @@ class ProtectedHermesA2ABaseLockTests(unittest.TestCase):
         self.assertEqual(lock["status"], "pending-external-protected-base-binding")
         self.assertEqual(lock["required_input"]["image_id"], "HERMES_PROTECTED_A2A_BASE_ID")
         self.assertEqual(lock["required_input"]["source_revision"], "HERMES_PROTECTED_A2A_SOURCE_REVISION")
-        self.assertEqual(lock["expected_source_candidate"], "007592b6b3b71ec7599f5ed964a3a5977f04e7b4")
+        self.assertEqual(lock["expected_source_candidate"], "2599c9e3e931e2707dc39025b6203eb1c1e08687")
         self.assertEqual(lock["protected_base"], {"image_id": None, "source_revision": None})
 
     def test_validator_accepts_only_a_matched_future_immutable_input(self) -> None:
@@ -27,7 +27,7 @@ class ProtectedHermesA2ABaseLockTests(unittest.TestCase):
         self.assertEqual(pending.stdout.strip(), "protected_a2a_base_lock_pending")
         valid = subprocess.run([
             sys.executable, str(VALIDATOR), "--base-id", "sha256:" + "a" * 64,
-            "--source-revision", "007592b6b3b71ec7599f5ed964a3a5977f04e7b4",
+            "--source-revision", "2599c9e3e931e2707dc39025b6203eb1c1e08687",
         ], text=True, capture_output=True, check=True)
         self.assertEqual(valid.stdout.strip(), "protected_a2a_base_input_valid")
         rejected = subprocess.run([
