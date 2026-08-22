@@ -78,6 +78,12 @@ printf '%s\n' 'FROM scratch' >"$repo/ops/images/Dockerfile.moss-all-in-one"
 {
   printf '%s\n' "${required_closure_paths[@]}"
 } | LC_ALL=C sort >"$repo/ops/manifests/moss-release-source-closure.paths"
+base_image=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+fleet_lock="$repo/ops/manifests/fleet-hermes-918b-rebind.lock.json"
+python3 - "$fleet_lock" "$base_image" <<'PY'
+import json, sys
+fleet=json.load(open(sys.argv[1])); fleet['base']['local_image_id']=sys.argv[2]; json.dump(fleet,open(sys.argv[1],'w'))
+PY
 printf '%s\n' 'fixture source' >>"$repo/compose.yaml"
 git -C "$repo" init -q -b main
 git -C "$repo" config user.name fixture
@@ -129,13 +135,10 @@ chmod 700 "$bin/docker" "$bin/date"
 date_epoch_file="$fx/date.epoch"
 printf '%s\n' 100 >"$date_epoch_file"
 helper="$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
-base_image=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-fleet_lock="$repo/ops/manifests/fleet-hermes-918b-rebind.lock.json"
 v3_lock="$repo/ops/manifests/hermes-base-v3.lock.json"
 receipt="$fx/hermes-base-v3-receipt.json"
 python3 - "$fleet_lock" "$v3_lock" "$receipt" "$base_image" <<'PY'
 import hashlib, json, sys
-fleet=json.load(open(sys.argv[1])); fleet['base']['local_image_id']=sys.argv[4]; json.dump(fleet,open(sys.argv[1],'w'))
 lock=json.load(open(sys.argv[2])); source, image=lock['source'], lock['image']; normalized={'Env':['fixture=true']}
 receipt={'schema':'the-ai-crowd.hermes-base-v3-receipt.v1','source_commit':source['commit'],'source_tree':source['tree'],'archive_sha256':source['archive']['sha256'],'archive_bytes':source['archive']['bytes'],'pre_normalization_tag':image['pre_normalization_tag'],'pre_normalization_image_id':'sha256:'+'e'*64,'final_tag':image['final_tag'],'final_image_id':sys.argv[4],'normalized_config':normalized,'normalized_config_sha256':hashlib.sha256(json.dumps(normalized,sort_keys=True,separators=(',',':')).encode()).hexdigest()}
 json.dump(receipt,open(sys.argv[3],'w'))
