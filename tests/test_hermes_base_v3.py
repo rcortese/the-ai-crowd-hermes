@@ -70,7 +70,7 @@ class Contract(unittest.TestCase):
   self.assertEqual(argv[-4:],['$final_tag','hermes','--help','>/dev/null'])
   self.assertFalse(any(a in ('--volume','--mount','--volumes-from','--env','-e','--entrypoint','--user','--workdir') or a.startswith(('--volume=','--mount=','--volumes-from=','-v','--env=','--entrypoint=','--user=','--workdir=')) for a in argv))
   tmpfs=[argv[i+1] for i,a in enumerate(argv[:-1]) if a=='--tmpfs']
-  self.assertEqual(tmpfs,["/tmp:rw,noexec,nosuid,size=16m","/run:rw,nosuid,size=16m"])
+  self.assertEqual(tmpfs,["/tmp:rw,noexec,nosuid,size=16m","/run:rw,exec,nosuid,nodev,size=16m,mode=755"])
  def test_committed_lock_is_exact_hermes_source_binding(self):
   actual=json.loads((ROOT/'ops'/'manifests'/'hermes-base-v3.lock.json').read_text())
   source=actual['source']; archive=source['archive']; image=actual['image']
@@ -106,7 +106,7 @@ class Contract(unittest.TestCase):
    _, argv=command(text,"run")
    self.assertEqual(option_values(argv,"--network"),["none"])
    self.assertEqual(argv.count("--read-only"),1)
-   self.assertEqual(option_values(argv,"--tmpfs"),["/tmp:rw,noexec,nosuid,size=16m","/run:rw,nosuid,size=16m"])
+   self.assertEqual(option_values(argv,"--tmpfs"),["/tmp:rw,noexec,nosuid,size=16m","/run:rw,exec,nosuid,nodev,size=16m,mode=755"])
    self.assertFalse(any(arg in ("--volume","--mount","--volumes-from","--env","-e","--entrypoint","--user","--workdir") or arg.startswith(("--volume=","--mount=","--volumes-from=","-v","--env=","--entrypoint=","--user=","--workdir=")) for arg in argv))
   assert_build_policy(script); assert_smoke_policy(script)
   build_line,_=command(script,"build"); smoke_line,_=command(script,"run")
@@ -115,9 +115,13 @@ class Contract(unittest.TestCase):
    (script.replace(build_line,build_line+"\n"+build_line),assert_build_policy),
    (script.replace("--network=none","--network=default"),assert_smoke_policy),
    (script.replace("--read-only ",""),assert_smoke_policy),
-   (script.replace("--tmpfs /tmp:rw,noexec,nosuid,size=16m","--tmpfs /tmp:rw,noexec,nosuid,size=16m --tmpfs /run:rw,nosuid,size=16m --tmpfs /var/tmp:rw,noexec,nosuid,size=16m"),assert_smoke_policy),
-   (script.replace(" --tmpfs /run:rw,nosuid,size=16m",""),assert_smoke_policy),
-   (script.replace("/run:rw,nosuid,size=16m","/run:rw,noexec,nosuid,size=16m"),assert_smoke_policy),
+   (script.replace("--tmpfs /tmp:rw,noexec,nosuid,size=16m","--tmpfs /tmp:rw,noexec,nosuid,size=16m --tmpfs /run:rw,exec,nosuid,nodev,size=16m,mode=755 --tmpfs /var/tmp:rw,noexec,nosuid,size=16m"),assert_smoke_policy),
+   (script.replace(" --tmpfs /run:rw,exec,nosuid,nodev,size=16m,mode=755",""),assert_smoke_policy),
+   (script.replace("/run:rw,exec,nosuid,nodev,size=16m,mode=755","/run:rw,nosuid,nodev,size=16m"),assert_smoke_policy),
+   (script.replace("/run:rw,exec,nosuid,nodev,size=16m,mode=755","/run:rw,noexec,nosuid,nodev,size=16m"),assert_smoke_policy),
+   (script.replace("/run:rw,exec,nosuid,nodev,size=16m,mode=755","/run:rw,exec,nosuid,size=16m"),assert_smoke_policy),
+   (script.replace("/run:rw,exec,nosuid,nodev,size=16m,mode=755","/run:rw,exec,nosuid,nodev,size=16m"),assert_smoke_policy),
+   (script.replace("/run:rw,exec,nosuid,nodev,size=16m,mode=755","/run:rw,exec,nosuid,nodev,size=32m,mode=755"),assert_smoke_policy),
    (script.replace(smoke_line,smoke_line.replace("--read-only","--read-only --volume /host:/host")),assert_smoke_policy),
    (script.replace(smoke_line,smoke_line.replace("--read-only","--read-only --mount type=tmpfs,destination=/var/tmp")),assert_smoke_policy),
   ):
