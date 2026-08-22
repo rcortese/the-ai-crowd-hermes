@@ -83,4 +83,41 @@ class Contract(unittest.TestCase):
   self.assertTrue(image['pre_normalization_tag'].startswith(image['repository']+':'))
   self.assertEqual(image['final_tag'],FINAL_TAG)
   self.assertTrue(image['final_tag'].startswith(image['repository']+':'))
+
+ def test_executor_network_phase_policy_has_causal_mutation_oracles(self):
+  script=(ROOT/"ops"/"scripts"/"build-hermes-base-v3.sh").read_text()
+  def command(text, verb):
+   rows=[line.strip() for line in text.splitlines() if line.lstrip().startswith(f"docker {verb} ")]
+   self.assertEqual(len(rows),1, f"expected exactly one docker {verb}")
+   return rows[0], shlex.split(rows[0])
+  def option_values(argv, name):
+   values=[]
+   for index, arg in enumerate(argv):
+    if arg==name:
+     self.assertLess(index+1,len(argv),f"missing value for {name}"); values.append(argv[index+1])
+    elif arg.startswith(name+"="):
+     values.append(arg.split("=",1)[1])
+   return values
+  def assert_build_policy(text):
+   _, argv=command(text,"build")
+   self.assertEqual(option_values(argv,"--network"),["default"])
+   self.assertEqual(option_values(argv,"--pull"),["false"])
+  def assert_smoke_policy(text):
+   _, argv=command(text,"run")
+   self.assertEqual(option_values(argv,"--network"),["none"])
+   self.assertEqual(argv.count("--read-only"),1)
+   self.assertEqual(option_values(argv,"--tmpfs"),["/tmp:rw,noexec,nosuid,size=16m"])
+   self.assertFalse(any(arg in ("--volume","--mount","--volumes-from") or arg.startswith(("--volume=","--mount=","--volumes-from=","-v")) for arg in argv))
+  assert_build_policy(script); assert_smoke_policy(script)
+  build_line,_=command(script,"build"); smoke_line,_=command(script,"run")
+  for mutant, oracle in (
+   (script.replace("--network=default","--network=none"),assert_build_policy),
+   (script.replace(build_line,build_line+"\n"+build_line),assert_build_policy),
+   (script.replace("--network=none","--network=default"),assert_smoke_policy),
+   (script.replace("--read-only ",""),assert_smoke_policy),
+   (script.replace("--tmpfs /tmp:rw,noexec,nosuid,size=16m","--tmpfs /tmp:rw,noexec,nosuid,size=16m --tmpfs /var/tmp:rw,noexec,nosuid,size=16m"),assert_smoke_policy),
+   (script.replace(smoke_line,smoke_line.replace("--read-only","--read-only --volume /host:/host")),assert_smoke_policy),
+  ):
+   with self.assertRaises(AssertionError): oracle(mutant)
+
 if __name__=="__main__": unittest.main()
