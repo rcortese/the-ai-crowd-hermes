@@ -4,16 +4,14 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 LOCK="$ROOT/ops/manifests/hermes-base-v3.lock.json"
 CONTRACT="$ROOT/ops/release/hermes_base_v3.py"
-usage(){ echo "usage: $0 --final-tag REPOSITORY:TAG --receipt FILE" >&2; exit 64; }
-final_tag= receipt=
-while (($#)); do case "$1" in --final-tag) final_tag=${2:-}; shift 2;; --receipt) receipt=${2:-}; shift 2;; *) usage;; esac; done
-[[ -n "$final_tag" && -n "$receipt" ]] || usage
+usage(){ echo "usage: $0 --receipt FILE" >&2; exit 64; }
+receipt=
+while (($#)); do case "$1" in --receipt) receipt=${2:-}; shift 2;; *) usage;; esac; done
+[[ -n "$receipt" ]] || usage
 command -v docker >/dev/null; command -v python3 >/dev/null; command -v git >/dev/null
 python3 "$CONTRACT" validate-lock "$LOCK" >/dev/null
-mapfile -t v < <(python3 -c 'import json,sys; x=json.load(open(sys.argv[1])); s=x["source"]; a=s["archive"]; i=x["image"]; print(s["git_dir"]); print(s["work_tree"]); print(s["commit"]); print(s["tree"]); print(a["sha256"]); print(a["bytes"]); print(i["repository"]); print(i["pre_normalization_tag"])' "$LOCK")
-git_dir=${v[0]}; work_tree=${v[1]}; commit=${v[2]}; tree=${v[3]}; expected_sha=${v[4]}; expected_bytes=${v[5]}; repository=${v[6]}; pre_tag=${v[7]}
-python3 -c 'import sys; sys.path.insert(0,sys.argv[1]); import hermes_base_v3 as c; c._image_tag(sys.argv[2], "final_tag", sys.argv[3])' "$(dirname "$CONTRACT")" "$final_tag" "$repository"
-[[ "$final_tag" != "$pre_tag" ]] || { echo "final tag must differ from locked pre-normalization tag" >&2; exit 64; }
+mapfile -t v < <(python3 -c 'import json,sys; x=json.load(open(sys.argv[1])); s=x["source"]; a=s["archive"]; i=x["image"]; print(s["git_dir"]); print(s["work_tree"]); print(s["commit"]); print(s["tree"]); print(a["sha256"]); print(a["bytes"]); print(i["repository"]); print(i["pre_normalization_tag"]); print(i["final_tag"])' "$LOCK")
+git_dir=${v[0]}; work_tree=${v[1]}; commit=${v[2]}; tree=${v[3]}; expected_sha=${v[4]}; expected_bytes=${v[5]}; repository=${v[6]}; pre_tag=${v[7]}; final_tag=${v[8]}
 [[ -z "$(git --git-dir="$git_dir" --work-tree="$work_tree" status --porcelain)" ]] || { echo "refusing dirty source worktree" >&2; exit 65; }
 [[ "$(git --git-dir="$git_dir" rev-parse "$commit^{tree}")" == "$tree" ]] || { echo "source tree mismatch" >&2; exit 65; }
 ctx=$(mktemp -d); trap 'rm -rf "$ctx"' EXIT
