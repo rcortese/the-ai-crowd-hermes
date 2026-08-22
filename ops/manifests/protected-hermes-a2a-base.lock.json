@@ -5,7 +5,7 @@
     "image_id": "HERMES_PROTECTED_A2A_BASE_ID",
     "source_revision": "HERMES_PROTECTED_A2A_SOURCE_REVISION"
   },
-  "expected_source_candidate": "007592b6b3b71ec7599f5ed964a3a5977f04e7b4",
+  "expected_source_candidate": "2599c9e3e931e2707dc39025b6203eb1c1e08687",
   "protected_base": {
     "image_id": null,
     "source_revision": null
