@@ -92,4 +92,15 @@ assert 'export MOSS_IMAGE_REF="$MOSS_SMOKE_IMAGE_ID"' in smoke
 assert 'curl -fsS http://127.0.0.1:8787/health' in smoke
 assert 'curl -fsS http://127.0.0.1:8648/health' in smoke
 assert 'curl -fsS http://127.0.0.1:8644/health' not in smoke
+
+rebind_lock = (root / "ops/manifests/fleet-hermes-918b-rebind.lock.json").read_text(encoding="utf-8")
+rebind_validator = (root / "ops/release/fleet_hermes_918b_rebind.py").read_text(encoding="utf-8")
+a2a_quarantine = (root / "ops/scripts/quarantine-a2a-overlay-full-base-rebind.sh").read_text(encoding="utf-8")
+assert '"status": "source-only-quarantined"' in rebind_lock
+assert '"local_image_id": null' in rebind_lock
+assert "--require-local-image-id" in rebind_validator
+assert "fleet-hermes-918b-rebind" not in dockerfile
+assert "fleet-hermes-918b-rebind" not in overlay
+assert "quarantined" in a2a_quarantine
+
 print("moss-candidate-build-contract: PASS")
