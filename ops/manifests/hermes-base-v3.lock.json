@@ -1,0 +1,22 @@
+{
+  "schema": "the-ai-crowd.hermes-base-v3-lock.v1",
+  "source": {
+    "git_dir": "/mnt/ssd/appdata/the-ai-crowd/agents/private/moss/projects/hermes-agent/.git/worktrees/upstream-v2026.8.19-port-20260821",
+    "work_tree": "/mnt/ssd/appdata/the-ai-crowd/agents/private/moss/projects/hermes-agent/.worktrees/upstream-v2026.8.19-port-20260821",
+    "commit": "918b36785653ec291806558e30b302b8cad10777",
+    "tree": "817966c265522f8a7ae07473284451e17f1e683a",
+    "archive": {
+      "format": "tar",
+      "prefix": "hermes-agent/",
+      "sha256": "8a26e82ce96b4b5429d0321e19ddb0b01bed9d5925ab2a0ecc89e9201bfe6aee",
+      "bytes": 166256640
+    }
+  },
+  "image": {
+    "repository": "the-ai-crowd/hermes-base",
+    "pre_normalization_tag": "candidate",
+    "final_tag": null,
+    "final_image_id": null
+  },
+  "receipt": null
+}
