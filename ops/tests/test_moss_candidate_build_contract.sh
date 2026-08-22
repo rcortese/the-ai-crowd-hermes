@@ -14,7 +14,11 @@ trap 'if [[ ${HDDT_KEEP_FIXTURE:-0} == 1 ]]; then printf "BUILD_FIXTURE=%s\n" "$
 repo="$fx/repo"; bin="$fx/bin"; docker_log="$fx/docker.log"
 mkdir -m 700 "$repo" "$bin"
 
-mkdir -p "$repo/ops/scripts/lib" "$repo/ops/build-inputs" "$repo/ops/cron" "$repo/ops/images" "$repo/ops/manifests"
+mkdir -p "$repo/ops/scripts/lib" "$repo/ops/build-inputs" "$repo/ops/cron" "$repo/ops/images" "$repo/ops/manifests" "$repo/ops/release"
+cp -- "$source_root/ops/release/fleet_hermes_918b_rebind.py" "$repo/ops/release/"
+cp -- "$source_root/ops/release/hermes_base_v3.py" "$repo/ops/release/"
+cp -- "$source_root/ops/manifests/fleet-hermes-918b-rebind.lock.json" "$repo/ops/manifests/"
+cp -- "$source_root/ops/manifests/hermes-base-v3.lock.json" "$repo/ops/manifests/"
 cp -- "$source_helper" "$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
 cp -- "$source_hddt" "$repo/ops/scripts/hddt-moss.sh"
 cp -- "$source_closure" "$repo/ops/scripts/lib/hddt-moss-closure.sh"
@@ -106,7 +110,7 @@ case "${1:-} ${2:-}" in
   'image inspect')
     case ${5:-} in
       '{{.Id}}')
-        if [[ ${3:-} == "${FIXTURE_BASE_ID:-}" || ${3:-} == "the-ai-crowd/moss-build-base:${FIXTURE_BASE_ID#sha256:}" ]]; then printf '%s\n' "${FIXTURE_BASE_ID:?}"; else printf '%s\n' "${FIXTURE_IMAGE_ID:?}"; fi
+        if [[ ${3:-} == "${FIXTURE_BASE_ID:-}" || ${3:-} == "${FIXTURE_BASE_TAG:-}" || ${3:-} == "the-ai-crowd/moss-build-base:${FIXTURE_BASE_ID#sha256:}" ]]; then printf '%s\n' "${FIXTURE_BASE_ID:?}"; else printf '%s\n' "${FIXTURE_IMAGE_ID:?}"; fi
         ;;
       *) printf '%s\n' 'tag=fixture/moss:test image=sha256:bbbb created=fixed' ;;
     esac
@@ -126,11 +130,25 @@ date_epoch_file="$fx/date.epoch"
 printf '%s\n' 100 >"$date_epoch_file"
 helper="$repo/ops/scripts/build-moss-all-in-one-candidate.sh"
 base_image=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+fleet_lock="$repo/ops/manifests/fleet-hermes-918b-rebind.lock.json"
+v3_lock="$repo/ops/manifests/hermes-base-v3.lock.json"
+receipt="$fx/hermes-base-v3-receipt.json"
+python3 - "$fleet_lock" "$v3_lock" "$receipt" "$base_image" <<'PY'
+import hashlib, json, sys
+fleet=json.load(open(sys.argv[1])); fleet['base']['local_image_id']=sys.argv[4]; json.dump(fleet,open(sys.argv[1],'w'))
+lock=json.load(open(sys.argv[2])); source, image=lock['source'], lock['image']; normalized={'Env':['fixture=true']}
+receipt={'schema':'the-ai-crowd.hermes-base-v3-receipt.v1','source_commit':source['commit'],'source_tree':source['tree'],'archive_sha256':source['archive']['sha256'],'archive_bytes':source['archive']['bytes'],'pre_normalization_tag':image['pre_normalization_tag'],'pre_normalization_image_id':'sha256:'+'e'*64,'final_tag':image['final_tag'],'final_image_id':sys.argv[4],'normalized_config':normalized,'normalized_config_sha256':hashlib.sha256(json.dumps(normalized,sort_keys=True,separators=(',',':')).encode()).hexdigest()}
+json.dump(receipt,open(sys.argv[3],'w'))
+PY
+base_tag=the-ai-crowd/hermes-base:918b36785653
 
 env_common=(
   PATH="$bin:$PATH"
   CLASH_ROYALE_BUILD_INPUT_DIR="$private_input"
   MOSS_BASE_IMAGE="$base_image"
+  HERMES_BASE_REBIND_LOCK="ops/manifests/fleet-hermes-918b-rebind.lock.json"
+  HERMES_BASE_V3_RECEIPT="$receipt"
+  FIXTURE_BASE_TAG="$base_tag"
   DOCKER_LOG="$docker_log"
   FIXTURE_IMAGE_ID="$image_id"
   FIXTURE_BASE_ID="$base_image"
@@ -147,11 +165,11 @@ run_without_base(){
 run_raw(){
   local receipts=$1
   shift
-  env "$@" PATH="$bin:$PATH" CLASH_ROYALE_BUILD_INPUT_DIR="$private_input" DOCKER_LOG="$docker_log" FIXTURE_IMAGE_ID="$image_id" FIXTURE_BASE_ID="$base_image" DATE_EPOCH_FILE="$date_epoch_file" BUILD_RECEIPT_ROOT="$receipts" HDDT_SOURCE_BASE_REVISION="$base_revision" "$helper" fixture/moss:test
+  env "$@" PATH="$bin:$PATH" CLASH_ROYALE_BUILD_INPUT_DIR="$private_input" HERMES_BASE_REBIND_LOCK="ops/manifests/fleet-hermes-918b-rebind.lock.json" HERMES_BASE_V3_RECEIPT="$receipt" FIXTURE_BASE_TAG="$base_tag" DOCKER_LOG="$docker_log" FIXTURE_IMAGE_ID="$image_id" FIXTURE_BASE_ID="$base_image" DATE_EPOCH_FILE="$date_epoch_file" BUILD_RECEIPT_ROOT="$receipts" HDDT_SOURCE_BASE_REVISION="$base_revision" "$helper" fixture/moss:test
 }
 assert_no_effect(){
   local receipts=$1 label=$2
-  [[ ! -s $docker_log ]] || fail "$label invoked docker"
+  ! grep -Fq '<build>' "$docker_log" || fail "$label invoked docker build"
   [[ ! -d $receipts ]] || ! compgen -G "$receipts/*.json" >/dev/null || fail "$label published receipt"
 }
 run_negative(){
@@ -226,6 +244,7 @@ run_base_negative(){
 
 run_base_negative missing-base ''
 run_base_negative mutable-base fixture/base:mutable
+run_base_negative arbitrary-valid-base sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 
 if [[ ${MOSS_BUILD_CONTRACT_MUTATION_CHILD:-0} != 1 ]]; then
   execroot="$fx/executor-mutroot"

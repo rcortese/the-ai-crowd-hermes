@@ -16,6 +16,9 @@ source_base_canonical=$(git -C "$ROOT" rev-parse --verify "${SOURCE_BASE_REVISIO
 git -C "$ROOT" merge-base --is-ancestor "$SOURCE_BASE_REVISION" "$COMMIT" || { printf '%s\n' 'explicit HDDT source base revision is not an ancestor' >&2; exit 65; }
 BASE_IMAGE="${MOSS_BASE_IMAGE:-}"
 [[ $BASE_IMAGE =~ ^sha256:[0-9a-f]{64}$ ]] || { printf '%s\n' 'MOSS_BASE_IMAGE must be an immutable local sha256 image ID' >&2; exit 65; }
+HERMES_BASE_REBIND_LOCK="${HERMES_BASE_REBIND_LOCK:?set HERMES_BASE_REBIND_LOCK to the admitted fleet rebind lock relative path}"
+HERMES_BASE_V3_RECEIPT="${HERMES_BASE_V3_RECEIPT:?set HERMES_BASE_V3_RECEIPT to the admitted Hermes-base-v3 receipt}"
+"$ROOT/ops/release/fleet_hermes_918b_rebind.py" admit --lock "$ROOT/$HERMES_BASE_REBIND_LOCK" --v3-lock "$ROOT/ops/manifests/hermes-base-v3.lock.json" --receipt "$HERMES_BASE_V3_RECEIPT" --inspect-command docker --expected-image-id "$BASE_IMAGE"
 INPUT_DIR="${CLASH_ROYALE_BUILD_INPUT_DIR:?set CLASH_ROYALE_BUILD_INPUT_DIR to the controlled private Node input directory}"
 MANIFEST_REL="ops/build-inputs/moss-clash-royale-war-bot.sha256"
 TAG="${1:?usage: $0 IMAGE_TAG}"

@@ -26,6 +26,8 @@ assert 'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"' in helper
 assert 'ROOT="$(git rev-parse --show-toplevel)"' not in helper
 assert 'BASE_IMAGE="${MOSS_BASE_IMAGE:-}"' in helper
 assert 'MOSS_BASE_IMAGE must be an immutable local sha256 image ID' in helper
+for required in ('HERMES_BASE_REBIND_LOCK', 'HERMES_BASE_V3_RECEIPT', 'fleet_hermes_918b_rebind.py" admit', '--v3-lock', '--receipt', '--inspect-command docker', '--expected-image-id "$BASE_IMAGE"'):
+    assert required in helper
 assert 'base_alias="the-ai-crowd/moss-build-base:${BASE_IMAGE#sha256:}"' in helper
 assert '--build-arg "MOSS_BASE_IMAGE=$base_alias"' in helper
 assert "git -C \"$ROOT\" archive --format=tar \"$COMMIT\"" in helper

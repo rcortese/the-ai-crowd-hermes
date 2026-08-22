@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Fail-closed source contract for the fleet Hermes-base rebind packet."""
+"""Fail-closed admission for the fleet Hermes-base rebind packet."""
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -52,20 +53,83 @@ def load(lock_path: Path) -> dict:
     return data
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--lock", required=True, type=Path)
-    parser.add_argument("--require-local-image-id", action="store_true")
-    args = parser.parse_args()
+def load_json(path: Path, label: str) -> dict:
     try:
-        data = load(args.lock)
-        image_id = data["base"]["local_image_id"]
-        if args.require_local_image_id and not image_id:
-            fail("local image ID is unbound; build is quarantined")
+        value = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"{label}: {exc}")
+    if not isinstance(value, dict):
+        fail(f"{label} must be an object")
+    return value
+
+
+def admit(lock_path: Path, v3_lock_path: Path, receipt_path: Path, inspect_command: str, expected_image_id: str | None) -> dict:
+    fleet = load(lock_path)
+    image_id = fleet["base"]["local_image_id"]
+    if not image_id:
+        fail("local image ID is unbound; build is quarantined")
+    if expected_image_id is not None and expected_image_id != image_id:
+        fail("supplied base image ID does not bind admitted rebind lock")
+    if not IMAGE_ID.fullmatch(image_id):
+        fail("admitted local image ID malformed")
+    try:
+        from hermes_base_v3 import load_lock, verify_receipt
+        v3_lock = load_lock(v3_lock_path)
+        receipt = load_json(receipt_path, "v3 receipt")
+        verify_receipt(receipt, v3_lock)
+    except (ImportError, OSError, ValueError, json.JSONDecodeError) as exc:
+        fail(f"v3 receipt verification failed: {exc}")
+    source, v3_source = fleet["base"]["source"], v3_lock["source"]
+    if fleet["base"]["tag"] != v3_lock["image"]["final_tag"]:
+        fail("fleet tag does not bind v3 final tag")
+    if source["commit"] != v3_source["commit"] or source["tree"] != v3_source["tree"] or source["archive_sha256"] != v3_source["archive"]["sha256"]:
+        fail("fleet source tuple does not bind v3 lock")
+    if receipt["final_tag"] != fleet["base"]["tag"] or receipt["final_image_id"] != image_id:
+        fail("v3 receipt final tag or image ID does not bind fleet lock")
+    if receipt["source_commit"] != source["commit"] or receipt["source_tree"] != source["tree"] or receipt["archive_sha256"] != source["archive_sha256"]:
+        fail("v3 receipt source tuple does not bind fleet lock")
+    try:
+        observed = subprocess.run([inspect_command, "image", "inspect", fleet["base"]["tag"], "--format", "{{.Id}}"], text=True, capture_output=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        fail(f"docker tag inspection failed: {exc}")
+    if observed != image_id:
+        fail("observed docker tag does not resolve to admitted image ID")
+    return {"tag": fleet["base"]["tag"], "image_id": image_id, "source": source}
+
+
+def main() -> int:
+    # Preserve the original no-subcommand validator invocation for existing callers.
+    if len(sys.argv) > 1 and sys.argv[1].startswith("-"):
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--lock", required=True, type=Path)
+        parser.add_argument("--require-local-image-id", action="store_true")
+        args = parser.parse_args()
+        args.command = "validate"
+    else:
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command", required=True)
+        legacy = sub.add_parser("validate")
+        legacy.add_argument("--lock", required=True, type=Path)
+        legacy.add_argument("--require-local-image-id", action="store_true")
+        admission = sub.add_parser("admit")
+        admission.add_argument("--lock", required=True, type=Path)
+        admission.add_argument("--v3-lock", required=True, type=Path)
+        admission.add_argument("--receipt", required=True, type=Path)
+        admission.add_argument("--inspect-command", required=True)
+        admission.add_argument("--expected-image-id")
+        args = parser.parse_args()
+    try:
+        if args.command == "validate":
+            data = load(args.lock)
+            if args.require_local_image_id and not data["base"]["local_image_id"]:
+                fail("local image ID is unbound; build is quarantined")
+            print("fleet_hermes_918b_rebind_lock_ok")
+        else:
+            result = admit(args.lock, args.v3_lock, args.receipt, args.inspect_command, args.expected_image_id)
+            print(f"fleet_hermes_918b_rebind_admission_ok tag={result['tag']} image_id={result['image_id']}")
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 65
-    print("fleet_hermes_918b_rebind_lock_ok")
     return 0
 
 
