@@ -50,6 +50,8 @@ docker build --pull=false \
   --tag "$TAG" \
   --build-arg "MOSS_BASE_IMAGE=$base_alias" \
   --build-context "clash_royale_build_input=$INPUT_DIR" \
+    --label "org.opencontainers.image.revision=$COMMIT" \
+    --label "org.opencontainers.image.source=$(git -C "$ROOT" remote get-url origin)" \
   "$CTX"
 docker image inspect "$TAG" --format 'tag={{index .RepoTags 0}} image={{.Id}} created={{.Created}}'
 
