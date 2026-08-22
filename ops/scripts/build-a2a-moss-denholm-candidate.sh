@@ -35,6 +35,8 @@ build_one() {
     --build-arg "A2A_TOOLS_SHA256=$A2A_TOOLS_SHA256" \
     --label "the-ai-crowd.persona=$persona" \
     --label "the-ai-crowd.source-commit=$COMMIT" \
+    --label "org.opencontainers.image.revision=$COMMIT" \
+    --label "org.opencontainers.image.source=$(git -C "$ROOT" remote get-url origin)" \
     --label "the-ai-crowd.source-tree=$TREE" \
     --label "the-ai-crowd.a2a-topology=moss-to-denholm" \
     --label "the-ai-crowd.a2a-tools-preimage-sha256=$A2A_TOOLS_SHA256" \

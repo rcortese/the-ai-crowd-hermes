@@ -33,6 +33,8 @@ docker build --pull=false \
   --tag "$TAG" \
   --build-arg "HERMES_AGENT_IMAGE=$BASE_TAG" \
   --label "the-ai-crowd.source-commit=$COMMIT" \
+    --label "org.opencontainers.image.revision=$COMMIT" \
+    --label "org.opencontainers.image.source=$(git -C "$ROOT" remote get-url origin)" \
   --label "the-ai-crowd.source-tree=$TREE" \
   --label "the-ai-crowd.hermes-base-id=$EXPECTED_ID" \
   "$CTX"
