@@ -53,7 +53,9 @@ def validate_lock(lock):
     image = _obj(lock["image"], "image"); _keys(image, {"repository","pre_normalization_tag","final_tag","final_image_id"}, "image")
     _text(image["repository"], "image.repository", REPOSITORY)
     _image_tag(image["pre_normalization_tag"], "image.pre_normalization_tag", image["repository"])
-    if image["final_tag"] is not None or image["final_image_id"] is not None or lock["receipt"] is not None: raise ValueError("source-only lock final image and receipt fields must be null")
+    _image_tag(image["final_tag"], "image.final_tag", image["repository"])
+    if image["final_tag"] == image["pre_normalization_tag"]: raise ValueError("image.final_tag must differ from pre-normalization tag")
+    if image["final_image_id"] is not None or lock["receipt"] is not None: raise ValueError("source-only lock final image ID and receipt fields must be null")
     return lock
 
 def load_lock(path):
@@ -114,6 +116,7 @@ def verify_receipt(receipt, lock):
         if receipt[key] != wanted: raise ValueError(f"receipt.{key} does not bind lock")
     _image_tag(receipt["pre_normalization_tag"], "receipt.pre_normalization_tag", image["repository"])
     _image_tag(receipt["final_tag"], "receipt.final_tag", image["repository"])
+    if receipt["final_tag"] != image["final_tag"]: raise ValueError("receipt.final_tag does not bind locked final tag")
     for key in ("pre_normalization_image_id","final_image_id"):_text(receipt[key],f"receipt.{key}",IMAGE_ID)
     _text(receipt["normalized_config_sha256"],"receipt.normalized_config_sha256",HEX64)
     normalized=config_projection(receipt["normalized_config"])
