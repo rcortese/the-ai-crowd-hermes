@@ -1,62 +1,38 @@
-import hashlib
-import io
-import pathlib
-import sys
-import unittest
-
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "ops" / "release"))
-import hermes_base_v3 as contract
-
-COMMIT = "918b36785653ec291806558e30b302b8cad10777"
-TREE = "817966c265522f8a7ae07473284451e17f1e683a"
-ARCHIVE_SHA = "8a26e82ce96b4b5429d0321e19ddb0b01bed9d5925ab2a0ecc89e9201bfe6aee"
-
-def lock_data():
-    return {
-        "schema": contract.LOCK_SCHEMA,
-        "source": {"git_dir": "/declared/git-dir", "work_tree": "/declared/work-tree", "commit": COMMIT, "tree": TREE, "archive": {"format": "tar", "prefix": "hermes-agent/", "sha256": ARCHIVE_SHA, "bytes": 166256640}},
-        "image": {"repository": "the-ai-crowd/hermes-base", "pre_normalization_tag": "candidate", "final_tag": None, "final_image_id": None},
-        "receipt": None,
-    }
-
-class LockValidationTests(unittest.TestCase):
-    def test_valid_source_only_lock_is_accepted(self):
-        self.assertEqual(contract.validate_lock(lock_data())["source"]["commit"], COMMIT)
-
-    def test_lock_rejects_unknown_and_wrong_typed_fields(self):
-        candidate = lock_data(); candidate["unexpected"] = True
-        with self.assertRaisesRegex(ValueError, "unexpected"):
-            contract.validate_lock(candidate)
-        candidate = lock_data(); candidate["source"]["archive"]["bytes"] = "166256640"
-        with self.assertRaisesRegex(ValueError, "bytes"):
-            contract.validate_lock(candidate)
-
-    def test_archive_binding_checks_exact_bytes_and_digest(self):
-        archive = b"archive-fixture"
-        candidate = lock_data(); candidate["source"]["archive"] = {"format": "tar", "prefix": "hermes-agent/", "sha256": hashlib.sha256(archive).hexdigest(), "bytes": len(archive)}
-        contract.verify_archive_stream(candidate, io.BytesIO(archive))
-        with self.assertRaisesRegex(ValueError, "sha256"):
-            contract.verify_archive_stream(candidate, io.BytesIO(b"archive-fixturE"))
-
-class NormalizationTests(unittest.TestCase):
-    def test_normalization_removes_only_opt_data_volume(self):
-        original = {"Config": {"Volumes": {"/opt/data": {}, "/tmp": {"mode": "rw"}}, "Env": ["A=B"]}, "RootFS": {"Type": "layers"}}
-        normalized = contract.normalize_oci_config(original)
-        self.assertEqual(normalized["Config"]["Volumes"], {"/tmp": {"mode": "rw"}})
-        self.assertEqual(normalized["Config"]["Env"], ["A=B"])
-        self.assertEqual(original["Config"]["Volumes"], {"/opt/data": {}, "/tmp": {"mode": "rw"}})
-
-    def test_normalization_preserves_empty_volume_mapping(self):
-        self.assertEqual(contract.normalize_oci_config({"Config": {"Volumes": {"/opt/data": {}}}}), {"Config": {"Volumes": {}}})
-
-class ReceiptTests(unittest.TestCase):
-    def test_receipt_requires_final_custody_values_and_bound_source(self):
-        receipt = {"schema": contract.RECEIPT_SCHEMA, "source_commit": COMMIT, "source_tree": TREE, "archive_sha256": ARCHIVE_SHA, "archive_bytes": 166256640, "pre_normalization_tag": "the-ai-crowd/hermes-base:pre", "pre_normalization_image_id": "sha256:" + "a" * 64, "final_tag": "the-ai-crowd/hermes-base:final", "final_image_id": "sha256:" + "b" * 64, "normalized_config_sha256": "c" * 64}
-        self.assertEqual(contract.verify_receipt(receipt, lock_data())["final_tag"], receipt["final_tag"])
-        receipt["final_image_id"] = None
-        with self.assertRaisesRegex(ValueError, "final_image_id"):
-            contract.verify_receipt(receipt, lock_data())
-
-if __name__ == "__main__":
-    unittest.main()
+import hashlib, io, json, pathlib, sys, tarfile, tempfile, unittest
+ROOT=pathlib.Path(__file__).resolve().parents[1]; sys.path.insert(0,str(ROOT/'ops'/'release'))
+import hermes_base_v3 as c
+COMMIT="918b36785653ec291806558e30b302b8cad10777"; TREE="817966c265522f8a7ae07473284451e17f1e683a"; SHA="8a26e82ce96b4b5429d0321e19ddb0b01bed9d5925ab2a0ecc89e9201bfe6aee"
+def lock(): return {"schema":c.LOCK_SCHEMA,"source":{"git_dir":"/g","work_tree":"/w","commit":COMMIT,"tree":TREE,"archive":{"format":"tar","prefix":"hermes-agent/","sha256":SHA,"bytes":1}},"image":{"repository":"the-ai-crowd/hermes-base","pre_normalization_tag":"the-ai-crowd/hermes-base:pre-918b36785653","final_tag":None,"final_image_id":None},"receipt":None}
+def receipt():
+ x={"schema":c.RECEIPT_SCHEMA,"source_commit":COMMIT,"source_tree":TREE,"archive_sha256":SHA,"archive_bytes":1,"pre_normalization_tag":lock()["image"]["pre_normalization_tag"],"pre_normalization_image_id":"sha256:"+"a"*64,"final_tag":"the-ai-crowd/hermes-base:final","final_image_id":"sha256:"+"b"*64,"normalized_config":{"Env":["A=B"],"Volumes":{} }}; x["normalized_config_sha256"]=c.config_sha256(x["normalized_config"]); return x
+def add(t,name,body):
+ b=body if isinstance(body,bytes) else json.dumps(body).encode(); i=tarfile.TarInfo(name); i.size=len(b); t.addfile(i,io.BytesIO(b))
+def image(path,volumes={"/opt/data":{}}, duplicate=False, malformed=False):
+ with tarfile.open(path,"w") as t:
+  add(t,"manifest.json", [{"Config":"cfg.json","RepoTags":["old:tag"],"Layers":["layer"]}]); add(t,"cfg.json", b"bad" if malformed else {"config":{"Volumes":volumes,"Env":["A=B"]},"other":1}); add(t,"layer",b"unchanged")
+  if duplicate: add(t,"layer",b"again")
+class Contract(unittest.TestCase):
+ def test_lock_and_archive(self):
+  self.assertEqual(c.validate_lock(lock())["source"]["commit"],COMMIT)
+  x=lock(); x["image"]["pre_normalization_tag"]="candidate"
+  with self.assertRaisesRegex(ValueError,"repository-qualified"): c.validate_lock(x)
+  x=lock(); x["source"]["archive"].update(bytes=3,sha256=hashlib.sha256(b"abc").hexdigest()); c.verify_archive_stream(x,io.BytesIO(b"abc"))
+ def test_tar_sole_delta(self):
+  with tempfile.TemporaryDirectory() as d:
+   a,b=pathlib.Path(d)/"a.tar",pathlib.Path(d)/"b.tar"; image(a); c.normalize_image_tar(a,b,"the-ai-crowd/hermes-base:final")
+   with tarfile.open(a) as x,tarfile.open(b) as y:
+    self.assertEqual(x.getnames(),y.getnames()); self.assertEqual(x.extractfile("layer").read(),y.extractfile("layer").read()); self.assertEqual(json.load(y.extractfile("cfg.json"))["config"]["Volumes"],{}); self.assertEqual(json.load(y.extractfile("manifest.json"))[0]["RepoTags"],["the-ai-crowd/hermes-base:final"])
+ def test_tar_rejects_residual_malformed_duplicate(self):
+  with tempfile.TemporaryDirectory() as d:
+   for n,k,err in (("r",False,"residual"),("m",False,"malformed"),("d",True,"duplicate")):
+    a,b=pathlib.Path(d)/(n+".tar"),pathlib.Path(d)/(n+"o.tar"); image(a,{"/opt/data":{},"/tmp":{}} if n=="r" else {"/opt/data":{}},k,n=="m")
+    with self.assertRaisesRegex(ValueError,err): c.normalize_image_tar(a,b,"the-ai-crowd/hermes-base:final")
+ def test_receipt_tag_and_projection_negatives(self):
+  r=receipt(); self.assertEqual(c.verify_receipt(r,lock())["final_tag"],r["final_tag"])
+  r=receipt(); r["final_tag"]="other/repo:x"
+  with self.assertRaisesRegex(ValueError,"locked repository"): c.verify_receipt(r,lock())
+  r=receipt(); r["normalized_config"]["Env"]=["A=C"]
+  with self.assertRaisesRegex(ValueError,"does not match"): c.verify_receipt(r,lock())
+  r=receipt(); r["normalized_config"]["Volumes"]={"/tmp":{}}; r["normalized_config_sha256"]=c.config_sha256(r["normalized_config"])
+  with self.assertRaisesRegex(ValueError,"residual"): c.verify_receipt(r,lock())
+if __name__=="__main__": unittest.main()

@@ -14,7 +14,7 @@
   },
   "image": {
     "repository": "the-ai-crowd/hermes-base",
-    "pre_normalization_tag": "candidate",
+    "pre_normalization_tag": "the-ai-crowd/hermes-base:pre-918b36785653",
     "final_tag": null,
     "final_image_id": null
   },
