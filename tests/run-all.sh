@@ -16,7 +16,7 @@ run agents/public/moss/tools/wrappers/ssh-readonly-preflight.sh --host-ref priva
 run agents/public/moss/tools/wrappers/compose-readonly-preflight.sh --repo . --mode config --dry-run
 run tests/image-pin.sh
 run /opt/hermes/.venv/bin/python ops/tests/test_moss_candidate_build_contract.py "$PWD"
-run /opt/hermes/.venv/bin/python ops/tests/test_persona_toolset_runtime_materializer.py
+run /opt/hermes/.venv/bin/python ops/tests/test_protected_hermes_a2a_base_lock.py
 run /opt/hermes/.venv/bin/python ops/tests/test_persona_api_materializer.py
 run /opt/hermes/.venv/bin/python ops/tests/test_persona_rpc_docs_contract.py
 run /opt/hermes/.venv/bin/python tests/protocol/test_no_alternative_a2a.py

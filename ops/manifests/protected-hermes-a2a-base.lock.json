@@ -1,0 +1,14 @@
+{
+  "schema": "the-ai-crowd-hermes.protected-a2a-base-lock.v1",
+  "status": "pending-external-protected-base-binding",
+  "required_input": {
+    "image_id": "HERMES_PROTECTED_A2A_BASE_ID",
+    "source_revision": "HERMES_PROTECTED_A2A_SOURCE_REVISION"
+  },
+  "expected_source_candidate": "007592b6b3b71ec7599f5ed964a3a5977f04e7b4",
+  "protected_base": {
+    "image_id": null,
+    "source_revision": null
+  },
+  "consumption": "No public Stack Dockerfile copies runtime files from Hermes. A separately approved immutable protected Hermes base must be bound here before any future A2A base-consumption work."
+}
