@@ -57,6 +57,9 @@ class Contract(unittest.TestCase):
   self.assertEqual(len(build),1)
   build_argv=shlex.split(build[0])
   self.assertEqual(build_argv[build_argv.index('--tag')+1],'$pre_tag')
+  self.assertEqual(build_argv[-1],'$ctx/context/hermes-agent')
+  self.assertNotEqual(build_argv[-1],'$ctx/context')
+  self.assertFalse(any(a == '-f' or a.startswith('--file') for a in build_argv))
   self.assertEqual(actual['image']['pre_normalization_tag'],'the-ai-crowd/hermes-base:pre-918b36785653')
   self.assertEqual(actual['image']['final_tag'],FINAL_TAG)
   smoke=[line.strip() for line in script.splitlines() if line.lstrip().startswith('docker run ')]

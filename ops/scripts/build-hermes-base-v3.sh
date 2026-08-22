@@ -20,7 +20,7 @@ git --git-dir="$git_dir" --work-tree="$work_tree" archive --format=tar --prefix=
 [[ "$(sha256sum "$raw" | cut -d' ' -f1)" == "$expected_sha" && "$(wc -c <"$raw" | tr -d ' ')" == "$expected_bytes" ]] || { echo "archive binding mismatch" >&2; exit 65; }
 mkdir "$ctx/context"; tar -xf "$raw" -C "$ctx/context" --no-same-owner
 # Archive-only context, provenance labels, and no build network.
-docker build --network=none --pull=false --tag "$pre_tag" --label "org.opencontainers.image.revision=$commit" --label "the-ai-crowd.source-commit=$commit" --label "the-ai-crowd.source-tree=$tree" --label "the-ai-crowd.source-archive-sha256=$expected_sha" "$ctx/context"
+docker build --network=none --pull=false --tag "$pre_tag" --label "org.opencontainers.image.revision=$commit" --label "the-ai-crowd.source-commit=$commit" --label "the-ai-crowd.source-tree=$tree" --label "the-ai-crowd.source-archive-sha256=$expected_sha" "$ctx/context/hermes-agent"
 pre_id=$(docker image inspect "$pre_tag" --format '{{.Id}}')
 docker image save "$pre_tag" -o "$saved"
 python3 "$CONTRACT" normalize-image-tar "$saved" "$normalized" --final-tag "$final_tag"
