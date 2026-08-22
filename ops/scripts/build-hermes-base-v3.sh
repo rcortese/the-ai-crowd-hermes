@@ -29,8 +29,8 @@ docker image load -i "$normalized" >/dev/null
 final_id=$(docker image inspect "$final_tag" --format '{{.Id}}'); [[ "$final_id" != "$pre_id" ]] || { echo "normalization did not create distinct final image" >&2; exit 65; }
 config_file="$ctx/final-config.json"; docker image inspect "$final_tag" --format '{{json .Config}}' >"$config_file"
 python3 -c 'import json,sys; sys.path.insert(0,sys.argv[1]); import hermes_base_v3 as c; c.assert_no_residual_volumes(json.load(open(sys.argv[2])), "loaded final config")' "$(dirname "$CONTRACT")" "$config_file"
-# No network, read-only root, no bind mounts/volumes; only an ephemeral tmpfs.
-docker run --rm --network=none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m "$final_tag" hermes --help >/dev/null
+# No network, read-only root, and no persistent mounts; s6 needs transient executable /run.
+docker run --rm --network=none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --tmpfs /run:rw,nosuid,size=16m "$final_tag" hermes --help >/dev/null
 python3 -c 'import json,sys; sys.path.insert(0,sys.argv[1]); import hermes_base_v3 as c; o,lp,pi,f,fi,cf=sys.argv[2:]; lock=c.load_lock(lp); cfg=c.config_projection(json.load(open(cf))); r={"schema":c.RECEIPT_SCHEMA,"source_commit":lock["source"]["commit"],"source_tree":lock["source"]["tree"],"archive_sha256":lock["source"]["archive"]["sha256"],"archive_bytes":lock["source"]["archive"]["bytes"],"pre_normalization_tag":lock["image"]["pre_normalization_tag"],"pre_normalization_image_id":pi,"final_tag":f,"final_image_id":fi,"normalized_config":cfg,"normalized_config_sha256":c.config_sha256(cfg)}; open(o,"w").write(json.dumps(r,sort_keys=True,indent=2)+"\n")' "$(dirname "$CONTRACT")" "$receipt" "$LOCK" "$pre_id" "$final_tag" "$final_id" "$config_file"
 python3 "$CONTRACT" verify-receipt "$LOCK" "$receipt"
 printf 'hermes-base-v3: PASS final_tag=%s final_image_id=%s receipt=%s\n' "$final_tag" "$final_id" "$receipt"
