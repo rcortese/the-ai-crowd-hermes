@@ -194,24 +194,76 @@ def is_chat_start_test(node: ast.AST) -> bool:
             and any(isinstance(value, ast.Constant) and value.value == "/api/chat/start" for value in node.comparators))
 
 
+def ordered_statement_states(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tuple[ast.stmt, dict[str, ast.AST]]]:
+    """Record each reachable statement with bindings available *at that point*.
+
+    The verifier is deliberately conservative for non-literal branches: every
+    feasible local branch reaches a sink independently.  A later assignment is
+    never allowed to change the state used for an earlier sink.
+    """
+    events: list[tuple[ast.stmt, dict[str, ast.AST]]] = []
+
+    def block(statements: Iterable[ast.stmt], states: list[dict[str, ast.AST]]) -> list[dict[str, ast.AST]]:
+        active = states
+        for statement in statements:
+            following: list[dict[str, ast.AST]] = []
+            for state in active:
+                events.append((statement, state))
+                if isinstance(statement, ast.If):
+                    known = literal_bool(statement.test)
+                    branches = (statement.body,) if known is True else (statement.orelse,) if known is False else (statement.body, statement.orelse)
+                    following.extend(result for branch in branches for result in block(branch, [dict(state)]))
+                elif isinstance(statement, (ast.With, ast.AsyncWith)):
+                    following.extend(block(statement.body, [dict(state)]))
+                elif isinstance(statement, ast.Try):
+                    following.extend(block(statement.body, [dict(state)]))
+                    for handler in statement.handlers:
+                        following.extend(block(handler.body, [dict(state)]))
+                    if statement.orelse:
+                        following.extend(block(statement.orelse, [dict(state)]))
+                    if statement.finalbody:
+                        following = block(statement.finalbody, following)
+                elif isinstance(statement, (ast.Return, ast.Raise, ast.Break, ast.Continue)):
+                    continue
+                else:
+                    next_state = dict(state)
+                    if (target := assigned_name(statement)) is not None and (value := assigned_value(statement)) is not None:
+                        next_state[target] = value
+                    following.append(next_state)
+            active = following
+        return active
+
+    block(function.body, [{}])
+    return events
+
+
+def resolved_expression(node: ast.AST, state: dict[str, ast.AST], seen: set[str] | None = None) -> ast.AST:
+    seen = set() if seen is None else seen
+    if isinstance(node, ast.Name) and node.id in state and node.id not in seen:
+        return resolved_expression(state[node.id], state, seen | {node.id})
+    return node
+
+
+def expression_uses_resolver(node: ast.AST, resolver: str, state: dict[str, ast.AST]) -> bool:
+    roots = {target for target, value in state.items()
+             if any(call_name(call) == resolver for call in expression_calls(value))}
+    return (any(call_name(call) == resolver for call in expression_calls(node))
+            or bool(roots and expr_depends_on(node, roots, state)))
+
+
 def gateway_owned_selection(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Prove enabled selection flows to Thread(target=the gateway runner)."""
-    bindings = effective_bindings(function)
-    worker_names: set[str] = set()
-    for target, value in bindings.items():
-        if not isinstance(value, ast.IfExp) or not name(value.body, "_run_gateway_chat_streaming"):
-            continue
-        if expr_depends_on(value.test, {"webui_gateway_chat_enabled"}, bindings):
-            worker_names.add(target)
-    if not worker_names:
-        return False
-    for call in reachable_calls(function):
-        if attribute_name(call.func) != "threading.Thread":
-            continue
-        if any(keyword.arg == "target" and isinstance(keyword.value, ast.Name)
-               and keyword.value.id in worker_names for keyword in call.keywords):
-            return True
-    return False
+    """Require every reachable Thread sink to select the gateway runner."""
+    thread_sinks: list[bool] = []
+    for statement, state in ordered_statement_states(function):
+        for call in statement_calls(statement):
+            if attribute_name(call.func) != "threading.Thread":
+                continue
+            target = next((keyword.value for keyword in call.keywords if keyword.arg == "target"), None)
+            selected = resolved_expression(target, state) if target is not None else None
+            thread_sinks.append(isinstance(selected, ast.IfExp)
+                                and name(selected.body, "_run_gateway_chat_streaming")
+                                and expression_uses_resolver(selected.test, "webui_gateway_chat_enabled", state))
+    return bool(thread_sinks) and all(thread_sinks)
 
 
 def verify_routes(routes: ast.Module) -> None:
@@ -260,25 +312,30 @@ def is_urlopen_call(call: ast.Call) -> bool:
     return attribute_name(call.func) == "urllib.request.urlopen"
 
 
-def request_uses_trusted_transport(runner: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    bindings = effective_bindings(runner)
-    url_roots = {target for target, value in bindings.items()
-                 if any(call_name(call) == "_gateway_base_url" for call in expression_calls(value))}
-    key_roots = {target for target, value in bindings.items()
-                 if any(call_name(call) == "_gateway_api_key" for call in expression_calls(value))}
-    if not url_roots or not key_roots:
+def trusted_request_expression(node: ast.AST, state: dict[str, ast.AST], seen: set[str] | None = None) -> bool:
+    """Check the Request construction reached by this urlopen argument now."""
+    seen = set() if seen is None else seen
+    if isinstance(node, ast.Name) and node.id in state and node.id not in seen:
+        return trusted_request_expression(state[node.id], state, seen | {node.id})
+    if not isinstance(node, ast.Call) or not is_request_call(node) or not node.args:
         return False
-    request_vars: set[str] = set()
-    for statement in effective_statements(runner.body):
-        value = assigned_value(statement)
-        if not isinstance(value, ast.Call) or not is_request_call(value) or not value.args:
-            continue
-        headers = next((keyword.value for keyword in value.keywords if keyword.arg == "headers"), None)
-        if expr_depends_on(value.args[0], url_roots, bindings) and headers and expr_depends_on(headers, key_roots, bindings):
-            if (target := assigned_name(statement)):
-                request_vars.add(target)
-    return bool(request_vars) and any(call.args and expr_depends_on(call.args[0], request_vars, bindings)
-                                     for call in reachable_calls(runner) if is_urlopen_call(call))
+    headers = next((keyword.value for keyword in node.keywords if keyword.arg == "headers"), None)
+    return (headers is not None
+            and expression_uses_resolver(node.args[0], "_gateway_base_url", state)
+            and expression_uses_resolver(headers, "_gateway_api_key", state))
+
+
+def request_uses_trusted_transport(runner: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """Require ordered, local trust proof at every Request and urlopen sink."""
+    request_sinks: list[bool] = []
+    urlopen_sinks: list[bool] = []
+    for statement, state in ordered_statement_states(runner):
+        for call in statement_calls(statement):
+            if is_request_call(call):
+                request_sinks.append(trusted_request_expression(call, state))
+            elif is_urlopen_call(call):
+                urlopen_sinks.append(bool(call.args) and trusted_request_expression(call.args[0], state))
+    return bool(request_sinks) and bool(urlopen_sinks) and all(request_sinks) and all(urlopen_sinks)
 
 
 def verify_gateway(gateway: ast.Module) -> None:
