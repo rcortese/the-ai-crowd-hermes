@@ -10,7 +10,6 @@ mapfile -t required <<'REQUIRED_CLOSURE_PATHS'
 compose.yaml
 ops/build-inputs/moss-clash-royale-war-bot.sha256
 ops/cron/the-ai-crowd-hddt-retention.cron
-ops/hermes-webui-overrides/moss-title-topic-priority.patch
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
 ops/scripts/build-moss-all-in-one-candidate.sh
@@ -32,18 +31,18 @@ ops/tests/test_hddt_lite_mutations.sh
 ops/tests/test_hddt_moss.sh
 ops/tests/test_hddt_moss_recovery.sh
 ops/tests/test_hddt_mutations.sh
+ops/tests/test_moss_candidate_build_contract.py
 ops/tests/test_moss_candidate_build_contract.sh
 ops/tests/test_moss_candidate_smoke_contract.sh
 ops/tests/test_moss_deploy_decoupling.sh
 ops/tests/test_moss_release_source_closure.sh
 ops/tests/test_moss_supervisor_api_key_contract.sh
-ops/tests/test_moss_title_topic_contract.sh
 ops/tests/test_package_a.sh
 ops/tests/test_runner_completeness.sh
 ops/tests/test_validate_moss_release_binding.sh
 tests/smoke-deploy.sh
 REQUIRED_CLOSURE_PATHS
-((${#required[@]} == 35)) || fail 'test expected-set cardinality drift'
+((${#required[@]} == 34)) || fail 'test expected-set cardinality drift'
 assert_oracle(){
  local candidate=$1
  bash -c 'source "$1"; hddt_required_source_closure "$2"' _ "$closure" "$candidate"
@@ -65,7 +64,7 @@ if assert_oracle "$candidate"; then fail 'addition accepted: ops/tests/unapprove
 if [[ ${MOSS_CLOSURE_ORACLE_MUTANT_CHILD:-0} != 1 ]]; then
  mutant="$tmp/hddt-moss-closure-mutant.sh"
  cp -- "$closure" "$mutant"
- perl -0pi -e 's/^compose\.yaml\n//m; s/^ \(\(\$\{#expected\[@\]\} == 35\)\) \|\| return 65\n//m' "$mutant"
+ perl -0pi -e 's/^compose\.yaml\n//m; s/^ \(\(\$\{#expected\[@\]\} == 34\)\) \|\| return 65\n//m' "$mutant"
  set +e
  MOSS_CLOSURE_ORACLE_MUTANT_CHILD=1 HDDT_CLOSURE_SCRIPT="$mutant" bash "$0" >"$tmp/mutant.out" 2>&1
  rc=$?
