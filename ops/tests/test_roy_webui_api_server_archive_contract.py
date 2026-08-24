@@ -52,16 +52,34 @@ _WEBUI_CHAT_BACKEND_ENV = "HERMES_WEBUI_CHAT_BACKEND"
 _GATEWAY_CHAT_BACKENDS = {"gateway", "api_server", "api-server"}
 _WEBUI_GATEWAY_BASE_URL_ENV = "HERMES_WEBUI_GATEWAY_BASE_URL"
 _WEBUI_GATEWAY_API_KEY_ENV = "HERMES_WEBUI_GATEWAY_API_KEY"
+def webui_chat_backend_mode():
+    raw = os.environ.get(_WEBUI_CHAT_BACKEND_ENV) or ""
+    if raw == "api_server":
+        return "api_server"
+    return "legacy"
 def _gateway_base_url():
     return os.environ.get(_WEBUI_GATEWAY_BASE_URL_ENV, "http://127.0.0.1:8642")
 def _gateway_api_key():
     return os.environ.get(_WEBUI_GATEWAY_API_KEY_ENV) or os.environ.get("API_SERVER_KEY") or ""
+def _gateway_transport(base_url, api_key):
+    return (base_url, api_key)
+def _run_gateway_chat_streaming():
+    if webui_chat_backend_mode() == "api_server":
+        return _gateway_transport(_gateway_base_url(), _gateway_api_key())
+    return None
+'''
+
+server_source = '''\
+from api import gateway_chat
+
+def handle_chat():
+    return gateway_chat._run_gateway_chat_streaming()
 '''
 
 
 def assert_rejected(name: str, source: str, diagnostic: str, tmp: Path) -> None:
     bundle = tmp / f"{name}.tar"
-    archive(bundle, {"server.py": "import api.gateway_chat\n", "api/gateway_chat.py": source})
+    archive(bundle, {"server.py": server_source, "api/gateway_chat.py": source})
     result = run(bundle)
     assert result.returncode != 0, result.stdout
     assert diagnostic in result.stderr, result.stderr
@@ -70,7 +88,7 @@ def assert_rejected(name: str, source: str, diagnostic: str, tmp: Path) -> None:
 with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir:
     tmp = Path(tmpdir)
     valid = tmp / "valid.tar"
-    archive(valid, {"server.py": "import api.gateway_chat\n", "api/gateway_chat.py": gateway_source})
+    archive(valid, {"server.py": server_source, "api/gateway_chat.py": gateway_source})
     result = run(valid)
     assert result.returncode == 0, result.stderr
     assert "PASS" in result.stdout
@@ -93,6 +111,17 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
         "API_SERVER_KEY fallback",
         tmp,
     )
+    # Keep selector/constants/helper declarations byte-for-byte intact, but
+    # sever the active api_server branch from the configured transport.
+    assert_rejected(
+        "api-server-disconnected-from-transport",
+        gateway_source.replace(
+            "return _gateway_transport(_gateway_base_url(), _gateway_api_key())",
+            "return None",
+        ),
+        "api_server branch does not reach gateway transport",
+        tmp,
+    )
 
     missing = tmp / "missing-gateway.tar"
     archive(missing, {"server.py": "pass\n"})
@@ -106,4 +135,4 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
     assert result.returncode != 0
     assert "compile" in result.stderr
 
-print("roy-webui-api-server-archive-contract: PASS positive=1 negative=5")
+print("roy-webui-api-server-archive-contract: PASS positive=1 negative=6")
