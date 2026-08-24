@@ -26,8 +26,10 @@ class A2AMossDenholmCandidateTests(unittest.TestCase):
         self.assertFalse((ROOT / "ops/images/Dockerfile.runtime-a2a-moss-denholm").exists())
         self.assertFalse((ROOT / "ops/scripts/patch-a2a-moss-denholm-plugin.py").exists())
         builder = (ROOT / "ops/scripts/build-persona-base-candidate.sh").read_text(encoding="utf-8")
-        self.assertIn("moss|denholm", builder)
         self.assertIn("protected-hermes-a2a-base.lock.json", builder)
+        self.assertNotIn("base-images.lock.json", builder)
+        for persona in ("moss", "jen", "denholm", "richmond", "roy", "the-elders"):
+            self.assertIn(persona, builder)
 
     def test_config_stager_is_non_mutating_without_apply(self) -> None:
         source = (ROOT / "ops/scripts/prepare-a2a-moss-denholm-config.py").read_text(encoding="utf-8")

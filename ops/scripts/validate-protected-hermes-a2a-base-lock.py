@@ -40,8 +40,8 @@ def main() -> int:
         "source_revision": APPROVED_SOURCE_REVISION,
     }:
         raise SystemExit("protected_a2a_base_lock_failed: protected base does not match approved Hermes 74 receipt")
-    if lock.get("persona_consumers") != ["moss", "denholm"]:
-        raise SystemExit("protected_a2a_base_lock_failed: Moss and Denholm must be the only protected-base consumers")
+    if lock.get("persona_consumers") != ["moss", "jen", "denholm", "richmond", "roy", "the-elders"]:
+        raise SystemExit("protected_a2a_base_lock_failed: every Stack persona must consume the protected base")
     transport = lock.get("a2a_transport", "")
     if "five-tool" not in transport or "no runtime overlay" not in transport:
         raise SystemExit("protected_a2a_base_lock_failed: fixed five-tool no-overlay transport statement required")

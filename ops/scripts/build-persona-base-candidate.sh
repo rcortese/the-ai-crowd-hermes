@@ -15,22 +15,12 @@ if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
   printf '%s\n' 'refusing dirty source worktree' >&2
   exit 1
 fi
-LOCK="$ROOT/ops/manifests/base-images.lock.json"
 PROTECTED_A2A_LOCK="$ROOT/ops/manifests/protected-hermes-a2a-base.lock.json"
-case "$PERSONA" in
-  moss|denholm)
-    # The approved Hermes 74 base already contains the fixed safe A2A transport.
-    # Consume it directly; do not construct a runtime overlay.
-    BASE_TAG="$(jq -er '.protected_base.image' "$PROTECTED_A2A_LOCK")"
-    EXPECTED_ID="$(jq -er '.protected_base.image_id' "$PROTECTED_A2A_LOCK")"
-    BASE_SOURCE_REVISION="$(jq -er '.protected_base.source_revision' "$PROTECTED_A2A_LOCK")"
-    ;;
-  *)
-    BASE_TAG="$(jq -er '.images[] | select(.name == "hermes-agent") | .image' "$LOCK")"
-    EXPECTED_ID="$(jq -er '.images[] | select(.name == "hermes-agent") | .image_id' "$LOCK")"
-    BASE_SOURCE_REVISION="$(jq -er '.images[] | select(.name == "hermes-agent") | .source_revision' "$LOCK")"
-    ;;
-esac
+# The approved Hermes 74 base already contains the fixed safe A2A transport.
+# Every persona consumes it directly; do not construct a runtime overlay.
+BASE_TAG="$(jq -er '.protected_base.image' "$PROTECTED_A2A_LOCK")"
+EXPECTED_ID="$(jq -er '.protected_base.image_id' "$PROTECTED_A2A_LOCK")"
+BASE_SOURCE_REVISION="$(jq -er '.protected_base.source_revision' "$PROTECTED_A2A_LOCK")"
 ACTUAL_ID="$(docker image inspect "$BASE_TAG" --format '{{.Id}}')"
 [[ "$ACTUAL_ID" == "$EXPECTED_ID" ]] || {
   printf 'base image mismatch: expected %s, got %s\n' "$EXPECTED_ID" "$ACTUAL_ID" >&2

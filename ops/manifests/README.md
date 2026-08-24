@@ -21,10 +21,11 @@ A tool being installed in an image does not mean the agent has authority to use 
 ## Protected Hermes 74 A2A base
 
 `protected-hermes-a2a-base.lock.json` binds the approved immutable Hermes 74
-base tag, local image ID, and source revision for the Moss and Denholm persona
+base tag, local image ID, and source revision for all six Stack persona
 builders. Hermes 74 already contains the fixed safe five-tool A2A transport for
-the Moss-to-Denholm edge. Stack consumes that base directly and does not copy
-runtime files, patch the A2A plugin, or create a legacy runtime overlay.
+the Moss-to-Denholm edge. Every Stack persona consumes that base directly and
+does not copy runtime files, patch the A2A plugin, or create a legacy runtime
+overlay.
 
 The lock and its validator are source-level consumption evidence only. Image
 build, image admission, deployment, and runtime activation remain separate
