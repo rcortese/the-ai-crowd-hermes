@@ -176,7 +176,6 @@ def _gateway_api_key(environ: dict[str, str] | None = None) -> str:
     source = os.environ if environ is None else environ
     return str(
         source.get(_WEBUI_GATEWAY_API_KEY_ENV)
-        or source.get("API_SERVER_KEY")
         or ""
     ).strip()
 
