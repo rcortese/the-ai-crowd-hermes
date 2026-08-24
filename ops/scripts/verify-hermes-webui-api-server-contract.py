@@ -134,16 +134,35 @@ def call_name(node: ast.Call) -> str | None:
 
 
 def function_definitions(module: ast.Module) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Return only module-level functions; nested helpers are not entrypoints."""
     return {
         node.name: node
-        for node in ast.walk(module)
+        for node in module.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
 
 
-def calls_in(nodes: list[ast.stmt] | ast.AST) -> list[ast.Call]:
+_NESTED_EXECUTION_BOUNDARIES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+
+def executable_nodes(nodes: list[ast.stmt] | ast.AST):
+    """Walk active control flow without entering deferred nested bodies."""
     roots = nodes if isinstance(nodes, list) else [nodes]
-    return [node for root in roots for node in ast.walk(root) if isinstance(node, ast.Call)]
+
+    def visit(node: ast.AST):
+        if isinstance(node, _NESTED_EXECUTION_BOUNDARIES):
+            return
+        yield node
+        for child in ast.iter_child_nodes(node):
+            yield from visit(child)
+
+    for root in roots:
+        if not isinstance(root, _NESTED_EXECUTION_BOUNDARIES):
+            yield from visit(root)
+
+
+def calls_in(nodes: list[ast.stmt] | ast.AST) -> list[ast.Call]:
+    return [node for node in executable_nodes(nodes) if isinstance(node, ast.Call)]
 
 
 def import_aliases(module: ast.Module, imported_module: str) -> tuple[set[str], set[str]]:
@@ -199,36 +218,18 @@ def has_gateway_chat_import_and_activation(module: ast.Module) -> bool:
             and call.func.value.id in module_aliases
         )
         or (isinstance(call.func, ast.Name) and call.func.id in function_aliases)
-        for call in calls_in(module)
+        for function in function_definitions(module).values()
+        for call in calls_in(function.body)
     )
 
 
-def function_reaches(functions: dict[str, ast.FunctionDef | ast.AsyncFunctionDef], starts: set[str], predicate) -> bool:
-    pending = list(starts)
-    seen: set[str] = set()
-    while pending:
-        current = pending.pop()
-        if current in seen or current not in functions:
-            continue
-        seen.add(current)
-        function = functions[current]
-        if predicate(function):
-            return True
-        pending.extend(
-            name for call in calls_in(function.body)
-            if (name := call_name(call)) in functions and name not in seen
-        )
-    return False
-
-
-def server_post_handler(server: ast.Module) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
-    functions = function_definitions(server)
-    # HTTPServer dispatches do_POST. Some thin shells name the same exact entry
-    # handle_post/post, but arbitrary public helpers are never request handlers.
-    for name in ("do_POST", "handle_post", "post"):
-        if name in functions:
-            return functions[name]
-    return None
+def server_post_handler(server: ast.Module) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    # HTTPServer dispatches this exact, literal entrypoint.  Do not accept
+    # compatibility aliases such as handle_post/post as a fallback.
+    handler = function_definitions(server).get("do_POST")
+    if handler is None:
+        fail("server.py missing literal do_POST entrypoint")
+    return handler
 
 
 def server_post_handler_reaches_routes(server: ast.Module) -> bool:
@@ -236,16 +237,9 @@ def server_post_handler_reaches_routes(server: ast.Module) -> bool:
     if not module_aliases and not direct_aliases:
         return False
     handler = server_post_handler(server)
-    if handler is None:
-        return False
-    functions = function_definitions(server)
-    return function_reaches(
-        functions,
-        {handler.name},
-        lambda function: any(
-            calls_imported_function(call, module_aliases, direct_aliases, "handle_post")
-            for call in calls_in(function.body)
-        ),
+    return any(
+        calls_imported_function(call, module_aliases, direct_aliases, "handle_post")
+        for call in direct_calls_in(handler.body)
     )
 
 
@@ -280,7 +274,7 @@ def route_handler_directly_calls_gateway(routes: ast.Module) -> bool:
     handler = function_definitions(routes).get("handle_post")
     if handler is None:
         return False
-    for branch in (node for node in ast.walk(handler) if isinstance(node, ast.If) and is_chat_start_branch(node)):
+    for branch in (node for node in executable_nodes(handler.body) if isinstance(node, ast.If) and is_chat_start_branch(node)):
         for call in direct_calls_in(branch.body):
             if calls_imported_function(call, module_aliases, selector_aliases, "webui_gateway_chat_enabled"):
                 return True
@@ -314,7 +308,7 @@ def api_server_branch_directly_calls_configured_transport(module: ast.Module) ->
         if any(is_selector_env_read(call) for call in calls_in(function.body))
     }
     for function in functions.values():
-        for branch in (node for node in ast.walk(function) if isinstance(node, ast.If)):
+        for branch in (node for node in executable_nodes(function.body) if isinstance(node, ast.If)):
             test_calls = calls_in(branch.test)
             if not any(is_api_server_literal(value) for value in ast.walk(branch.test)):
                 continue

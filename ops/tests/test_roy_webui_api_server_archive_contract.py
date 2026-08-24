@@ -152,6 +152,27 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
         "api_server branch does not directly call gateway transport",
         tmp,
     )
+    # A configured transport hidden in an uncalled nested gateway helper is
+    # not the active api_server control-flow path.
+    nested_gateway_transport = gateway_source.replace(
+        "    if webui_chat_backend_mode() == \"api_server\":\n        return _gateway_transport(_gateway_base_url(), _gateway_api_key())\n    return None",
+        "    def nested_api_server_transport():\n        if webui_chat_backend_mode() == \"api_server\":\n            return _gateway_transport(_gateway_base_url(), _gateway_api_key())\n    return None",
+    )
+    assert_rejected(
+        "api-server-nested-gateway-helper",
+        members(gateway=nested_gateway_transport),
+        "api_server branch does not directly call gateway transport",
+        tmp,
+    )
+    # A literal HTTPServer do_POST entrypoint is mandatory; legacy aliases
+    # cannot be used as a fallback entrypoint.
+    missing_do_post_with_handle_post = server_source.replace("def do_POST():", "def handle_post():")
+    assert_rejected(
+        "missing-literal-do-post-with-handle-post-fallback",
+        members(server=missing_do_post_with_handle_post),
+        "server.py missing literal do_POST entrypoint",
+        tmp,
+    )
     # A benign gateway activation must not substitute for the actual public
     # chat dispatch. This retains all gateway declarations and route wiring,
     # but sends do_POST to a direct legacy handler instead of api.routes.
@@ -191,6 +212,27 @@ def warm_gateway():
         "server do_POST does not reach api.routes.handle_post",
         tmp,
     )
+    # Calls hidden in an uncalled nested helper are not request dispatch.
+    do_post_legacy_with_nested_routes_helper = '''\
+from api import gateway_chat, routes
+
+def do_POST():
+    def nested_routes_helper():
+        return routes.handle_post()
+    return _legacy_direct_chat()
+
+def _legacy_direct_chat():
+    return None
+
+def warm_gateway():
+    return gateway_chat.webui_gateway_chat_enabled()
+'''
+    assert_rejected(
+        "do-post-legacy-nested-routes-helper",
+        members(server=do_post_legacy_with_nested_routes_helper),
+        "server do_POST does not reach api.routes.handle_post",
+        tmp,
+    )
     # The /api/chat/start branch itself must select/launch the gateway path;
     # an unrelated helper is not evidence that this route dispatches there.
     chat_start_legacy_with_unrelated_gateway_helper = '''\
@@ -213,6 +255,29 @@ def _run_legacy_chat_streaming():
     assert_rejected(
         "chat-start-legacy-unrelated-gateway-helper",
         members(routes=chat_start_legacy_with_unrelated_gateway_helper),
+        "api.routes /api/chat/start branch does not directly call gateway selector/runner",
+        tmp,
+    )
+    # Calls hidden in an uncalled nested function inside handle_post must not
+    # make its direct /api/chat/start dispatch look gateway-backed.
+    chat_start_legacy_with_nested_gateway_helper = '''\
+from api.gateway_chat import _run_gateway_chat_streaming, webui_gateway_chat_enabled
+
+def handle_post():
+    path = "/api/chat/start"
+    def nested_gateway_helper():
+        if webui_gateway_chat_enabled():
+            return _run_gateway_chat_streaming()
+    if path == "/api/chat/start":
+        return _run_legacy_chat_streaming()
+    return None
+
+def _run_legacy_chat_streaming():
+    return None
+'''
+    assert_rejected(
+        "chat-start-legacy-nested-gateway-helper",
+        members(routes=chat_start_legacy_with_nested_gateway_helper),
         "api.routes /api/chat/start branch does not directly call gateway selector/runner",
         tmp,
     )
@@ -241,4 +306,4 @@ def _run_legacy_chat_streaming():
     assert result.returncode != 0
     assert "compile" in result.stderr
 
-print("roy-webui-api-server-archive-contract: PASS positive=1 negative=10")
+print("roy-webui-api-server-archive-contract: PASS positive=1 negative=14")
