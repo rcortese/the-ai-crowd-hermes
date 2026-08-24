@@ -455,6 +455,39 @@ def route_handler_directly_calls_gateway(routes: ast.Module) -> bool:
     return False
 
 
+def route_handler_passes_config_to_gateway_runner(routes: ast.Module) -> bool:
+    """Require the active chat route to pass a handler config value to the runner."""
+    module_aliases, runner_aliases = imported_function_aliases(
+        routes, "api.gateway_chat", "_run_gateway_chat_streaming"
+    )
+    handler = function_definitions(routes).get("handle_post")
+    if handler is None:
+        return False
+    handler_parameters = handler.args.args
+    if (
+        handler.args.posonlyargs
+        or handler.args.vararg is not None
+        or handler.args.kwarg is not None
+        or handler.args.kwonlyargs
+        or len(handler_parameters) != 1
+        or handler.args.defaults
+        or handler.args.kw_defaults
+    ):
+        return False
+    handler_config_name = handler_parameters[0].arg
+    for branch in (node for node in executable_nodes(handler.body) if isinstance(node, ast.If) and is_chat_start_branch(node)):
+        for call in direct_calls_in(branch.body):
+            if not calls_imported_function(call, module_aliases, runner_aliases, "_run_gateway_chat_streaming"):
+                continue
+            if (
+                len(call.args) == 1
+                and not call.keywords
+                and is_name(call.args[0], handler_config_name)
+            ):
+                return True
+    return False
+
+
 def is_api_server_literal(node: ast.AST) -> bool:
     return isinstance(node, ast.Constant) and node.value == "api_server"
 
@@ -463,12 +496,26 @@ def is_selector_env_read(call: ast.Call) -> bool:
     return is_os_environ_get(call, ast.Name(id="_WEBUI_CHAT_BACKEND_ENV"))
 
 
-def is_configured_transport_call(call: ast.Call) -> bool:
+def is_gateway_base_url_call_with_config(call: ast.Call, config_name: str) -> bool:
+    return (
+        call_name(call) == "_gateway_base_url"
+        and len(call.args) == 1
+        and not call.keywords
+        and is_name(call.args[0], config_name)
+    )
+
+
+def is_configured_transport_call_with_config(call: ast.Call, config_name: str | None) -> bool:
     if call_name(call) is None:
         return False
     arguments = list(call.args) + [keyword.value for keyword in call.keywords]
     helper_calls = {call_name(argument) for argument in arguments if isinstance(argument, ast.Call)}
-    return {"_gateway_base_url", "_gateway_api_key"}.issubset(helper_calls)
+    if not {"_gateway_base_url", "_gateway_api_key"}.issubset(helper_calls):
+        return False
+    return config_name is None or any(
+        isinstance(argument, ast.Call) and is_gateway_base_url_call_with_config(argument, config_name)
+        for argument in arguments
+    )
 
 
 def api_server_branch_directly_calls_configured_transport(module: ast.Module) -> bool:
@@ -478,13 +525,28 @@ def api_server_branch_directly_calls_configured_transport(module: ast.Module) ->
         if any(is_selector_env_read(call) for call in calls_in(function.body))
     }
     for function in functions.values():
+        if (
+            function.name != "_run_gateway_chat_streaming"
+            or function.args.posonlyargs
+            or function.args.vararg is not None
+            or function.args.kwarg is not None
+            or function.args.kwonlyargs
+            or len(function.args.args) != 1
+            or function.args.defaults
+            or function.args.kw_defaults
+        ):
+            continue
+        config_name = function.args.args[0].arg
         for branch in (node for node in executable_nodes(function.body) if isinstance(node, ast.If)):
             test_calls = calls_in(branch.test)
             if not any(is_api_server_literal(value) for value in ast.walk(branch.test)):
                 continue
             if not any(call_name(call) in selector_names for call in test_calls):
                 continue
-            if any(is_configured_transport_call(call) for call in direct_calls_in(branch.body)):
+            if any(
+                is_configured_transport_call_with_config(call, config_name)
+                for call in direct_calls_in(branch.body)
+            ):
                 return True
     return False
 
@@ -496,8 +558,10 @@ def verify_execution_reachability(server: ast.Module, routes: ast.Module, gatewa
         fail("server do_POST does not reach api.routes.handle_post")
     if not route_handler_directly_calls_gateway(routes):
         fail("api.routes /api/chat/start branch does not directly call gateway selector/runner")
+    if not route_handler_passes_config_to_gateway_runner(routes):
+        fail("api_server transport must call _gateway_base_url with exactly one route/handler configuration argument")
     if not api_server_branch_directly_calls_configured_transport(gateway):
-        fail("api_server branch does not directly call gateway transport consuming configured URL/key helpers")
+        fail("api_server transport must call _gateway_base_url with exactly one route/handler configuration argument")
 
 
 def main() -> None:
