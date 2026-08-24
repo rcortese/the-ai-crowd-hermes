@@ -2,6 +2,7 @@
 """Source-only contract for the Roy all-in-one candidate builder."""
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 root = Path(sys.argv[1]).resolve()
@@ -58,12 +59,31 @@ assert 'git -C "$ROOT" archive --format=tar "$COMMIT"' in builder
 assert 'ROY_BASE_IMAGE must be an immutable local sha256 image ID' in builder
 assert 'ROY_WEBUI_REV must be a full immutable Git revision' in builder
 assert 'ROY_WEBUI_ARCHIVE_SHA256 must be a Git archive SHA-256' in builder
+assert 'ROY_BASE_CANDIDATE_REF must name the required local Roy base candidate' in builder
+assert 'docker image inspect "$ROY_BASE_CANDIDATE_REF" --format \'{{.Id}}\'' in builder
+assert "Roy base candidate ref does not resolve to ROY_BASE_IMAGE" in builder
+for label in (
+    "the-ai-crowd.source-commit",
+    "the-ai-crowd.source-tree",
+    "the-ai-crowd.hermes-base-id",
+    "the-ai-crowd.hermes-base-source-revision",
+):
+    assert f'{{{{index .Config.Labels "{label}"}}}}' in builder
+assert "a2bddaf9921c8b8b10f96e188bb61f0a33d9bfc5" in builder
+assert "9f483dffbf04b33efb4e7bffd3a0a7247f82e223" in builder
+assert "Roy base candidate source labels do not match all-persona stack candidate" in builder
+assert "Roy base candidate Hermes base provenance does not match protected base" in builder
 assert 'base_alias="the-ai-crowd/roy-build-base:${ROY_BASE_IMAGE#sha256:}"' in builder
 assert '--build-arg "ROY_BASE_IMAGE=$base_alias"' in builder
 for key in (
     "the-ai-crowd.source-commit",
     "the-ai-crowd.source-tree",
     "the-ai-crowd.roy-base-id",
+    "the-ai-crowd.roy-base-candidate-ref",
+    "the-ai-crowd.roy-base-source-commit",
+    "the-ai-crowd.roy-base-source-tree",
+    "the-ai-crowd.roy-base-hermes-base-id",
+    "the-ai-crowd.roy-base-hermes-base-source-revision",
     "the-ai-crowd.webui-repository",
     "the-ai-crowd.webui-revision",
     "the-ai-crowd.webui-archive-sha256",
@@ -77,6 +97,11 @@ for key in (
     "source_tree:$source_tree",
     "image_id:$image_id",
     "roy_base_image_id:$roy_base_image_id",
+    "roy_base_candidate_ref:$roy_base_candidate_ref",
+    "roy_base_source_commit:$roy_base_source_commit",
+    "roy_base_source_tree:$roy_base_source_tree",
+    "roy_base_hermes_base_id:$roy_base_hermes_base_id",
+    "roy_base_hermes_base_source_revision:$roy_base_hermes_base_source_revision",
     "webui_repository:$webui_repository",
     "webui_revision:$webui_revision",
     "webui_archive_sha256:$webui_archive_sha256",
@@ -86,5 +111,9 @@ for key in (
 assert "ln \"$tmp\" \"$receipt\"" in builder
 assert "divergent or unsafe build receipt already exists" in builder
 assert "docker build --pull=false" in builder
+subprocess.run(
+    ["bash", str(root / "ops/tests/test_roy_all_in_one_candidate_build_contract.sh"), str(root)],
+    check=True,
+)
 
 print("roy-all-in-one-candidate-contract: PASS")
