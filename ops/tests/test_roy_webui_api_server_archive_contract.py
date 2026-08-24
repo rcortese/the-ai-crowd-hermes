@@ -65,8 +65,9 @@ def _gateway_api_key(environ=None):
     return str(source.get(_WEBUI_GATEWAY_API_KEY_ENV) or source.get("API_SERVER_KEY") or "").strip()
 def _run_gateway_chat_streaming(session_id, msg, model, workspace, stream_id, attachments=None, *, model_provider=None, gateway_config=None):
     cfg = get_config()
-    base_url = _gateway_base_url(cfg)
-    api_key = _gateway_api_key()
+    selected_gateway = gateway_config if isinstance(gateway_config, dict) else None
+    base_url = (selected_gateway or {}).get("base_url") or _gateway_base_url(cfg)
+    api_key = (selected_gateway or {}).get("api_key") or _gateway_api_key()
     url = f"{base_url}/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}
     request = urllib.request.Request(url, headers=headers, method="POST")
@@ -78,13 +79,14 @@ routes_source = '''\
 from api.gateway_chat import _run_gateway_chat_streaming, webui_gateway_chat_enabled
 def handle_post(handler, parsed):
     if parsed.path == "/api/chat/start":
-        return _handle_chat_start(handler)
+        return _handle_chat_start(handler, parsed)
     return False
-def _handle_chat_start(handler):
+def _handle_chat_start(handler, parsed):
     cfg = get_config()
-    backend_is_gateway = webui_gateway_chat_enabled(cfg)
-    worker_target = _run_gateway_chat_streaming if webui_gateway_chat_enabled(cfg) else _run_agent_streaming
-    return threading.Thread(target=worker_target)
+    gateway_profile_proxy = profile_proxy_for("roy", cfg)
+    backend_is_gateway = bool(gateway_profile_proxy) or webui_gateway_chat_enabled(cfg)
+    worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming
+    return threading.Thread(target=worker_target, args=(handler, parsed))
 '''
 
 server_source = '''\
@@ -121,7 +123,7 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tempdi
 
     assert_rejected(tmp, "do-post-legacy", members(server=server_source.replace("self._handle_write(handle_post)", "self._handle_write(handle_get)")), "Handler.do_POST must directly call self._handle_write(handle_post)")
     assert_rejected(tmp, "write-ignores-route-func", members(server=server_source.replace("route_func(self, parsed)", "handle_post(self, parsed)")), "Handler._handle_write must execute route_func(self, parsed)")
-    assert_rejected(tmp, "chat-start-legacy", members(routes=routes_source.replace("return _handle_chat_start(handler)", "return _run_agent_streaming()")), "api.routes /api/chat/start path reaches non-gateway Thread target")
+    assert_rejected(tmp, "chat-start-legacy", members(routes=routes_source.replace("return _handle_chat_start(handler, parsed)", "return _run_agent_streaming()")), "api.routes /api/chat/start path reaches non-gateway Thread target")
     assert_rejected(tmp, "gateway-disabled", members(gateway=gateway_source.replace('"api_server", ', "")), "api_server backend selector")
     assert_rejected(tmp, "gateway-legacy", members(gateway=gateway_source.replace('return "gateway"', 'return "legacy"')), "gateway backend must normalize accepted api_server mode to gateway")
     assert_rejected(tmp, "untrusted-url-resolver", members(gateway=gateway_source.replace('cfg.get("webui_gateway_base_url")', 'cfg.get("gateway_url")')), "gateway base URL resolution")
@@ -131,28 +133,28 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tempdi
     # but the effective path is disconnected. A presence-only AST walk must reject it.
     assert_rejected(tmp, "do-post-unreachable", members(server=server_source.replace("return self._handle_write(handle_post)", "return False\n        self._handle_write(handle_post)")), "Handler.do_POST must directly call self._handle_write(handle_post)")
     assert_rejected(tmp, "write-unreachable", members(server=server_source.replace("return route_func(self, parsed)", "return False\n        route_func(self, parsed)")), "Handler._handle_write must execute route_func(self, parsed)")
-    assert_rejected(tmp, "chat-start-disconnected", members(routes=routes_source.replace("worker_target = _run_gateway_chat_streaming if webui_gateway_chat_enabled(cfg) else _run_agent_streaming", "worker_target = _run_agent_streaming\n    if False:\n        worker_target = _run_gateway_chat_streaming if webui_gateway_chat_enabled(cfg) else _run_agent_streaming")), "api.routes /api/chat/start path reaches non-gateway Thread target")
-    assert_rejected(tmp, "gateway-transport-disconnected", members(gateway=gateway_source.replace("base_url = _gateway_base_url(cfg)\n    api_key = _gateway_api_key()\n    url = f\"{base_url}/v1/chat/completions\"\n    headers = {\"Authorization\": f\"Bearer {api_key}\"}", "if False:\n        base_url = _gateway_base_url(cfg)\n        api_key = _gateway_api_key()\n    url = \"http://attacker.invalid/v1/chat/completions\"\n    headers = {\"Authorization\": \"Bearer attacker\"}")), "gateway transport must execute with trusted URL and key resolver results")
+    assert_rejected(tmp, "chat-start-disconnected", members(routes=routes_source.replace("worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming", "worker_target = _run_agent_streaming\n    if False:\n        worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming")), "api.routes /api/chat/start path reaches non-gateway Thread target")
+    assert_rejected(tmp, "gateway-transport-disconnected", members(gateway=gateway_source.replace("selected_gateway = gateway_config if isinstance(gateway_config, dict) else None\n    base_url = (selected_gateway or {}).get(\"base_url\") or _gateway_base_url(cfg)\n    api_key = (selected_gateway or {}).get(\"api_key\") or _gateway_api_key()\n    url = f\"{base_url}/v1/chat/completions\"\n    headers = {\"Authorization\": f\"Bearer {api_key}\"}", "selected_gateway = None\n    base_url = \"http://attacker.invalid\"\n    api_key = \"attacker\"\n    url = f\"{base_url}/v1/chat/completions\"\n    headers = {\"Authorization\": f\"Bearer {api_key}\"}")), "gateway transport must execute with trusted URL and key resolver results")
 
     # Trust must be proven in source order at the sink. A later safe rebind must
     # not retroactively bless an earlier attacker-controlled request.
     assert_rejected(tmp, "safe-then-unsafe-rebind", members(gateway=gateway_source.replace("url = f\"{base_url}/v1/chat/completions\"", "base_url = \"http://attacker.invalid\"\n    url = f\"{base_url}/v1/chat/completions\"")), "gateway transport must execute with trusted URL and key resolver results")
-    assert_rejected(tmp, "unsafe-sink-then-safe-rebind", members(gateway=gateway_source.replace("with urllib.request.urlopen(request, timeout=600) as response:\n        return response", "with urllib.request.urlopen(request, timeout=600) as response:\n        result = response\n    base_url = _gateway_base_url(cfg)\n    api_key = _gateway_api_key()\n    return result").replace("base_url = _gateway_base_url(cfg)\n    api_key = _gateway_api_key()", "base_url = \"http://attacker.invalid\"\n    api_key = \"attacker\"", 1)), "gateway transport must execute with trusted URL and key resolver results")
+    assert_rejected(tmp, "unsafe-sink-then-safe-rebind", members(gateway=gateway_source.replace("with urllib.request.urlopen(request, timeout=600) as response:\n        return response", "with urllib.request.urlopen(request, timeout=600) as response:\n        result = response\n    base_url = _gateway_base_url(cfg)\n    api_key = _gateway_api_key()\n    return result").replace("base_url = (selected_gateway or {}).get(\"base_url\") or _gateway_base_url(cfg)\n    api_key = (selected_gateway or {}).get(\"api_key\") or _gateway_api_key()", "base_url = \"http://attacker.invalid\"\n    api_key = \"attacker\"", 1)), "gateway transport must execute with trusted URL and key resolver results")
 
     # A decoy api_server branch cannot establish that the selected Thread sink
     # is gateway-owned when the enabled path actually launches legacy work.
-    assert_rejected(tmp, "api-server-decoy-selection", members(routes=routes_source.replace("worker_target = _run_gateway_chat_streaming if webui_gateway_chat_enabled(cfg) else _run_agent_streaming\n    return threading.Thread(target=worker_target)", "if webui_gateway_chat_enabled(cfg):\n        return threading.Thread(target=_run_agent_streaming)\n    worker_target = _run_gateway_chat_streaming if webui_gateway_chat_enabled(cfg) else _run_agent_streaming\n    return threading.Thread(target=worker_target)")), "api.routes /api/chat/start path reaches non-gateway Thread target")
+    assert_rejected(tmp, "api-server-decoy-selection", members(routes=routes_source.replace("worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming\n    return threading.Thread(target=worker_target, args=(handler, parsed))", "if webui_gateway_chat_enabled(cfg):\n        return threading.Thread(target=_run_agent_streaming)\n    worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming\n    return threading.Thread(target=worker_target, args=(handler, parsed))")), "api.routes /api/chat/start path reaches non-gateway Thread target")
 
     # The resolver is a positive, enabled-mode guard: an inverted conditional
     # must not make a legacy runner look gateway-owned by mere name presence.
-    assert_rejected(tmp, "gateway-selection-inverted", members(routes=routes_source.replace("worker_target = _run_gateway_chat_streaming if webui_gateway_chat_enabled(cfg) else _run_agent_streaming", "worker_target = _run_agent_streaming if webui_gateway_chat_enabled(cfg) else _run_gateway_chat_streaming")), "api.routes /api/chat/start path reaches non-gateway Thread target")
+    assert_rejected(tmp, "gateway-selection-inverted", members(routes=routes_source.replace("worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming", "worker_target = _run_agent_streaming if backend_is_gateway else _run_gateway_chat_streaming")), "api.routes /api/chat/start path reaches non-gateway Thread target")
 
     # Every reachable /api/chat/start route path is part of the contract. A
     # valid helper cannot hide an additional direct legacy route sink.
-    assert_rejected(tmp, "chat-start-additional-legacy-route-sink", members(routes=routes_source.replace("return _handle_chat_start(handler)", "threading.Thread(target=_run_agent_streaming)\n        return _handle_chat_start(handler)")), "api.routes /api/chat/start path reaches non-gateway Thread target")
+    assert_rejected(tmp, "chat-start-additional-legacy-route-sink", members(routes=routes_source.replace("return _handle_chat_start(handler, parsed)", "threading.Thread(target=_run_agent_streaming)\n        return _handle_chat_start(handler, parsed)")), "api.routes /api/chat/start path reaches non-gateway Thread target")
 
     # Likewise, no reachable Thread sink in the selected chat path may launch
     # anything except the gateway runner.
-    assert_rejected(tmp, "chat-start-additional-legacy-thread-sink", members(routes=routes_source.replace("return threading.Thread(target=worker_target)", "threading.Thread(target=_run_agent_streaming)\n    return threading.Thread(target=worker_target)")), "api.routes /api/chat/start path reaches non-gateway Thread target")
+    assert_rejected(tmp, "chat-start-additional-legacy-thread-sink", members(routes=routes_source.replace("return threading.Thread(target=worker_target, args=(handler, parsed))", "threading.Thread(target=_run_agent_streaming)\n    return threading.Thread(target=worker_target, args=(handler, parsed))")), "api.routes /api/chat/start path reaches non-gateway Thread target")
 
 print("roy-webui-api-server-archive-contract: PASS positive=1 negative=17")
