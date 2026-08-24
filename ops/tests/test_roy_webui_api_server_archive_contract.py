@@ -121,6 +121,24 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tempdi
     assert result.returncode == 0, result.stderr
     assert "PASS" in result.stdout
 
+    # The real archived route can reach the same worker assignment through
+    # multiple local control-flow states. This remains one physical Thread sink
+    # and must pass when every reachable state selects the gateway runner.
+    duplicated_state_routes = routes_source.replace(
+        "    cfg = get_config()\n",
+        "    cfg = get_config()\n"
+        "    if runtime_adapter_enabled():\n"
+        "        execution_target = \"adapter\"\n"
+        "    else:\n"
+        "        execution_target = \"legacy\"\n",
+        1,
+    )
+    duplicated_state = tmp / "duplicated-state.tar"
+    archive(duplicated_state, members(routes=duplicated_state_routes))
+    result = run(duplicated_state)
+    assert result.returncode == 0, result.stderr
+    assert "PASS" in result.stdout
+
     assert_rejected(tmp, "do-post-legacy", members(server=server_source.replace("self._handle_write(handle_post)", "self._handle_write(handle_get)")), "Handler.do_POST must directly call self._handle_write(handle_post)")
     assert_rejected(tmp, "write-ignores-route-func", members(server=server_source.replace("route_func(self, parsed)", "handle_post(self, parsed)")), "Handler._handle_write must execute route_func(self, parsed)")
     assert_rejected(tmp, "chat-start-legacy", members(routes=routes_source.replace("return _handle_chat_start(handler, parsed)", "return _run_agent_streaming()")), "api.routes /api/chat/start path reaches non-gateway Thread target")
