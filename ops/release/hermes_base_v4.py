@@ -40,7 +40,26 @@ def load_contract(path: Path = DEFAULT_LOCK) -> dict[str, Any]:
     return value
 
 
+def _reject_unknown_authority_keys(value: Mapping[str, Any], allowed: set[str]) -> None:
+    for key in value:
+        if key not in allowed:
+            raise ContractError(f"hermes_base_v4_unknown_authority_key: {key}")
+
+
 def validate_source_only_contract(contract: Mapping[str, Any]) -> None:
+    _reject_unknown_authority_keys(
+        contract,
+        {
+            "schema", "status", "source", "requested_platform", "oci_index_digest",
+            "resolved_build_identity", "build_gate",
+        },
+    )
+    source_value = contract.get("source")
+    if isinstance(source_value, Mapping):
+        _reject_unknown_authority_keys(source_value, {"tag", "commit", "tree"})
+    build_gate_value = contract.get("build_gate")
+    if isinstance(build_gate_value, Mapping):
+        _reject_unknown_authority_keys(build_gate_value, {"receipt_requirement"})
     for key in ("schema", "status", "source", "requested_platform", "oci_index_digest"):
         if contract.get(key) != EXPECTED[key]:
             raise ContractError(f"hermes_base_v4_contract_mismatch: {key}")

@@ -28,18 +28,19 @@ if [[ "$EXECUTE" -ne 1 ]]; then
 fi
 [[ -n "$AGENT_SOURCE" && -n "$DOCKERFILE" && -n "$ARCHIVE" && -n "$RECEIPT" ]] || { printf '%s\n' '--execute-build requires --agent-source, --file, --archive, and --receipt' >&2; exit 2; }
 [[ "$DOCKERFILE" != /* && "$DOCKERFILE" != *".."* ]] || { printf '%s\n' 'Dockerfile must be repository-relative' >&2; exit 2; }
+[[ "$DOCKERFILE" == "Dockerfile" ]] || { printf 'unapproved Dockerfile path: %s\n' "$DOCKERFILE" >&2; exit 2; }
 [[ ! -e "$ARCHIVE" && ! -e "$RECEIPT" ]] || { printf '%s\n' 'refusing to overwrite archive or receipt' >&2; exit 1; }
-[[ -z "$(git -C "$ROOT" status --porcelain)" ]] || { printf '%s\n' 'refusing dirty contract worktree' >&2; exit 1; }
+[[ -z "$(git -c safe.directory="$ROOT" -C "$ROOT" status --porcelain)" ]] || { printf '%s\n' 'refusing dirty contract worktree' >&2; exit 1; }
 source_commit="$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"]["commit"])' "$LOCK")"
 source_tree="$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"]["tree"])' "$LOCK")"
 source_tag="$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"]["tag"])' "$LOCK")"
 [[ -d "$AGENT_SOURCE" ]] || { printf '%s\n' 'Agent source checkout is required' >&2; exit 1; }
-[[ "$(git -C "$AGENT_SOURCE" rev-parse "$source_tag^{commit}")" == "$source_commit" ]] || { printf '%s\n' 'Agent source tag does not resolve to locked commit' >&2; exit 1; }
-[[ "$(git -C "$AGENT_SOURCE" rev-parse "$source_commit^{tree}")" == "$source_tree" ]] || { printf '%s\n' 'Agent source commit does not resolve to locked tree' >&2; exit 1; }
+[[ "$(git -c safe.directory="$AGENT_SOURCE" -C "$AGENT_SOURCE" rev-parse "$source_tag^{commit}")" == "$source_commit" ]] || { printf '%s\n' 'Agent source tag does not resolve to locked commit' >&2; exit 1; }
+[[ "$(git -c safe.directory="$AGENT_SOURCE" -C "$AGENT_SOURCE" rev-parse "$source_commit^{tree}")" == "$source_tree" ]] || { printf '%s\n' 'Agent source commit does not resolve to locked tree' >&2; exit 1; }
 command -v docker >/dev/null
 context="$(mktemp -d "${TMPDIR:-/tmp}/hermes-base-v4.XXXXXX")"
 trap 'rm -rf "$context"' EXIT
-git -C "$AGENT_SOURCE" archive --format=tar "$source_commit" | tar -xf - -C "$context"
+git -c safe.directory="$AGENT_SOURCE" -C "$AGENT_SOURCE" archive --format=tar "$source_commit" | tar -xf - -C "$context"
 [[ -f "$context/$DOCKERFILE" ]] || { printf 'missing Dockerfile in archive: %s\n' "$DOCKERFILE" >&2; exit 1; }
 # The output is an OCI archive; --pull=false prevents mutable base refreshes.
 docker buildx build --pull=false --platform linux/amd64 --output "type=oci,dest=$ARCHIVE" --file "$context/$DOCKERFILE" "$context"
