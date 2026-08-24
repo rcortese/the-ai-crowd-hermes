@@ -16,8 +16,21 @@ if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
   exit 1
 fi
 LOCK="$ROOT/ops/manifests/base-images.lock.json"
-BASE_TAG="$(jq -er '.images[] | select(.name == "hermes-agent") | .image' "$LOCK")"
-EXPECTED_ID="$(jq -er '.images[] | select(.name == "hermes-agent") | .image_id' "$LOCK")"
+PROTECTED_A2A_LOCK="$ROOT/ops/manifests/protected-hermes-a2a-base.lock.json"
+case "$PERSONA" in
+  moss|denholm)
+    # The approved Hermes 74 base already contains the fixed safe A2A transport.
+    # Consume it directly; do not construct a runtime overlay.
+    BASE_TAG="$(jq -er '.protected_base.image' "$PROTECTED_A2A_LOCK")"
+    EXPECTED_ID="$(jq -er '.protected_base.image_id' "$PROTECTED_A2A_LOCK")"
+    BASE_SOURCE_REVISION="$(jq -er '.protected_base.source_revision' "$PROTECTED_A2A_LOCK")"
+    ;;
+  *)
+    BASE_TAG="$(jq -er '.images[] | select(.name == "hermes-agent") | .image' "$LOCK")"
+    EXPECTED_ID="$(jq -er '.images[] | select(.name == "hermes-agent") | .image_id' "$LOCK")"
+    BASE_SOURCE_REVISION="$(jq -er '.images[] | select(.name == "hermes-agent") | .source_revision' "$LOCK")"
+    ;;
+esac
 ACTUAL_ID="$(docker image inspect "$BASE_TAG" --format '{{.Id}}')"
 [[ "$ACTUAL_ID" == "$EXPECTED_ID" ]] || {
   printf 'base image mismatch: expected %s, got %s\n' "$EXPECTED_ID" "$ACTUAL_ID" >&2
@@ -37,5 +50,6 @@ docker build --pull=false \
     --label "org.opencontainers.image.source=$(git -C "$ROOT" remote get-url origin)" \
   --label "the-ai-crowd.source-tree=$TREE" \
   --label "the-ai-crowd.hermes-base-id=$EXPECTED_ID" \
+  --label "the-ai-crowd.hermes-base-source-revision=$BASE_SOURCE_REVISION" \
   "$CTX"
-docker image inspect "$TAG" --format 'tag={{index .RepoTags 0}} image={{.Id}} source_commit={{index .Config.Labels "the-ai-crowd.source-commit"}} source_tree={{index .Config.Labels "the-ai-crowd.source-tree"}} hermes_base={{index .Config.Labels "the-ai-crowd.hermes-base-id"}}'
+docker image inspect "$TAG" --format 'tag={{index .RepoTags 0}} image={{.Id}} source_commit={{index .Config.Labels "the-ai-crowd.source-commit"}} source_tree={{index .Config.Labels "the-ai-crowd.source-tree"}} hermes_base={{index .Config.Labels "the-ai-crowd.hermes-base-id"}} hermes_base_source={{index .Config.Labels "the-ai-crowd.hermes-base-source-revision"}}'
