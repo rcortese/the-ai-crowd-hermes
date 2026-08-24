@@ -120,6 +120,9 @@ docker image tag "$ROY_BASE_IMAGE" "$base_alias"
 verify_admitted_prebuild_receipt
 alias_id="$(docker image inspect "$base_alias" --format '{{.Id}}')" || fail 'temporary Roy base alias is unavailable locally'
 [[ $alias_id == "$ROY_BASE_IMAGE" ]] || fail 'temporary Roy base alias resolution mismatch'
+# Revalidate the pinned receipt after the alias inspection and immediately
+# before the build, so no mutable inspection can create a TOCTOU window.
+verify_admitted_prebuild_receipt
 
 docker build --pull=false \
   --file "$CTX/ops/images/Dockerfile.roy-all-in-one" \
@@ -151,6 +154,8 @@ docker build --pull=false \
 verify_admitted_prebuild_receipt
 image_id="$(docker image inspect "$TAG" --format '{{.Id}}')"
 [[ $image_id =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'invalid candidate image ID'
+final_prebuild_receipt_sha="$(docker image inspect "$TAG" --format '{{index .Config.Labels "the-ai-crowd.prebuild-receipt-sha256"}}')" || fail 'final image prebuild receipt SHA label is unavailable'
+[[ $final_prebuild_receipt_sha == "$prebuild_receipt_sha" ]] || fail 'final image prebuild receipt SHA label does not match admitted receipt'
 receipt="$BUILD_RECEIPT_ROOT/sha256-${image_id#sha256:}.json"
 tmp="$(mktemp "$BUILD_RECEIPT_ROOT/.receipt.XXXXXX")"
 jq -ncS \

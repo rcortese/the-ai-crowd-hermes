@@ -66,12 +66,24 @@ mutate_prebuild(){
   esac
 }
 case "${1:-} ${2:-}" in
-  'build --pull=false') [[ ${PREBUILD_MUTATION_AT:-tag} == build ]] && mutate_prebuild; : >"${FAKE_BUILT:?}"; exit 0 ;;
+  'build --pull=false')
+    [[ ${PREBUILD_MUTATION_AT:-tag} == build ]] && mutate_prebuild
+    args=("$@")
+    for ((i = 0; i < ${#args[@]}; i++)); do
+      if [[ ${args[i]} == --label && ${args[i + 1]:-} == the-ai-crowd.prebuild-receipt-sha256=* ]]; then
+        printf '%s\n' "${args[i + 1]#the-ai-crowd.prebuild-receipt-sha256=}" >"${FAKE_FINAL_PREBUILD_LABEL:?}"
+      fi
+    done
+    : >"${FAKE_BUILT:?}"
+    exit 0 ;;
   'image tag')
     [[ ${PREBUILD_MUTATION_AT:-tag} == tag ]] && mutate_prebuild
     exit 0 ;;
   'image inspect')
     target=${3:-}; format=${5:-}
+    if [[ $target == "the-ai-crowd/roy-build-base:${BASE_ID#sha256:}" && ${PREBUILD_MUTATION_AT:-tag} == alias-inspect ]]; then
+      mutate_prebuild
+    fi
     case "$format" in
       '')
         [[ $target == "${TARGET_TAG:?}" && ${FAKE_MODE:-happy} == target-exists ]] && { printf '%s\n' "${IMAGE_ID:?}"; exit 0; }
@@ -87,6 +99,9 @@ case "${1:-} ${2:-}" in
       *'the-ai-crowd.source-tree'*) [[ ${FAKE_MODE:-happy} == label-mismatch ]] && printf '%s\n' deadbeef || printf '%s\n' "${EXPECTED_TREE:?}" ;;
       *'the-ai-crowd.hermes-base-id'*) printf '%s\n' "${EXPECTED_HERMES_ID:?}" ;;
       *'the-ai-crowd.hermes-base-source-revision'*) [[ ${FAKE_MODE:-happy} == wrong-base-source ]] && printf '%s\n' deadbeef || printf '%s\n' "${EXPECTED_HERMES_SOURCE:?}" ;;
+      *'the-ai-crowd.prebuild-receipt-sha256'*)
+        [[ $target == "${TARGET_TAG:?}" && -e ${FAKE_BUILT:?} ]] || exit 1
+        [[ ${FAKE_MODE:-happy} == prebuild-label-mismatch ]] && printf '%064d\n' 0 || cat "${FAKE_FINAL_PREBUILD_LABEL:?}" ;;
       *) exit 91 ;;
     esac ;;
   *) exit 91 ;;
@@ -94,16 +109,16 @@ esac
 DOCKER
 chmod 700 "$bin/docker" "$bin/jq"
 helper="$repo/ops/scripts/build-roy-all-in-one-candidate.sh"
-common=(PATH="$bin:$PATH" DOCKER_LOG="$docker_log" FAKE_BUILT="$fx/built" TARGET_TAG=fixture/roy:test BASE_ID="$base_id" OTHER_BASE_ID="$other_id" IMAGE_ID="$image_id" EXPECTED_COMMIT="$expected_commit" EXPECTED_TREE="$expected_tree" EXPECTED_HERMES_ID="$expected_hermes_id" EXPECTED_HERMES_SOURCE="$expected_hermes_source" ROY_BASE_IMAGE="$base_id" ROY_WEBUI_REPO=https://fixture.invalid/webui ROY_WEBUI_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ROY_WEBUI_ARCHIVE_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_ARCHIVE_SIZE=123)
+common=(PATH="$bin:$PATH" DOCKER_LOG="$docker_log" FAKE_BUILT="$fx/built" FAKE_FINAL_PREBUILD_LABEL="$fx/final-prebuild-label" TARGET_TAG=fixture/roy:test BASE_ID="$base_id" OTHER_BASE_ID="$other_id" IMAGE_ID="$image_id" EXPECTED_COMMIT="$expected_commit" EXPECTED_TREE="$expected_tree" EXPECTED_HERMES_ID="$expected_hermes_id" EXPECTED_HERMES_SOURCE="$expected_hermes_source" ROY_BASE_IMAGE="$base_id" ROY_WEBUI_REPO=https://fixture.invalid/webui ROY_WEBUI_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ROY_WEBUI_ARCHIVE_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_ARCHIVE_SIZE=123)
 run(){ local receipts=$1; shift; local prebuild="$receipts/prebuild-$(printf '%s' fixture/roy:test | sha256sum | cut -d' ' -f1).json"; env "${common[@]}" ROY_BASE_CANDIDATE_REF="$candidate_ref" PREBUILD_RECEIPT_PATH="$prebuild" "$@" BUILD_RECEIPT_ROOT="$receipts" "$helper" fixture/roy:test; }
 assert_no_receipt(){ local receipts=$1 label=$2; [[ ! -d $receipts ]] || ! compgen -G "$receipts/*.json" >/dev/null || fail "$label published a receipt"; }
 receipts="$fx/receipts-happy"; : >"$docker_log"
 run "$receipts" >"$fx/happy.out"
 receipt="$receipts/sha256-${image_id#sha256:}.json"
 [[ -f $receipt && ! -L $receipt ]] || fail 'happy receipt missing'
-python3 - "$receipt" "$candidate_ref" "$base_id" "$expected_commit" "$expected_tree" "$expected_hermes_id" "$expected_hermes_source" <<'PY'
+python3 - "$receipt" "$candidate_ref" "$base_id" "$expected_commit" "$expected_tree" "$expected_hermes_id" "$expected_hermes_source" "$fx/final-prebuild-label" <<'PY'
 import hashlib, json, sys
-receipt, ref, image, commit, tree, hermes_id, hermes_source = sys.argv[1:]
+receipt, ref, image, commit, tree, hermes_id, hermes_source, final_label = sys.argv[1:]
 data = json.load(open(receipt))
 expected = {"roy_base_candidate_ref": ref, "roy_base_image_id": image, "roy_base_source_commit": commit, "roy_base_source_tree": tree, "roy_base_hermes_base_id": hermes_id, "roy_base_hermes_base_source_revision": hermes_source}
 assert all(data.get(key) == value for key, value in expected.items())
@@ -112,6 +127,7 @@ assert data["webui_archive_size"] == "123"
 prebuild_path = data["prebuild_receipt"]
 prebuild_bytes = open(prebuild_path, "rb").read()
 assert data["prebuild_receipt_sha256"] == hashlib.sha256(prebuild_bytes).hexdigest()
+assert open(final_label).read().strip() == data["prebuild_receipt_sha256"]
 assert data["prebuild_receipt_payload"] == json.loads(prebuild_bytes)
 assert data["prebuild_receipt_payload"]["status"] == "ROY_PREBUILD_ADMITTED"
 PY
@@ -123,13 +139,18 @@ negative ref-wrong-id wrong-ref
 negative label-mismatch label-mismatch
 negative wrong-base-source wrong-base-source
 negative target-exists target-exists
+final_prebuild_label_mismatch(){ local receipts="$fx/receipts-final-prebuild-label-mismatch" rc=0; : >"$docker_log"; rm -f "$fx/built" "$fx/final-prebuild-label"; set +e; run "$receipts" FAKE_MODE=prebuild-label-mismatch >"$fx/final-prebuild-label-mismatch.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "final-prebuild-label-mismatch expected rc=65, got $rc"; [[ -e "$fx/built" ]] || fail 'final-prebuild-label-mismatch did not invoke fake build'; [[ ! -e "$receipts/sha256-${image_id#sha256:}.json" ]] || fail 'final-prebuild-label-mismatch published final receipt'; }
+final_prebuild_label_mismatch
 prebuild_tamper_or_remove(){ local label=$1 mutation=$2 receipts rc=0; receipts="$fx/receipts-$label"; : >"$docker_log"; rm -f "$fx/built"; set +e; run "$receipts" PREBUILD_MUTATION="$mutation" >"$fx/$label.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "$label expected rc=65, got $rc"; [[ -f "$receipts/prebuild-$(printf '%s' fixture/roy:test | sha256sum | cut -d' ' -f1).json" || $mutation == remove ]] || fail "$label did not reach prebuild admission"; [[ ! -e "$receipts/sha256-${image_id#sha256:}.json" ]] || fail "$label published final receipt"; ! grep -Fq '<build><--pull=false>' "$docker_log" || fail "$label invoked build"; }
 prebuild_tamper_or_remove prebuild-tampered tamper
 prebuild_tamper_or_remove prebuild-removed remove
+prebuild_tamper_or_remove_after_alias_inspect(){ local label=$1 mutation=$2 receipts rc=0; receipts="$fx/receipts-$label"; : >"$docker_log"; rm -f "$fx/built"; set +e; run "$receipts" PREBUILD_MUTATION="$mutation" PREBUILD_MUTATION_AT=alias-inspect >"$fx/$label.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "$label expected rc=65, got $rc"; [[ ! -e "$receipts/sha256-${image_id#sha256:}.json" ]] || fail "$label published final receipt"; ! grep -Fq '<build><--pull=false>' "$docker_log" || fail "$label invoked build"; }
+prebuild_tamper_or_remove_after_alias_inspect prebuild-tampered-after-alias-inspect tamper
+prebuild_tamper_or_remove_after_alias_inspect prebuild-removed-after-alias-inspect remove
 prebuild_tamper_or_remove_during_build(){ local label=$1 mutation=$2 receipts rc=0; receipts="$fx/receipts-$label"; : >"$docker_log"; rm -f "$fx/built"; set +e; run "$receipts" PREBUILD_MUTATION="$mutation" PREBUILD_MUTATION_AT=build >"$fx/$label.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "$label expected rc=65, got $rc"; [[ -e "$fx/built" ]] || fail "$label did not invoke fake build"; [[ ! -e "$receipts/sha256-${image_id#sha256:}.json" ]] || fail "$label published final receipt"; }
 prebuild_tamper_or_remove_during_build prebuild-tampered-during-build tamper
 prebuild_tamper_or_remove_during_build prebuild-removed-during-build remove
 receipts="$fx/receipts-existing-prebuild"; mkdir -p "$receipts"; : >"$receipts/prebuild-$(printf '%s' fixture/roy:test | sha256sum | cut -d' ' -f1).json"; : >"$docker_log"; rm -f "$fx/built"; set +e; run "$receipts" >"$fx/existing-prebuild.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "existing-prebuild expected rc=65, got $rc"; assert_no_alias_or_build existing-prebuild
 receipts="$fx/receipts-missing-tree"; : >"$docker_log"; rm -f "$fx/built"; set +e; env "${common[@]}" ROY_WEBUI_TREE= ROY_BASE_CANDIDATE_REF="$candidate_ref" BUILD_RECEIPT_ROOT="$receipts" "$helper" fixture/roy:test >"$fx/missing-tree.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "missing-tree expected rc=65, got $rc"; assert_no_receipt "$receipts" missing-tree; assert_no_alias_or_build missing-tree
 receipts="$fx/receipts-missing-ref"; : >"$docker_log"; set +e; env -u ROY_BASE_CANDIDATE_REF "${common[@]}" BUILD_RECEIPT_ROOT="$receipts" "$helper" fixture/roy:test >"$fx/missing-ref.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "missing-ref expected rc=65, got $rc"; assert_no_receipt "$receipts" missing-ref; [[ ! -s $docker_log ]] || fail 'missing-ref invoked docker'
-printf '%s\n' 'roy-all-in-one-candidate-build-contract: PASS fake-docker=true admission=true webui-tree=true provenance=true negatives=11 no-alias-or-receipt-on-admission-failure=true'
+printf '%s\n' 'roy-all-in-one-candidate-build-contract: PASS fake-docker=true admission=true webui-tree=true provenance=true negatives=14 no-alias-or-receipt-on-admission-failure=true'

@@ -126,6 +126,11 @@ assert "admitted prebuild receipt bytes changed" in builder
 assert 'sha256sum \"/proc/$$/fd/$prebuild_receipt_fd\"' in builder
 assert 'prebuild_receipt_payload:$prebuild_receipt_payload' in builder
 assert '--label "the-ai-crowd.prebuild-receipt-sha256=$prebuild_receipt_sha"' in builder
+alias_inspect = 'alias_id="$(docker image inspect "$base_alias" --format \'{{.Id}}\')"'
+assert alias_inspect in builder
+assert builder.index('verify_admitted_prebuild_receipt', builder.index(alias_inspect)) < builder.index('docker build --pull=false')
+assert 'final_prebuild_receipt_sha="$(docker image inspect "$TAG" --format \'{{index .Config.Labels "the-ai-crowd.prebuild-receipt-sha256"}}\')"' in builder
+assert 'final image prebuild receipt SHA label does not match admitted receipt' in builder
 assert "target candidate tag already exists" in builder
 assert "docker build --pull=false" in builder
 subprocess.run(
