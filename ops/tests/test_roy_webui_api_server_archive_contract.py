@@ -76,19 +76,17 @@ from api.gateway_chat import _run_gateway_chat_streaming, webui_gateway_chat_ena
 
 def handle_post():
     path = "/api/chat/start"
+    if path == "/api/chat/start" and webui_gateway_chat_enabled():
+        return _run_gateway_chat_streaming()
     if path == "/api/chat/start":
-        return _handle_chat_start()
+        return _run_legacy_chat_streaming()
     return None
 
 def _handle_chat_start():
     return _start_chat_stream()
 
 def _start_chat_stream():
-    if webui_gateway_chat_enabled():
-        worker_target = _run_gateway_chat_streaming
-    else:
-        worker_target = _run_legacy_chat_streaming
-    return worker_target
+    return _run_legacy_chat_streaming()
 
 def _run_legacy_chat_streaming():
     return None
@@ -151,7 +149,7 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
             "return _gateway_transport(_gateway_base_url(), _gateway_api_key())",
             "return None",
         )),
-        "api_server branch does not reach gateway transport",
+        "api_server branch does not directly call gateway transport",
         tmp,
     )
     # A benign gateway activation must not substitute for the actual public
@@ -167,7 +165,67 @@ def _legacy_direct_chat():
     assert_rejected(
         "public-dispatch-direct-legacy",
         members(server=direct_legacy_server),
-        "server public chat dispatch does not reach api.routes chat handler",
+        "server do_POST does not reach api.routes.handle_post",
+        tmp,
+    )
+    # A public helper may reach routes while the actual HTTP do_POST handler
+    # remains legacy; only do_POST is an acceptable server entrypoint.
+    do_post_legacy_with_unrelated_routes_helper = '''\
+from api import gateway_chat, routes
+
+def do_POST():
+    return _legacy_direct_chat()
+
+def _legacy_direct_chat():
+    return None
+
+def unrelated_routes_helper():
+    return routes.handle_post()
+
+def warm_gateway():
+    return gateway_chat.webui_gateway_chat_enabled()
+'''
+    assert_rejected(
+        "do-post-legacy-unrelated-routes-helper",
+        members(server=do_post_legacy_with_unrelated_routes_helper),
+        "server do_POST does not reach api.routes.handle_post",
+        tmp,
+    )
+    # The /api/chat/start branch itself must select/launch the gateway path;
+    # an unrelated helper is not evidence that this route dispatches there.
+    chat_start_legacy_with_unrelated_gateway_helper = '''\
+from api.gateway_chat import _run_gateway_chat_streaming, webui_gateway_chat_enabled
+
+def handle_post():
+    path = "/api/chat/start"
+    if path == "/api/chat/start":
+        return _run_legacy_chat_streaming()
+    return None
+
+def unrelated_gateway_helper():
+    if webui_gateway_chat_enabled():
+        return _run_gateway_chat_streaming()
+    return None
+
+def _run_legacy_chat_streaming():
+    return None
+'''
+    assert_rejected(
+        "chat-start-legacy-unrelated-gateway-helper",
+        members(routes=chat_start_legacy_with_unrelated_gateway_helper),
+        "api.routes /api/chat/start branch does not directly call gateway selector/runner",
+        tmp,
+    )
+    # A transport hidden in another branch must not satisfy the api_server
+    # branch: that branch itself must consume both configured gateway helpers.
+    api_server_legacy_with_else_transport = gateway_source.replace(
+        "return _gateway_transport(_gateway_base_url(), _gateway_api_key())\n    return None",
+        "return None\n    return _gateway_transport(_gateway_base_url(), _gateway_api_key())",
+    )
+    assert_rejected(
+        "api-server-legacy-else-transport",
+        members(gateway=api_server_legacy_with_else_transport),
+        "api_server branch does not directly call gateway transport consuming configured URL/key helpers",
         tmp,
     )
 
@@ -183,4 +241,4 @@ def _legacy_direct_chat():
     assert result.returncode != 0
     assert "compile" in result.stderr
 
-print("roy-webui-api-server-archive-contract: PASS positive=1 negative=7")
+print("roy-webui-api-server-archive-contract: PASS positive=1 negative=10")
