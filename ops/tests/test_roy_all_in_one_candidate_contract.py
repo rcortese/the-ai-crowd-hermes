@@ -15,12 +15,14 @@ compose = (root / "compose.yaml").read_text(encoding="utf-8")
 # checksum-verified WebUI archive. No default branch/tag is permitted.
 assert "ARG ROY_BASE_IMAGE" in dockerfile
 assert "FROM ${ROY_BASE_IMAGE}" in dockerfile
-for arg in ("HERMES_WEBUI_REPO", "HERMES_WEBUI_REV", "HERMES_WEBUI_ARCHIVE_SHA256"):
+for arg in ("HERMES_WEBUI_REPO", "HERMES_WEBUI_REV", "HERMES_WEBUI_TREE", "HERMES_WEBUI_ARCHIVE_SHA256", "HERMES_WEBUI_ARCHIVE_SIZE"):
     assert f"ARG {arg}" in dockerfile
 assert "grep -Eq '^[0-9a-f]{40}$'" in dockerfile
 assert "grep -Eq '^[0-9a-f]{64}$'" in dockerfile
 assert 'git checkout --detach "${HERMES_WEBUI_REV}"' in dockerfile
 assert 'test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}"' in dockerfile
+assert 'test "$(git rev-parse HEAD^{tree})" = "${HERMES_WEBUI_TREE}"' in dockerfile
+assert 'test "$(stat -c %s /tmp/hermes-webui.tar)" = "${HERMES_WEBUI_ARCHIVE_SIZE}"' in dockerfile
 assert 'git archive --format=tar "${HERMES_WEBUI_REV}"' in dockerfile
 assert "sha256sum -c -" in dockerfile
 assert "test -f /opt/hermes-webui/server.py" in dockerfile
@@ -58,7 +60,9 @@ assert 'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"' in builder
 assert 'git -C "$ROOT" archive --format=tar "$COMMIT"' in builder
 assert 'ROY_BASE_IMAGE must be an immutable local sha256 image ID' in builder
 assert 'ROY_WEBUI_REV must be a full immutable Git revision' in builder
+assert 'ROY_WEBUI_TREE must be a full immutable Git tree' in builder
 assert 'ROY_WEBUI_ARCHIVE_SHA256 must be a Git archive SHA-256' in builder
+assert 'ROY_WEBUI_ARCHIVE_SIZE must be a positive Git archive byte size' in builder
 assert 'ROY_BASE_CANDIDATE_REF must name the required local Roy base candidate' in builder
 assert 'docker image inspect "$ROY_BASE_CANDIDATE_REF" --format \'{{.Id}}\'' in builder
 assert "Roy base candidate ref does not resolve to ROY_BASE_IMAGE" in builder
@@ -86,7 +90,9 @@ for key in (
     "the-ai-crowd.roy-base-hermes-base-source-revision",
     "the-ai-crowd.webui-repository",
     "the-ai-crowd.webui-revision",
+    "the-ai-crowd.webui-tree",
     "the-ai-crowd.webui-archive-sha256",
+    "the-ai-crowd.webui-archive-size",
     "org.opencontainers.image.revision",
     "org.opencontainers.image.source",
 ):
@@ -104,12 +110,16 @@ for key in (
     "roy_base_hermes_base_source_revision:$roy_base_hermes_base_source_revision",
     "webui_repository:$webui_repository",
     "webui_revision:$webui_revision",
+    "webui_tree:$webui_tree",
     "webui_archive_sha256:$webui_archive_sha256",
+    "webui_archive_size:$webui_archive_size",
     "builder_sha256:$builder_sha256",
 ):
     assert key in builder
 assert "ln \"$tmp\" \"$receipt\"" in builder
 assert "divergent or unsafe build receipt already exists" in builder
+assert "prebuild" in builder
+assert "target candidate tag already exists" in builder
 assert "docker build --pull=false" in builder
 subprocess.run(
     ["bash", str(root / "ops/tests/test_roy_all_in_one_candidate_build_contract.sh"), str(root)],

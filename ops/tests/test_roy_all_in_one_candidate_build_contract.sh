@@ -13,6 +13,8 @@ repo="$fx/repo"; bin="$fx/bin"; docker_log="$fx/docker.log"
 mkdir -m 700 "$repo" "$bin"
 mkdir -p "$repo/ops/scripts" "$repo/ops/images" "$repo/ops/manifests"
 cp -- "$source_builder" "$repo/ops/scripts/build-roy-all-in-one-candidate.sh"
+cp -- "$root/ops/scripts/verify-hermes-webui-api-server-contract.py" "$repo/ops/scripts/verify-hermes-webui-api-server-contract.py"
+cp -- "$root/ops/images/roy-all-in-one.supervisor.conf" "$repo/ops/images/roy-all-in-one.supervisor.conf"
 cp -- "$root/ops/manifests/protected-hermes-a2a-base.lock.json" "$repo/ops/manifests/protected-hermes-a2a-base.lock.json"
 printf '%s\n' 'ARG ROY_BASE_IMAGE' 'FROM ${ROY_BASE_IMAGE}' >"$repo/ops/images/Dockerfile.roy-all-in-one"
 git -C "$repo" init -q -b main
@@ -52,13 +54,19 @@ cat >"$bin/docker" <<'DOCKER'
 set -Eeuo pipefail
 printf '<%s>' "$@" >>"${DOCKER_LOG:?}"; printf '\n' >>"$DOCKER_LOG"
 case "${1:-} ${2:-}" in
-  'build --pull=false'|'image tag') exit 0 ;;
+  'build --pull=false') : >"${FAKE_BUILT:?}"; exit 0 ;;
+  'image tag') exit 0 ;;
   'image inspect')
     target=${3:-}; format=${5:-}
     case "$format" in
+      '')
+        [[ $target == "${TARGET_TAG:?}" && ${FAKE_MODE:-happy} == target-exists ]] && { printf '%s\n' "${IMAGE_ID:?}"; exit 0; }
+        exit 1 ;;
       '{{.Id}}')
         if [[ $target == "${ROY_BASE_CANDIDATE_REF:?}" ]]; then
           [[ ${FAKE_MODE:-happy} == wrong-ref ]] && printf '%s\n' "${OTHER_BASE_ID:?}" || printf '%s\n' "${BASE_ID:?}"
+        elif [[ $target == "${TARGET_TAG:?}" ]]; then
+          if [[ ${FAKE_MODE:-happy} == target-exists || -e ${FAKE_BUILT:?} ]]; then printf '%s\n' "${IMAGE_ID:?}"; else exit 1; fi
         elif [[ $target == "${BASE_ID:?}" || $target == "the-ai-crowd/roy-build-base:${BASE_ID#sha256:}" ]]; then printf '%s\n' "${BASE_ID:?}"
         else printf '%s\n' "${IMAGE_ID:?}"; fi ;;
       *'the-ai-crowd.source-commit'*) [[ ${FAKE_MODE:-happy} == label-mismatch ]] && printf '%s\n' deadbeef || printf '%s\n' "${EXPECTED_COMMIT:?}" ;;
@@ -72,7 +80,7 @@ esac
 DOCKER
 chmod 700 "$bin/docker" "$bin/jq"
 helper="$repo/ops/scripts/build-roy-all-in-one-candidate.sh"
-common=(PATH="$bin:$PATH" DOCKER_LOG="$docker_log" BASE_ID="$base_id" OTHER_BASE_ID="$other_id" IMAGE_ID="$image_id" EXPECTED_COMMIT="$expected_commit" EXPECTED_TREE="$expected_tree" EXPECTED_HERMES_ID="$expected_hermes_id" EXPECTED_HERMES_SOURCE="$expected_hermes_source" ROY_BASE_IMAGE="$base_id" ROY_WEBUI_REPO=https://fixture.invalid/webui ROY_WEBUI_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_ARCHIVE_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)
+common=(PATH="$bin:$PATH" DOCKER_LOG="$docker_log" FAKE_BUILT="$fx/built" TARGET_TAG=fixture/roy:test BASE_ID="$base_id" OTHER_BASE_ID="$other_id" IMAGE_ID="$image_id" EXPECTED_COMMIT="$expected_commit" EXPECTED_TREE="$expected_tree" EXPECTED_HERMES_ID="$expected_hermes_id" EXPECTED_HERMES_SOURCE="$expected_hermes_source" ROY_BASE_IMAGE="$base_id" ROY_WEBUI_REPO=https://fixture.invalid/webui ROY_WEBUI_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ROY_WEBUI_ARCHIVE_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_ARCHIVE_SIZE=123)
 run(){ local receipts=$1; shift; env "${common[@]}" ROY_BASE_CANDIDATE_REF="$candidate_ref" "$@" BUILD_RECEIPT_ROOT="$receipts" "$helper" fixture/roy:test; }
 assert_no_receipt(){ local receipts=$1 label=$2; [[ ! -d $receipts ]] || ! compgen -G "$receipts/*.json" >/dev/null || fail "$label published a receipt"; }
 receipts="$fx/receipts-happy"; : >"$docker_log"
@@ -85,12 +93,19 @@ receipt, ref, image, commit, tree, hermes_id, hermes_source = sys.argv[1:]
 data = json.load(open(receipt))
 expected = {"roy_base_candidate_ref": ref, "roy_base_image_id": image, "roy_base_source_commit": commit, "roy_base_source_tree": tree, "roy_base_hermes_base_id": hermes_id, "roy_base_hermes_base_source_revision": hermes_source}
 assert all(data.get(key) == value for key, value in expected.items())
+assert data["webui_tree"] == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+assert data["webui_archive_size"] == "123"
+assert data["prebuild_receipt_sha256"]
 PY
 grep -Fq "<--label><the-ai-crowd.roy-base-candidate-ref=$candidate_ref>" "$docker_log" || fail 'final image missed candidate-ref label'
 grep -Fq "<--label><the-ai-crowd.roy-base-source-commit=$expected_commit>" "$docker_log" || fail 'final image missed base source label'
-negative(){ local label=$1 mode=$2; shift 2; local receipts="$fx/receipts-$label" rc=0; : >"$docker_log"; set +e; run "$receipts" FAKE_MODE="$mode" "$@" >"$fx/$label.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "$label expected rc=65, got $rc"; assert_no_receipt "$receipts" "$label"; }
+assert_no_alias_or_build(){ local label=$1; ! grep -Fq '<image><tag>' "$docker_log" || fail "$label created alias"; ! grep -Fq '<build><--pull=false>' "$docker_log" || fail "$label invoked build"; }
+negative(){ local label=$1 mode=$2; shift 2; local receipts="$fx/receipts-$label" rc=0; : >"$docker_log"; rm -f "$fx/built"; set +e; run "$receipts" FAKE_MODE="$mode" "$@" >"$fx/$label.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "$label expected rc=65, got $rc"; assert_no_receipt "$receipts" "$label"; assert_no_alias_or_build "$label"; }
 negative ref-wrong-id wrong-ref
 negative label-mismatch label-mismatch
 negative wrong-base-source wrong-base-source
+negative target-exists target-exists
+receipts="$fx/receipts-existing-prebuild"; mkdir -p "$receipts"; : >"$receipts/prebuild-$(printf '%s' fixture/roy:test | sha256sum | cut -d' ' -f1).json"; : >"$docker_log"; rm -f "$fx/built"; set +e; run "$receipts" >"$fx/existing-prebuild.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "existing-prebuild expected rc=65, got $rc"; assert_no_alias_or_build existing-prebuild
+receipts="$fx/receipts-missing-tree"; : >"$docker_log"; rm -f "$fx/built"; set +e; env "${common[@]}" ROY_WEBUI_TREE= ROY_BASE_CANDIDATE_REF="$candidate_ref" BUILD_RECEIPT_ROOT="$receipts" "$helper" fixture/roy:test >"$fx/missing-tree.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "missing-tree expected rc=65, got $rc"; assert_no_receipt "$receipts" missing-tree; assert_no_alias_or_build missing-tree
 receipts="$fx/receipts-missing-ref"; : >"$docker_log"; set +e; env -u ROY_BASE_CANDIDATE_REF "${common[@]}" BUILD_RECEIPT_ROOT="$receipts" "$helper" fixture/roy:test >"$fx/missing-ref.out" 2>&1; rc=$?; set -e; [[ $rc == 65 ]] || fail "missing-ref expected rc=65, got $rc"; assert_no_receipt "$receipts" missing-ref; [[ ! -s $docker_log ]] || fail 'missing-ref invoked docker'
-printf '%s\n' 'roy-all-in-one-candidate-build-contract: PASS fake-docker=true ref-binding=true provenance=true negatives=4 no-receipts=true'
+printf '%s\n' 'roy-all-in-one-candidate-build-contract: PASS fake-docker=true admission=true webui-tree=true provenance=true negatives=7 no-alias-or-receipt-on-admission-failure=true'
