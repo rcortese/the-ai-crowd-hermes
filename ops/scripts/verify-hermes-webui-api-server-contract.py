@@ -90,6 +90,130 @@ def flatten_or(node: ast.expr) -> list[ast.expr]:
     return [node]
 
 
+def function_definition(module: ast.Module, name: str) -> ast.FunctionDef | ast.AsyncFunctionDef | None:
+    for node in module.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            return node
+    return None
+
+
+def is_name(node: ast.AST, name: str) -> bool:
+    return isinstance(node, ast.Name) and node.id == name
+
+
+def is_none(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
+
+
+def is_dict_type(node: ast.AST) -> bool:
+    return is_name(node, "dict")
+
+
+def is_mapping_get(node: ast.AST, mapping: str, key: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and not node.keywords
+        and len(node.args) == 1
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and is_name(node.func.value, mapping)
+        and ast.dump(node.args[0]) == ast.dump(key)
+    )
+
+
+def is_gateway_base_url_resolution(function: ast.FunctionDef | ast.AsyncFunctionDef | None) -> bool:
+    """Accept only the trusted env -> config -> normalized fallback resolver."""
+    if function is None:
+        return False
+    arguments = function.args
+    if (
+        arguments.posonlyargs
+        or arguments.vararg is not None
+        or arguments.kwarg is not None
+        or [argument.arg for argument in arguments.args] != ["config_data", "environ"]
+        or len(arguments.defaults) != 2
+        or not all(is_none(default) for default in arguments.defaults)
+    ):
+        return False
+    if len(function.body) != 4:
+        return False
+    source_assignment, config_assignment, raw_assignment, returned = function.body
+    if not (
+        isinstance(source_assignment, ast.Assign)
+        and len(source_assignment.targets) == 1
+        and is_name(source_assignment.targets[0], "source")
+        and isinstance(source_assignment.value, ast.IfExp)
+        and isinstance(source_assignment.value.test, ast.Compare)
+        and len(source_assignment.value.test.ops) == 1
+        and isinstance(source_assignment.value.test.ops[0], ast.Is)
+        and len(source_assignment.value.test.comparators) == 1
+        and is_name(source_assignment.value.test.left, "environ")
+        and is_none(source_assignment.value.test.comparators[0])
+        and isinstance(source_assignment.value.body, ast.Attribute)
+        and source_assignment.value.body.attr == "environ"
+        and is_name(source_assignment.value.body.value, "os")
+        and is_name(source_assignment.value.orelse, "environ")
+    ):
+        return False
+    if not (
+        isinstance(config_assignment, ast.Assign)
+        and len(config_assignment.targets) == 1
+        and is_name(config_assignment.targets[0], "cfg")
+        and isinstance(config_assignment.value, ast.IfExp)
+        and isinstance(config_assignment.value.test, ast.Call)
+        and is_name(config_assignment.value.test.func, "isinstance")
+        and len(config_assignment.value.test.args) == 2
+        and is_name(config_assignment.value.test.args[0], "config_data")
+        and is_dict_type(config_assignment.value.test.args[1])
+        and is_name(config_assignment.value.body, "config_data")
+        and isinstance(config_assignment.value.orelse, ast.Dict)
+        and not config_assignment.value.orelse.keys
+        and not config_assignment.value.orelse.values
+    ):
+        return False
+    if not (
+        isinstance(raw_assignment, ast.Assign)
+        and len(raw_assignment.targets) == 1
+        and is_name(raw_assignment.targets[0], "raw")
+        and isinstance(raw_assignment.value, ast.Call)
+        and not raw_assignment.value.args
+        and not raw_assignment.value.keywords
+        and isinstance(raw_assignment.value.func, ast.Attribute)
+        and raw_assignment.value.func.attr == "strip"
+        and isinstance(raw_assignment.value.func.value, ast.Call)
+        and is_name(raw_assignment.value.func.value.func, "str")
+        and len(raw_assignment.value.func.value.args) == 1
+        and not raw_assignment.value.func.value.keywords
+    ):
+        return False
+    raw_values = flatten_or(raw_assignment.value.func.value.args[0])
+    expected_env = ast.Name(id="_WEBUI_GATEWAY_BASE_URL_ENV")
+    if not (
+        len(raw_values) == 3
+        and is_mapping_get(raw_values[0], "source", expected_env)
+        and is_mapping_get(raw_values[1], "cfg", ast.Constant(value="webui_gateway_base_url"))
+        and isinstance(raw_values[2], ast.Constant)
+        and raw_values[2].value == DEFAULT_GATEWAY_BASE_URL
+    ):
+        return False
+    return (
+        isinstance(returned, ast.Return)
+        and isinstance(returned.value, ast.BoolOp)
+        and isinstance(returned.value.op, ast.Or)
+        and len(returned.value.values) == 2
+        and isinstance(returned.value.values[0], ast.Call)
+        and not returned.value.values[0].keywords
+        and isinstance(returned.value.values[0].func, ast.Attribute)
+        and returned.value.values[0].func.attr == "rstrip"
+        and is_name(returned.value.values[0].func.value, "raw")
+        and len(returned.value.values[0].args) == 1
+        and isinstance(returned.value.values[0].args[0], ast.Constant)
+        and returned.value.values[0].args[0].value == "/"
+        and isinstance(returned.value.values[1], ast.Constant)
+        and returned.value.values[1].value == DEFAULT_GATEWAY_BASE_URL
+    )
+
+
 def verify_gateway_contract(module: ast.Module) -> None:
     backend_env = assigned_value(module, "_WEBUI_CHAT_BACKEND_ENV")
     if not (isinstance(backend_env, ast.Constant) and backend_env.value == BACKEND_ENV):
@@ -104,13 +228,9 @@ def verify_gateway_contract(module: ast.Module) -> None:
     gateway_base_env = assigned_value(module, "_WEBUI_GATEWAY_BASE_URL_ENV")
     if not (isinstance(gateway_base_env, ast.Constant) and gateway_base_env.value == GATEWAY_BASE_URL_ENV):
         fail("gateway base URL resolution missing HERMES_WEBUI_GATEWAY_BASE_URL binding")
-    base_url = function_return(module, "_gateway_base_url")
-    if not (
-        isinstance(gateway_base_env, ast.expr)
-        and base_url is not None
-        and is_os_environ_get(base_url, ast.Name(id="_WEBUI_GATEWAY_BASE_URL_ENV"), DEFAULT_GATEWAY_BASE_URL)
-    ):
-        fail("gateway base URL resolution missing deployed environment/default contract")
+    base_url_function = function_definition(module, "_gateway_base_url")
+    if not is_gateway_base_url_resolution(base_url_function):
+        fail("gateway base URL resolution missing trusted environment/config/default normalization contract")
 
     gateway_key_env = assigned_value(module, "_WEBUI_GATEWAY_API_KEY_ENV")
     if not (isinstance(gateway_key_env, ast.Constant) and gateway_key_env.value == GATEWAY_API_KEY_ENV):
