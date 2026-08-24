@@ -70,6 +70,7 @@ require_dockerfile_contract Dockerfile.moss \
   'CMD ["gateway", "run"]'
 require_dockerfile_contract Dockerfile.jen \
   'ENV HERMES_DASHBOARD=1' \
+  'HERMES_DASHBOARD_HOST=127.0.0.1' \
   'HERMES_DASHBOARD_PORT=9121' \
   'CMD ["gateway", "run"]'
 require_dockerfile_contract Dockerfile.denholm \
