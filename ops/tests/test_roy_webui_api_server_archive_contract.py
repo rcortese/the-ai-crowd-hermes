@@ -116,7 +116,10 @@ def webui_chat_backend_mode():
     return "legacy"
 def webui_gateway_chat_enabled():
     return webui_chat_backend_mode() == "api_server"
-def _gateway_base_url(config_data, environ: dict[str, str] | None = None):
+# Exact fixture signature from the verified WebUI archive: both trusted inputs
+# are optional at the Python boundary, while the resolver itself admits only
+# the environment/config/fallback trust chain below.
+def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None):
     source = os.environ if environ is None else environ
     cfg = config_data if isinstance(config_data, dict) else {}
     raw = str(
@@ -232,10 +235,10 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
         tmp,
     )
     assert_rejected(
-        "gateway-base-url-optional-config-input",
+        "gateway-base-url-without-config-input",
         members(gateway=gateway_source.replace(
-            "def _gateway_base_url(config_data, environ: dict[str, str] | None = None):",
             "def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None):",
+            "def _gateway_base_url(environ: dict[str, str] | None = None):",
         )),
         "gateway base URL resolution",
         tmp,
@@ -243,8 +246,8 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
     assert_rejected(
         "gateway-base-url-reordered-parameters",
         members(gateway=gateway_source.replace(
-            "def _gateway_base_url(config_data, environ: dict[str, str] | None = None):",
-            "def _gateway_base_url(environ, config_data=None):",
+            "def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None):",
+            "def _gateway_base_url(environ=None, config_data=None):",
         )),
         "gateway base URL resolution",
         tmp,
@@ -252,8 +255,8 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
     assert_rejected(
         "gateway-base-url-allows-caller-url",
         members(gateway=gateway_source.replace(
-            "def _gateway_base_url(config_data, environ: dict[str, str] | None = None):",
-            "def _gateway_base_url(config_data, environ: dict[str, str] | None = None, user_base_url=None):",
+            "def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None):",
+            "def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None, user_base_url=None):",
         ).replace(
             "source.get(_WEBUI_GATEWAY_BASE_URL_ENV)",
             "user_base_url or source.get(_WEBUI_GATEWAY_BASE_URL_ENV)",

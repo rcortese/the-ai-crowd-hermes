@@ -130,8 +130,11 @@ def is_gateway_base_url_resolution(function: ast.FunctionDef | ast.AsyncFunction
         or arguments.vararg is not None
         or arguments.kwarg is not None
         or [argument.arg for argument in arguments.args] != ["config_data", "environ"]
-        or len(arguments.defaults) != 1
-        or not is_none(arguments.defaults[0])
+        # The verified archive deliberately accepts omitted config_data and
+        # environ, then constrains their use to the trusted resolver body.
+        # ast.arguments.defaults aligns to the final positional parameters.
+        or len(arguments.defaults) != 2
+        or not all(is_none(default) for default in arguments.defaults)
     ):
         return False
     if len(function.body) != 4:
