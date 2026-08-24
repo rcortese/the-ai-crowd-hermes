@@ -17,6 +17,7 @@ cp -- "$compose_source" "$stack/compose.yaml"
 : >"$stack/env/fleet.env"
 : >"$stack/env/moss-webui.env"
 : >"$stack/env/roy.env"
+: >"$stack/env/roy-v3.env"
 
 candidate=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 builder_base=$(git -C "$source_root" rev-parse HEAD^)
@@ -35,6 +36,7 @@ render_contract(){
   fi
   env -i HOME=/root PATH="$PATH" THE_AI_CROWD_IMAGE_TAG=scaffold \
     MOSS_IMAGE_REF="$candidate" JEN_IMAGE_REF="$candidate" DENHOLM_IMAGE_REF="$candidate" \
+    MOSS_TO_DENHOLM_A2A_TOKEN=fixture-non-secret-directional-token ROY_TELEGRAM_BOT_TOKEN=fixture-non-secret-roy-token ROY_TELEGRAM_HOME_CHANNEL=fixture-roy-home-channel \
     ROY_IMAGE_REF="$candidate" RICHMOND_IMAGE_REF="$candidate" THE_ELDERS_IMAGE_REF="$candidate" "$@" \
     docker compose --project-directory "$stack" --env-file "$stack/.env" -f "$compose_file" config --format json >"$out"
   jq -e --arg image "$candidate" \

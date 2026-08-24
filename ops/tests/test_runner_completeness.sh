@@ -42,8 +42,8 @@ printf '%s\n' 'runner-completeness: canonical PASS'
 for mutant in build roy-all-in-one roy-webui-api-server deploy-decoupling closure compose-rollback; do
  candidate="$tmp/runner-$mutant.sh"; candidate_manifest=$manifest; cp "$runner" "$candidate"
  token='dispatch build bash ops/tests/test_moss_candidate_build_contract.sh "$root"'
- if [[ $mutant == roy-all-in-one ]]; then token='dispatch roy-all-in-one /opt/hermes/.venv/bin/python ops/tests/test_roy_all_in_one_candidate_contract.py "$root"'; fi
- if [[ $mutant == roy-webui-api-server ]]; then token='dispatch roy-webui-api-server /opt/hermes/.venv/bin/python ops/tests/test_roy_webui_api_server_archive_contract.py "$root"'; fi
+ if [[ $mutant == roy-all-in-one ]]; then token='dispatch roy-all-in-one env PYTHONDONTWRITEBYTECODE=1 python3 -B ops/tests/test_roy_all_in_one_candidate_contract.py "$root"'; fi
+ if [[ $mutant == roy-webui-api-server ]]; then token='dispatch roy-webui-api-server env PYTHONDONTWRITEBYTECODE=1 python3 -B ops/tests/test_roy_webui_api_server_archive_contract.py "$root"'; fi
  if [[ $mutant == deploy-decoupling ]]; then token='dispatch deploy-decoupling bash ops/tests/test_moss_deploy_decoupling.sh "$root"'; fi
  if [[ $mutant == closure ]]; then
   token='dispatch closure bash ops/tests/test_moss_release_source_closure.sh'

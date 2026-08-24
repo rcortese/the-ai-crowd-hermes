@@ -18,8 +18,11 @@ assert entries[1].endswith("  package-lock.json")
 assert "COPY --from=clash_royale_build_input package.json" in dockerfile
 assert "COPY agents/private/moss/projects/clash-royale-war-bot" not in dockerfile
 assert "ARG HERMES_WEBUI_REV=6fdbedb5217da42fc3a1af85c033f52a2176daee" in dockerfile
+assert "ARG HERMES_WEBUI_TREE=8a1e54c2e35111dfc82f4b1b8019640a45b4c44d" in dockerfile
 assert 'git checkout --detach "${HERMES_WEBUI_REV}"' in dockerfile
 assert 'test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}"' in dockerfile
+assert 'test "${HERMES_WEBUI_TREE}" = "8a1e54c2e35111dfc82f4b1b8019640a45b4c44d"' in dockerfile
+assert 'test "$(git rev-parse HEAD^{tree})" = "${HERMES_WEBUI_TREE}"' in dockerfile
 assert 'test -z "$(git status --porcelain)"' in dockerfile
 for legacy_patch in (
     "moss-agent-health-auth.patch",
