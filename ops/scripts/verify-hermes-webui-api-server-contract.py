@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Fail-closed structural archive contract for Roy's WebUI api_server path."""
+"""Fail-closed causal archive contract for Roy's WebUI api_server path."""
 from __future__ import annotations
 
 import argparse
 import ast
 import sys
 import tarfile
+from collections.abc import Iterable
 from typing import NoReturn
 
 REQUIRED = ("server.py", "api/routes.py", "api/gateway_chat.py")
@@ -50,19 +51,76 @@ def call_name(call: ast.Call) -> str | None:
     return call.func.id if isinstance(call.func, ast.Name) else None
 
 
-def calls(nodes: list[ast.stmt] | ast.AST) -> list[ast.Call]:
-    roots = nodes if isinstance(nodes, list) else [nodes]
-    result: list[ast.Call] = []
-    def walk(node: ast.AST) -> None:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+def attribute_name(node: ast.AST) -> str | None:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+    return None
+
+
+def expression_calls(node: ast.AST | None) -> list[ast.Call]:
+    """Calls in one expression, excluding a nested callable's body."""
+    if node is None:
+        return []
+    found: list[ast.Call] = []
+
+    def walk(current: ast.AST) -> None:
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
             return
-        if isinstance(node, ast.Call):
-            result.append(node)
-        for child in ast.iter_child_nodes(node):
+        if isinstance(current, ast.Call):
+            found.append(current)
+        for child in ast.iter_child_nodes(current):
             walk(child)
-    for root in roots:
-        walk(root)
+
+    walk(node)
+    return found
+
+
+def literal_bool(node: ast.AST) -> bool | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+        return node.value
+    return None
+
+
+def effective_statements(statements: Iterable[ast.stmt]) -> list[ast.stmt]:
+    """Return syntactically reachable statements; never descend into dead arms."""
+    result: list[ast.stmt] = []
+    for statement in statements:
+        result.append(statement)
+        if isinstance(statement, (ast.Return, ast.Raise, ast.Break, ast.Continue)):
+            break
+        if isinstance(statement, ast.If):
+            known = literal_bool(statement.test)
+            selected = statement.body if known is not False else statement.orelse
+            result.extend(effective_statements(selected))
+        elif isinstance(statement, (ast.With, ast.AsyncWith)):
+            result.extend(effective_statements(statement.body))
+        elif isinstance(statement, ast.Try):
+            result.extend(effective_statements(statement.body))
+            for handler in statement.handlers:
+                result.extend(effective_statements(handler.body))
+            result.extend(effective_statements(statement.orelse))
+            result.extend(effective_statements(statement.finalbody))
     return result
+
+
+def statement_calls(statement: ast.stmt) -> list[ast.Call]:
+    """Calls owned by this statement, never by one of its nested bodies."""
+    if isinstance(statement, ast.If):
+        return expression_calls(statement.test)
+    if isinstance(statement, (ast.With, ast.AsyncWith)):
+        return [call for item in statement.items for call in expression_calls(item.context_expr)]
+    if isinstance(statement, (ast.Try, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return []
+    return expression_calls(statement)
+
+
+def reachable_calls(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.Call]:
+    return [call for statement in effective_statements(function.body) for call in statement_calls(statement)]
 
 
 def module_functions(module: ast.Module) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
@@ -70,14 +128,47 @@ def module_functions(module: ast.Module) -> dict[str, ast.FunctionDef | ast.Asyn
 
 
 def direct_self_call(function: ast.FunctionDef | ast.AsyncFunctionDef, method: str, argument: str) -> bool:
-    for node in function.body:
-        value = node.value if isinstance(node, (ast.Return, ast.Expr)) else None
+    """Require the actual method body, not a nested/dead statement, to call it."""
+    for statement in function.body:
+        value = statement.value if isinstance(statement, (ast.Return, ast.Expr)) else None
         if not isinstance(value, ast.Call) or len(value.args) != 1 or value.keywords:
+            if isinstance(statement, (ast.Return, ast.Raise)):
+                return False
             continue
-        if (isinstance(value.func, ast.Attribute) and isinstance(value.func.value, ast.Name)
-                and value.func.value.id == "self" and value.func.attr == method and name(value.args[0], argument)):
+        if (isinstance(value.func, ast.Attribute) and name(value.func.value, "self")
+                and value.func.attr == method and name(value.args[0], argument)):
             return True
+        if isinstance(statement, (ast.Return, ast.Raise)):
+            return False
     return False
+
+
+def assigned_name(statement: ast.stmt) -> str | None:
+    if isinstance(statement, (ast.Assign, ast.AnnAssign)):
+        targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+        if len(targets) == 1 and isinstance(targets[0], ast.Name):
+            return targets[0].id
+    return None
+
+
+def assigned_value(statement: ast.stmt) -> ast.AST | None:
+    return statement.value if isinstance(statement, (ast.Assign, ast.AnnAssign)) else None
+
+
+def effective_bindings(function: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, ast.AST]:
+    return {target: value for statement in effective_statements(function.body)
+            if (target := assigned_name(statement)) is not None and (value := assigned_value(statement)) is not None}
+
+
+def expr_depends_on(node: ast.AST, roots: set[str], bindings: dict[str, ast.AST], seen: set[str] | None = None) -> bool:
+    seen = set() if seen is None else seen
+    if isinstance(node, ast.Name):
+        if node.id in roots:
+            return True
+        if node.id in seen or node.id not in bindings:
+            return False
+        return expr_depends_on(bindings[node.id], roots, bindings, seen | {node.id})
+    return any(expr_depends_on(child, roots, bindings, seen) for child in ast.iter_child_nodes(node))
 
 
 def verify_server(server: ast.Module) -> None:
@@ -91,26 +182,36 @@ def verify_server(server: ast.Module) -> None:
     write = methods.get("_handle_write")
     if write is None or [arg.arg for arg in write.args.args] != ["self", "route_func"]:
         fail("Handler._handle_write must execute route_func(self, parsed)")
+    bindings = effective_bindings(write)
     if not any(call_name(call) == "route_func" and len(call.args) == 2 and not call.keywords
-               and name(call.args[0], "self") and name(call.args[1], "parsed") for call in calls(write.body)):
+               and name(call.args[0], "self") and name(call.args[1], "parsed")
+               and "parsed" in bindings for call in reachable_calls(write)):
         fail("Handler._handle_write must execute route_func(self, parsed)")
 
 
-def has_path_branch(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.If]:
-    return [node for node in ast.walk(function) if isinstance(node, ast.If)
-            and any(isinstance(value, ast.Constant) and value.value == "/api/chat/start" for value in ast.walk(node.test))]
-
-
-def called_local_names(function: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-    return {candidate for candidate in (call_name(call) for call in calls(function.body)) if candidate}
+def is_chat_start_test(node: ast.AST) -> bool:
+    return (isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq)
+            and any(isinstance(value, ast.Constant) and value.value == "/api/chat/start" for value in node.comparators))
 
 
 def gateway_owned_selection(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    all_nodes = list(ast.walk(function))
-    selector = any(call_name(call) == "webui_gateway_chat_enabled" for call in calls(function.body))
-    runner = any(name(node, "_run_gateway_chat_streaming") for node in all_nodes)
-    owned = any(isinstance(node, ast.IfExp) and name(node.body, "_run_gateway_chat_streaming") for node in all_nodes)
-    return selector and runner and owned
+    """Prove enabled selection flows to Thread(target=the gateway runner)."""
+    bindings = effective_bindings(function)
+    worker_names: set[str] = set()
+    for target, value in bindings.items():
+        if not isinstance(value, ast.IfExp) or not name(value.body, "_run_gateway_chat_streaming"):
+            continue
+        if expr_depends_on(value.test, {"webui_gateway_chat_enabled"}, bindings):
+            worker_names.add(target)
+    if not worker_names:
+        return False
+    for call in reachable_calls(function):
+        if attribute_name(call.func) != "threading.Thread":
+            continue
+        if any(keyword.arg == "target" and isinstance(keyword.value, ast.Name)
+               and keyword.value.id in worker_names for keyword in call.keywords):
+            return True
+    return False
 
 
 def verify_routes(routes: ast.Module) -> None:
@@ -118,12 +219,12 @@ def verify_routes(routes: ast.Module) -> None:
     handler = functions.get("handle_post")
     if handler is None or [arg.arg for arg in handler.args.args] != ["handler", "parsed"]:
         fail("api.routes handle_post must accept handler, parsed")
-    starts = has_path_branch(handler)
+    starts = [statement for statement in effective_statements(handler.body)
+              if isinstance(statement, ast.If) and is_chat_start_test(statement.test)]
     if not starts:
         fail("api.routes missing /api/chat/start branch")
-    frontier = set()
-    for branch in starts:
-        frontier.update(candidate for candidate in (call_name(call) for call in calls(branch.body)) if candidate)
+    frontier = {call_name(call) for branch in starts for statement in effective_statements(branch.body)
+                for call in statement_calls(statement) if call_name(call)}
     seen: set[str] = set()
     while frontier:
         candidate = frontier.pop()
@@ -133,7 +234,7 @@ def verify_routes(routes: ast.Module) -> None:
         current = functions[candidate]
         if gateway_owned_selection(current):
             return
-        frontier.update(called_local_names(current) - seen)
+        frontier.update(call_name(call) for call in reachable_calls(current) if call_name(call) and call_name(call) not in seen)
     fail("api.routes /api/chat/start branch does not reach gateway-owned runner selection")
 
 
@@ -149,6 +250,35 @@ def constants(module: ast.Module, identifier: str) -> list[ast.Constant]:
 
 def all_constant_values(node: ast.AST) -> set[object]:
     return {item.value for item in ast.walk(node) if isinstance(item, ast.Constant)}
+
+
+def is_request_call(call: ast.Call) -> bool:
+    return attribute_name(call.func) == "urllib.request.Request"
+
+
+def is_urlopen_call(call: ast.Call) -> bool:
+    return attribute_name(call.func) == "urllib.request.urlopen"
+
+
+def request_uses_trusted_transport(runner: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    bindings = effective_bindings(runner)
+    url_roots = {target for target, value in bindings.items()
+                 if any(call_name(call) == "_gateway_base_url" for call in expression_calls(value))}
+    key_roots = {target for target, value in bindings.items()
+                 if any(call_name(call) == "_gateway_api_key" for call in expression_calls(value))}
+    if not url_roots or not key_roots:
+        return False
+    request_vars: set[str] = set()
+    for statement in effective_statements(runner.body):
+        value = assigned_value(statement)
+        if not isinstance(value, ast.Call) or not is_request_call(value) or not value.args:
+            continue
+        headers = next((keyword.value for keyword in value.keywords if keyword.arg == "headers"), None)
+        if expr_depends_on(value.args[0], url_roots, bindings) and headers and expr_depends_on(headers, key_roots, bindings):
+            if (target := assigned_name(statement)):
+                request_vars.add(target)
+    return bool(request_vars) and any(call.args and expr_depends_on(call.args[0], request_vars, bindings)
+                                     for call in reachable_calls(runner) if is_urlopen_call(call))
 
 
 def verify_gateway(gateway: ast.Module) -> None:
@@ -173,9 +303,8 @@ def verify_gateway(gateway: ast.Module) -> None:
     if key is None or not {"API_SERVER_KEY", ""}.issubset(all_constant_values(key)):
         fail("gateway API key resolution must use trusted HERMES_WEBUI_GATEWAY_API_KEY -> API_SERVER_KEY chain")
     runner = functions.get("_run_gateway_chat_streaming")
-    runner_calls = calls(runner.body) if runner else []
-    if not any(call_name(call) == "_gateway_base_url" for call in runner_calls) or not any(call_name(call) == "_gateway_api_key" for call in runner_calls):
-        fail("gateway transport must use trusted URL and key resolvers")
+    if runner is None or not request_uses_trusted_transport(runner):
+        fail("gateway transport must execute with trusted URL and key resolver results")
 
 
 def main() -> None:
