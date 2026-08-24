@@ -251,19 +251,34 @@ def expression_uses_resolver(node: ast.AST, resolver: str, state: dict[str, ast.
             or bool(roots and expr_depends_on(node, roots, state)))
 
 
-def gateway_owned_selection(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """Require every reachable Thread sink to select the gateway runner."""
-    thread_sinks: list[bool] = []
+def direct_enabled_gateway_selection(target: ast.AST | None, state: dict[str, ast.AST]) -> bool:
+    """Accept only ``enabled(...) ? gateway_runner : ...`` at a Thread sink.
+
+    A resolver mention is not enough: the true arm must be the gateway runner,
+    and the condition itself must be the positive resolver call.  In particular,
+    this rejects ``not enabled(...)`` and aliases that hide an inverted guard.
+    """
+    selected = resolved_expression(target, state) if target is not None else None
+    return (isinstance(selected, ast.IfExp)
+            and name(selected.body, "_run_gateway_chat_streaming")
+            and isinstance(selected.test, ast.Call)
+            and call_name(selected.test) == "webui_gateway_chat_enabled")
+
+
+def route_thread_sink_verdict(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[bool]:
+    """Return the exact enabled-selection verdict for every reachable Thread."""
+    verdicts: list[bool] = []
     for statement, state in ordered_statement_states(function):
         for call in statement_calls(statement):
             if attribute_name(call.func) != "threading.Thread":
                 continue
             target = next((keyword.value for keyword in call.keywords if keyword.arg == "target"), None)
-            selected = resolved_expression(target, state) if target is not None else None
-            thread_sinks.append(isinstance(selected, ast.IfExp)
-                                and name(selected.body, "_run_gateway_chat_streaming")
-                                and expression_uses_resolver(selected.test, "webui_gateway_chat_enabled", state))
-    return bool(thread_sinks) and all(thread_sinks)
+            verdicts.append(direct_enabled_gateway_selection(target, state))
+    return verdicts
+
+
+def has_direct_legacy_runner_call(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return any(call_name(call) == "_run_agent_streaming" for call in reachable_calls(function))
 
 
 def verify_routes(routes: ast.Module) -> None:
@@ -275,19 +290,34 @@ def verify_routes(routes: ast.Module) -> None:
               if isinstance(statement, ast.If) and is_chat_start_test(statement.test)]
     if not starts:
         fail("api.routes missing /api/chat/start branch")
-    frontier = {call_name(call) for branch in starts for statement in effective_statements(branch.body)
-                for call in statement_calls(statement) if call_name(call)}
+    # A start-route branch is itself a reachable path. It may delegate into a
+    # helper, but cannot launch a separate direct Thread/legacy runner beside it.
+    route_branch_calls = [call for branch in starts for statement in effective_statements(branch.body)
+                          for call in statement_calls(statement)]
+    if any(call_name(call) == "_run_agent_streaming" for call in route_branch_calls):
+        fail("api.routes /api/chat/start path reaches non-gateway Thread target")
+    branch_thread_sinks = [call for call in route_branch_calls if attribute_name(call.func) == "threading.Thread"]
+    if branch_thread_sinks:
+        fail("api.routes /api/chat/start path reaches non-gateway Thread target")
+    frontier = {call_name(call) for call in route_branch_calls if call_name(call)}
     seen: set[str] = set()
+    sink_verdicts: list[bool] = []
     while frontier:
         candidate = frontier.pop()
         if candidate in seen or candidate not in functions:
             continue
         seen.add(candidate)
         current = functions[candidate]
-        if gateway_owned_selection(current):
-            return
+        if has_direct_legacy_runner_call(current):
+            fail("api.routes /api/chat/start path reaches non-gateway Thread target")
+        sink_verdicts.extend(route_thread_sink_verdict(current))
         frontier.update(call_name(call) for call in reachable_calls(current) if call_name(call) and call_name(call) not in seen)
-    fail("api.routes /api/chat/start branch does not reach gateway-owned runner selection")
+    if not sink_verdicts:
+        fail("api.routes /api/chat/start branch does not reach gateway-owned runner selection")
+    if not all(sink_verdicts):
+        fail("api.routes /api/chat/start path reaches non-gateway Thread target")
+    if len(sink_verdicts) != 1:
+        fail("api.routes /api/chat/start gateway Thread sink must be unique and direct")
 
 
 def constants(module: ast.Module, identifier: str) -> list[ast.Constant]:
