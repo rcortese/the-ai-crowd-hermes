@@ -1,4 +1,5 @@
 build
+roy-all-in-one
 deploy-decoupling
 smoke-contract
 supervisor-api-key
