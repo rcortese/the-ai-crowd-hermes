@@ -18,14 +18,32 @@ assert "python3 /tmp/verify-hermes-webui-api-server-contract.py /tmp/hermes-webu
 assert "test -f /opt/hermes-webui/api/gateway_chat.py" in dockerfile
 assert "/opt/hermes-webui/server.py /opt/hermes-webui/api/gateway_chat.py" in dockerfile
 
-# The archive capability and deployed supervisor must agree on the api_server
-# selector, Roy's internal endpoint, and API_SERVER_KEY resolution path.
-for literal in (
-    'HERMES_WEBUI_CHAT_BACKEND="api_server"',
-    'HERMES_WEBUI_GATEWAY_BASE_URL="http://roy:8645"',
+# Archive code resolves only its WebUI-specific key. Deployment supplies the
+# outer API_SERVER_KEY and maps it exactly into that archive-facing variable.
+def require_roy_webui_supervisor_contract(config: str) -> None:
+    for literal in (
+        'HERMES_WEBUI_CHAT_BACKEND="api_server"',
+        'HERMES_WEBUI_GATEWAY_BASE_URL="http://roy:8645"',
+        'HERMES_WEBUI_GATEWAY_API_KEY="%(ENV_API_SERVER_KEY)s"',
+    ):
+        assert literal in config
+
+
+require_roy_webui_supervisor_contract(supervisor)
+
+# This deployment-layer mutant must not be confused with an archive fallback:
+# the supervisor is the only authorized API_SERVER_KEY -> WebUI-key bridge.
+without_api_server_key_mapping = supervisor.replace(
     'HERMES_WEBUI_GATEWAY_API_KEY="%(ENV_API_SERVER_KEY)s"',
-):
-    assert literal in supervisor
+    'HERMES_WEBUI_GATEWAY_API_KEY=""',
+    1,
+)
+try:
+    require_roy_webui_supervisor_contract(without_api_server_key_mapping)
+except AssertionError:
+    pass
+else:
+    raise AssertionError("Roy supervisor contract accepted missing API_SERVER_KEY mapping")
 
 
 def archive(path: Path, members: dict[str, str]) -> None:
@@ -69,7 +87,7 @@ def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None):
     ).strip()
     return raw.rstrip("/") or "http://127.0.0.1:8642"
 def _gateway_api_key():
-    return os.environ.get(_WEBUI_GATEWAY_API_KEY_ENV) or os.environ.get("API_SERVER_KEY") or ""
+    return os.environ.get(_WEBUI_GATEWAY_API_KEY_ENV) or ""
 def _gateway_transport(base_url, api_key):
     return (base_url, api_key)
 def _run_gateway_chat_streaming():
@@ -194,10 +212,33 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
         "gateway base URL resolution",
         tmp,
     )
+    # The immutable archive must not acquire a generic API_SERVER_KEY fallback;
+    # that compatibility bridge belongs only to the Roy supervisor environment.
     assert_rejected(
-        "missing-api-server-key-fallback",
-        members(gateway=gateway_source.replace(' or os.environ.get("API_SERVER_KEY")', "")),
-        "API_SERVER_KEY fallback",
+        "archive-api-key-falls-back-to-api-server-key",
+        members(gateway=gateway_source.replace(
+            'return os.environ.get(_WEBUI_GATEWAY_API_KEY_ENV) or ""',
+            'return os.environ.get(_WEBUI_GATEWAY_API_KEY_ENV) or os.environ.get("API_SERVER_KEY") or ""',
+        )),
+        "gateway API key resolution must use only HERMES_WEBUI_GATEWAY_API_KEY",
+        tmp,
+    )
+    assert_rejected(
+        "archive-api-key-env-read-missing",
+        members(gateway=gateway_source.replace(
+            'return os.environ.get(_WEBUI_GATEWAY_API_KEY_ENV) or ""',
+            'return ""',
+        )),
+        "gateway API key resolution",
+        tmp,
+    )
+    assert_rejected(
+        "archive-api-key-env-name-changed",
+        members(gateway=gateway_source.replace(
+            "HERMES_WEBUI_GATEWAY_API_KEY",
+            "HERMES_WEBUI_GATEWAY_KEY",
+        )),
+        "gateway API key resolution",
         tmp,
     )
     # Keep selector/constants/helper declarations byte-for-byte intact, but
@@ -365,4 +406,4 @@ def _run_legacy_chat_streaming():
     assert result.returncode != 0
     assert "compile" in result.stderr
 
-print("roy-webui-api-server-archive-contract: PASS positive=1 negative=19")
+print("roy-webui-api-server-archive-contract: PASS positive=1 negative=20")
