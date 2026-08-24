@@ -57,6 +57,8 @@ def webui_chat_backend_mode():
     if raw == "api_server":
         return "api_server"
     return "legacy"
+def webui_gateway_chat_enabled():
+    return webui_chat_backend_mode() == "api_server"
 def _gateway_base_url():
     return os.environ.get(_WEBUI_GATEWAY_BASE_URL_ENV, "http://127.0.0.1:8642")
 def _gateway_api_key():
@@ -69,45 +71,75 @@ def _run_gateway_chat_streaming():
     return None
 '''
 
-server_source = '''\
-from api import gateway_chat
+routes_source = '''\
+from api.gateway_chat import _run_gateway_chat_streaming, webui_gateway_chat_enabled
 
-def handle_chat():
-    return gateway_chat._run_gateway_chat_streaming()
+def handle_post():
+    path = "/api/chat/start"
+    if path == "/api/chat/start":
+        return _handle_chat_start()
+    return None
+
+def _handle_chat_start():
+    return _start_chat_stream()
+
+def _start_chat_stream():
+    if webui_gateway_chat_enabled():
+        worker_target = _run_gateway_chat_streaming
+    else:
+        worker_target = _run_legacy_chat_streaming
+    return worker_target
+
+def _run_legacy_chat_streaming():
+    return None
+'''
+
+server_source = '''\
+from api import gateway_chat, routes
+
+def do_POST():
+    return routes.handle_post()
+
+def warm_gateway():
+    return gateway_chat.webui_gateway_chat_enabled()
 '''
 
 
-def assert_rejected(name: str, source: str, diagnostic: str, tmp: Path) -> None:
+def assert_rejected(name: str, members: dict[str, str], diagnostic: str, tmp: Path) -> None:
     bundle = tmp / f"{name}.tar"
-    archive(bundle, {"server.py": server_source, "api/gateway_chat.py": source})
+    archive(bundle, members)
     result = run(bundle)
     assert result.returncode != 0, result.stdout
     assert diagnostic in result.stderr, result.stderr
 
 
+def members(*, server: str = server_source, routes: str = routes_source, gateway: str = gateway_source) -> dict[str, str]:
+    return {"server.py": server, "api/routes.py": routes, "api/gateway_chat.py": gateway}
+
+
 with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir:
     tmp = Path(tmpdir)
     valid = tmp / "valid.tar"
-    archive(valid, {"server.py": server_source, "api/gateway_chat.py": gateway_source})
+    archive(valid, members())
     result = run(valid)
     assert result.returncode == 0, result.stderr
     assert "PASS" in result.stdout
 
     assert_rejected(
         "missing-api-server-selector",
-        gateway_source.replace('"api_server", ', ""),
+        members(gateway=gateway_source.replace('"api_server", ', "")),
         "api_server backend selector",
         tmp,
     )
     assert_rejected(
         "changed-gateway-base-url",
-        gateway_source.replace("HERMES_WEBUI_GATEWAY_BASE_URL", "HERMES_WEBUI_GATEWAY_URL"),
+        members(gateway=gateway_source.replace("HERMES_WEBUI_GATEWAY_BASE_URL", "HERMES_WEBUI_GATEWAY_URL")),
         "gateway base URL resolution",
         tmp,
     )
     assert_rejected(
         "missing-api-server-key-fallback",
-        gateway_source.replace(' or os.environ.get("API_SERVER_KEY")', ""),
+        members(gateway=gateway_source.replace(' or os.environ.get("API_SERVER_KEY")', "")),
         "API_SERVER_KEY fallback",
         tmp,
     )
@@ -115,24 +147,40 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
     # sever the active api_server branch from the configured transport.
     assert_rejected(
         "api-server-disconnected-from-transport",
-        gateway_source.replace(
+        members(gateway=gateway_source.replace(
             "return _gateway_transport(_gateway_base_url(), _gateway_api_key())",
             "return None",
-        ),
+        )),
         "api_server branch does not reach gateway transport",
+        tmp,
+    )
+    # A benign gateway activation must not substitute for the actual public
+    # chat dispatch. This retains all gateway declarations and route wiring,
+    # but sends do_POST to a direct legacy handler instead of api.routes.
+    direct_legacy_server = server_source.replace(
+        "return routes.handle_post()",
+        "return _legacy_direct_chat()",
+    ) + '''\
+def _legacy_direct_chat():
+    return None
+'''
+    assert_rejected(
+        "public-dispatch-direct-legacy",
+        members(server=direct_legacy_server),
+        "server public chat dispatch does not reach api.routes chat handler",
         tmp,
     )
 
     missing = tmp / "missing-gateway.tar"
-    archive(missing, {"server.py": "pass\n"})
+    archive(missing, {"server.py": "pass\n", "api/routes.py": "pass\n"})
     result = run(missing)
     assert result.returncode != 0
     assert "api/gateway_chat.py" in result.stderr
 
     broken = tmp / "broken-gateway.tar"
-    archive(broken, {"server.py": "pass\n", "api/gateway_chat.py": "def broken(:\n"})
+    archive(broken, {"server.py": "pass\n", "api/routes.py": "pass\n", "api/gateway_chat.py": "def broken(:\n"})
     result = run(broken)
     assert result.returncode != 0
     assert "compile" in result.stderr
 
-print("roy-webui-api-server-archive-contract: PASS positive=1 negative=6")
+print("roy-webui-api-server-archive-contract: PASS positive=1 negative=7")
