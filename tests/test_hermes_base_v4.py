@@ -62,7 +62,8 @@ class HermesBaseV4ContractTests(unittest.TestCase):
                     target[field] = "unapproved"
                 result = self.validator(mutant)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("hermes_base_v4_unknown_authority_key", result.stdout)
+                expected = f"hermes_base_v4_unknown_authority_key: {field}"
+                self.assertEqual(expected, result.stdout.strip())
 
     def test_builder_rejects_arbitrary_archived_dockerfile_before_buildx(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -84,7 +85,7 @@ class HermesBaseV4ContractTests(unittest.TestCase):
     def test_builder_accepts_approved_dockerfile_path_before_later_gates(self):
         with tempfile.TemporaryDirectory() as directory:
             fake_git = Path(directory) / "git"
-            fake_git.write_text("#!/bin/sh\nif [ \"$3\" = status ]; then exit 0; fi\nexec /usr/bin/git \"$@\"\n", encoding="utf-8")
+            fake_git.write_text("#!/bin/sh\nfor arg in \"$@\"; do [ \"$arg\" = status ] && exit 0; done\nexec /usr/bin/git \"$@\"\n", encoding="utf-8")
             fake_git.chmod(0o755)
             result = subprocess.run(
                 [str(BUILDER_PATH), "--execute-build", "--agent-source", f"{directory}/missing-agent-source", "--file", "Dockerfile", "--archive", f"{directory}/image.oci", "--receipt", f"{directory}/receipt.json"],
