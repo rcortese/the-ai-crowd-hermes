@@ -55,6 +55,7 @@ required_files = [
     'ops/manifests/README.md',
     'ops/manifests/moss-capabilities.example.json',
     'ops/manifests/base-images.lock.json',
+    'ops/manifests/protected-hermes-a2a-base.lock.json',
     'ops/policies/private-overlays.md',
     'ops/policies/capability-policy.md',
     'ops/policies/mount-policy.md',

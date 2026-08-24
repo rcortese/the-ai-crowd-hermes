@@ -8,8 +8,12 @@
   },
   "persona_consumers": [
     "moss",
-    "denholm"
+    "jen",
+    "denholm",
+    "richmond",
+    "roy",
+    "the-elders"
   ],
-  "a2a_transport": "Approved Hermes 74 source contains the fixed safe five-tool Moss-to-Denholm A2A transport. Stack consumes that protected base directly; it adds no runtime overlay, tool patch, topology, port, secret, or product-configuration change.",
-  "consumption": "ops/scripts/build-persona-base-candidate.sh resolves Moss and Denholm from this lock, verifies the local tag resolves to image_id, and labels their source-bound candidates with the protected base ID and source revision."
+  "a2a_transport": "Approved Hermes 74 source contains the fixed safe five-tool Moss-to-Denholm A2A transport. Every Stack persona consumes that protected base directly; it adds no runtime overlay, tool patch, topology, port, secret, or product-configuration change.",
+  "consumption": "ops/scripts/build-persona-base-candidate.sh resolves every persona from this lock, verifies the local tag resolves to image_id, and labels each source-bound candidate with the protected base ID and source revision."
 }

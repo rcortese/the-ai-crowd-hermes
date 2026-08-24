@@ -29,7 +29,10 @@ class ProtectedHermesA2ABaseLockTests(unittest.TestCase):
             "image_id": APPROVED_IMAGE_ID,
             "source_revision": APPROVED_SOURCE,
         })
-        self.assertEqual(lock["persona_consumers"], ["moss", "denholm"])
+        self.assertEqual(
+            lock["persona_consumers"],
+            ["moss", "jen", "denholm", "richmond", "roy", "the-elders"],
+        )
         self.assertIn("five-tool", lock["a2a_transport"])
         self.assertIn("no runtime overlay", lock["a2a_transport"])
 
@@ -39,13 +42,22 @@ class ProtectedHermesA2ABaseLockTests(unittest.TestCase):
         )
         self.assertEqual(valid.stdout.strip(), "protected_a2a_base_lock_valid")
 
-    def test_active_persona_builder_consumes_the_protected_lock_for_moss_and_denholm(self) -> None:
+    def test_active_persona_builder_consumes_the_protected_lock_for_every_persona(self) -> None:
         source = BUILDER.read_text(encoding="utf-8")
+        personas = ("moss", "jen", "denholm", "richmond", "roy", "the-elders")
         self.assertIn("protected-hermes-a2a-base.lock.json", source)
-        self.assertIn("moss|denholm", source)
+        self.assertNotIn("base-images.lock.json", source)
+        for persona in personas:
+            self.assertIn(persona, source)
+            dockerfile = ROOT / "ops/images" / f"Dockerfile.{persona}"
+            self.assertEqual(
+                dockerfile.read_text(encoding="utf-8").splitlines()[:2],
+                ["ARG HERMES_AGENT_IMAGE", "FROM ${HERMES_AGENT_IMAGE}"],
+            )
         self.assertIn(".protected_base.image", source)
         self.assertIn(".protected_base.image_id", source)
         self.assertIn(".protected_base.source_revision", source)
+        self.assertIn("the-ai-crowd.hermes-base-id=$EXPECTED_ID", source)
         self.assertIn("the-ai-crowd.hermes-base-source-revision=$BASE_SOURCE_REVISION", source)
 
     def test_legacy_runtime_overlay_delivery_is_absent_and_topology_is_unchanged(self) -> None:

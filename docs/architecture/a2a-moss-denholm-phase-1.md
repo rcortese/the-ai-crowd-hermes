@@ -25,7 +25,7 @@ Moss ──A2A──> Denholm
 2. **Limits trust and blast radius.** One directional credential, one authenticated identity, one target and one service-scoped rollout are auditable. A mesh would multiply token, retention, routing and cancellation surfaces before a real edge has been proven.
 3. **Separates authority from transport.** Denholm remains required for `product_stewardship`; this candidate does not give Moss product authority and does not alter Roy, Viviane, Rodolfo or Moss boundaries.
 4. **Fails closed at the caller.** The protected Hermes 74 base supplies the approved fixed five-tool transport for the named Moss→Denholm edge; Stack does not patch it or add a runtime overlay.
-5. **Preserves deployment discipline.** Moss and Denholm consume the same approved protected base through their active persona builder. Image build, selector change, configuration mutation and service recreation remain separate gates.
+5. **Preserves deployment discipline.** All six Stack personas consume the same approved protected base through their active persona builder. Image build, selector change, configuration mutation and service recreation remain separate gates.
 
 ## Future architecture: star, not current state
 
@@ -46,8 +46,8 @@ This drawing is **not** an enabled topology, a trust grant, or a deployment plan
 ## Candidate contents
 
 - `compose.yaml`: preserves only Denholm inbound A2A, the externally managed directional token, and port 9900 on the internal network.
-- `ops/manifests/protected-hermes-a2a-base.lock.json`: binds the approved Hermes 74 image ID and source revision for Moss and Denholm.
-- `ops/scripts/build-persona-base-candidate.sh`: consumes that protected base directly for Moss and Denholm and labels candidate provenance; it does not build an A2A overlay.
+- `ops/manifests/protected-hermes-a2a-base.lock.json`: binds the approved Hermes 74 image ID and source revision for all six Stack persona builders.
+- `ops/scripts/build-persona-base-candidate.sh`: consumes that protected base directly for every Stack persona and labels candidate provenance; it does not build an A2A overlay.
 - `ops/scripts/prepare-a2a-moss-denholm-config.py`: validates and stages the required Moss/Denholm config delta with atomic writes and explicit backups when invoked with `--apply`.
 
 ## Activation gates
