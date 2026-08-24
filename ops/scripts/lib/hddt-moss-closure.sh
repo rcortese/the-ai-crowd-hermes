@@ -8,7 +8,6 @@ hddt_required_source_closure(){
 compose.yaml
 ops/build-inputs/moss-clash-royale-war-bot.sha256
 ops/cron/the-ai-crowd-hddt-retention.cron
-ops/hermes-webui-overrides/moss-title-topic-priority.patch
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
 ops/scripts/build-moss-all-in-one-candidate.sh
@@ -30,18 +29,18 @@ ops/tests/test_hddt_lite_mutations.sh
 ops/tests/test_hddt_moss.sh
 ops/tests/test_hddt_moss_recovery.sh
 ops/tests/test_hddt_mutations.sh
+ops/tests/test_moss_candidate_build_contract.py
 ops/tests/test_moss_candidate_build_contract.sh
 ops/tests/test_moss_candidate_smoke_contract.sh
 ops/tests/test_moss_deploy_decoupling.sh
 ops/tests/test_moss_release_source_closure.sh
 ops/tests/test_moss_supervisor_api_key_contract.sh
-ops/tests/test_moss_title_topic_contract.sh
 ops/tests/test_package_a.sh
 ops/tests/test_runner_completeness.sh
 ops/tests/test_validate_moss_release_binding.sh
 tests/smoke-deploy.sh
 REQUIRED_CLOSURE_PATHS
- ((${#expected[@]} == 35)) || return 65
+ ((${#expected[@]} == 34)) || return 65
  cmp -s <(printf '%s\n' "${expected[@]}") <(LC_ALL=C sort "$manifest") || return 65
 }
 hddt_source_closure(){

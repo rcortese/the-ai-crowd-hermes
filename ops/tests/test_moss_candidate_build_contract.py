@@ -17,6 +17,33 @@ assert entries[0].endswith("  package.json")
 assert entries[1].endswith("  package-lock.json")
 assert "COPY --from=clash_royale_build_input package.json" in dockerfile
 assert "COPY agents/private/moss/projects/clash-royale-war-bot" not in dockerfile
+assert "ARG HERMES_WEBUI_REV=6fdbedb5217da42fc3a1af85c033f52a2176daee" in dockerfile
+assert 'git checkout --detach "${HERMES_WEBUI_REV}"' in dockerfile
+assert 'test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}"' in dockerfile
+assert 'test -z "$(git status --porcelain)"' in dockerfile
+for legacy_patch in (
+    "moss-agent-health-auth.patch",
+    "moss-profile-selector-order.patch",
+    "moss-remote-proxy-routing.patch",
+    "moss-service-session-launch.patch",
+    "moss-terminal-state-false-no-response.patch",
+    "moss-title-topic-priority.patch",
+):
+    assert legacy_patch not in dockerfile
+    assert not (root / "ops/hermes-webui-overrides" / legacy_patch).exists()
+for target_native_test in (
+    "tests/test_agent_health_remote.py",
+    "tests/test_issue716_agent_heartbeat.py",
+    "tests/test_kanban_bridge.py",
+    "tests/test_remote_cron_proxy_guard.py",
+    "tests/test_webui_gateway_chat_backend.py",
+    "tests/test_stage364_opus_live_sse_event_id.py",
+    "tests/test_issue5141_terminal_failure_transcript_evaluator.py",
+    "tests/test_session_channel_option_x.py",
+):
+    assert target_native_test in dockerfile
+assert "tests/test_profile_proxy_jen.py" not in dockerfile
+assert "tests/test_service_session_launch.py" not in dockerfile
 assert 'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"' in helper
 assert 'ROOT="$(git rev-parse --show-toplevel)"' not in helper
 assert 'BASE_IMAGE="${MOSS_BASE_IMAGE:-}"' in helper

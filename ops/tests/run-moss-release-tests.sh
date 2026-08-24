@@ -16,7 +16,6 @@ dispatch roy-webui-api-server /opt/hermes/.venv/bin/python ops/tests/test_roy_we
 dispatch deploy-decoupling bash ops/tests/test_moss_deploy_decoupling.sh "$root"
 dispatch smoke-contract bash ops/tests/test_moss_candidate_smoke_contract.sh "$root"
 dispatch supervisor-api-key bash ops/tests/test_moss_supervisor_api_key_contract.sh "$root"
-dispatch title-topic bash ops/tests/test_moss_title_topic_contract.sh "$root"
 dispatch binding bash ops/tests/test_validate_moss_release_binding.sh
 dispatch closure bash ops/tests/test_moss_release_source_closure.sh
 dispatch bootstrap bash ops/tests/test_bootstrap_hddt_moss_root.sh
@@ -29,4 +28,4 @@ dispatch oracles bash ops/tests/test_hddt_moss.sh oracles
 dispatch compose-rollback bash ops/tests/test_hddt_moss.sh compose-rollback
 dispatch adapter bash ops/tests/test_hddt_adapter.sh
 dispatch mutations bash ops/tests/test_hddt_mutations.sh
-printf '%s\n' 'moss-release-tests: PASS suites=package-a,build,roy-all-in-one,roy-webui-api-server,deploy-decoupling,smoke-contract,supervisor-api-key,title-topic,binding,closure,bootstrap,hddt,recovery,cas,signals,control,oracles,compose-rollback,adapter,mutations T01-T87'
+printf '%s\n' 'moss-release-tests: PASS suites=package-a,build,roy-all-in-one,roy-webui-api-server,deploy-decoupling,smoke-contract,supervisor-api-key,binding,closure,bootstrap,hddt,recovery,cas,signals,control,oracles,compose-rollback,adapter,mutations T01-T87'
