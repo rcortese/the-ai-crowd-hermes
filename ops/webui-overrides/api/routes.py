@@ -14809,14 +14809,7 @@ def _start_chat_stream_for_session(
             active_profile_name = "default"
     gateway_profile_proxy = profile_proxy_for(active_profile_name, cfg)
     backend_is_gateway = bool(gateway_profile_proxy) or webui_gateway_chat_enabled(cfg)
-    # Keep the enabled-mode guard syntactically direct: the archive verifier
-    # proves that its true arm alone selects the gateway runner.  Profile proxy
-    # remains gateway-owned as a fallback when the global gateway mode is off.
-    worker_target = (
-        _run_gateway_chat_streaming
-        if webui_gateway_chat_enabled(cfg)
-        else _run_gateway_chat_streaming if gateway_profile_proxy else _run_agent_streaming
-    )
+    worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming
     worker_kwargs = {"model_provider": model_provider}
     if gateway_profile_proxy:
         worker_kwargs["gateway_config"] = gateway_profile_proxy

@@ -251,18 +251,20 @@ def expression_uses_resolver(node: ast.AST, resolver: str, state: dict[str, ast.
             or bool(roots and expr_depends_on(node, roots, state)))
 
 
-def direct_enabled_gateway_selection(target: ast.AST | None, state: dict[str, ast.AST]) -> bool:
-    """Accept only ``enabled(...) ? gateway_runner : ...`` at a Thread sink.
+def enabled_gateway_selection(target: ast.AST | None, state: dict[str, ast.AST]) -> bool:
+    """Prove a Thread selects the gateway runner under real gateway enablement.
 
-    A resolver mention is not enough: the true arm must be the gateway runner,
-    and the condition itself must be the positive resolver call.  In particular,
-    this rejects ``not enabled(...)`` and aliases that hide an inverted guard.
+    The archived WebUI computes ``backend_is_gateway`` before choosing its
+    worker: a configured profile proxy is gateway-owned too, while
+    ``webui_gateway_chat_enabled(cfg)`` is the ordinary explicit-mode path.
+    Resolve that local binding at the Thread sink, require the gateway runner
+    in its true arm, and require that the condition causally depends on the
+    real enablement resolver.  This rejects inverted or decoy selections.
     """
     selected = resolved_expression(target, state) if target is not None else None
     return (isinstance(selected, ast.IfExp)
             and name(selected.body, "_run_gateway_chat_streaming")
-            and isinstance(selected.test, ast.Call)
-            and call_name(selected.test) == "webui_gateway_chat_enabled")
+            and expression_uses_resolver(selected.test, "webui_gateway_chat_enabled", state))
 
 
 def route_thread_sink_verdict(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[bool]:
@@ -273,7 +275,7 @@ def route_thread_sink_verdict(function: ast.FunctionDef | ast.AsyncFunctionDef) 
             if attribute_name(call.func) != "threading.Thread":
                 continue
             target = next((keyword.value for keyword in call.keywords if keyword.arg == "target"), None)
-            verdicts.append(direct_enabled_gateway_selection(target, state))
+            verdicts.append(enabled_gateway_selection(target, state))
     return verdicts
 
 
