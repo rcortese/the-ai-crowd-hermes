@@ -134,19 +134,19 @@ def _gateway_api_key(environ: dict[str, str] | None = None):
     ).strip()
 def _gateway_transport(base_url, api_key):
     return (base_url, api_key)
-def _run_gateway_chat_streaming():
+def _run_gateway_chat_streaming(config_data):
     if webui_chat_backend_mode() == "api_server":
-        return _gateway_transport(_gateway_base_url(), _gateway_api_key())
+        return _gateway_transport(_gateway_base_url(config_data), _gateway_api_key())
     return None
 '''
 
 routes_source = '''\
 from api.gateway_chat import _run_gateway_chat_streaming, webui_gateway_chat_enabled
 
-def handle_post():
+def handle_post(config_data):
     path = "/api/chat/start"
     if path == "/api/chat/start" and webui_gateway_chat_enabled():
-        return _run_gateway_chat_streaming()
+        return _run_gateway_chat_streaming(config_data)
     if path == "/api/chat/start":
         return _run_legacy_chat_streaming()
     return None
@@ -330,22 +330,22 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
     assert_rejected(
         "api-server-disconnected-from-transport",
         members(gateway=gateway_source.replace(
-            "return _gateway_transport(_gateway_base_url(), _gateway_api_key())",
+            "return _gateway_transport(_gateway_base_url(config_data), _gateway_api_key())",
             "return None",
         )),
-        "api_server branch does not directly call gateway transport",
+        "api_server transport must call _gateway_base_url with exactly one route/handler configuration argument",
         tmp,
     )
     # A configured transport hidden in an uncalled nested gateway helper is
     # not the active api_server control-flow path.
     nested_gateway_transport = gateway_source.replace(
-        "    if webui_chat_backend_mode() == \"api_server\":\n        return _gateway_transport(_gateway_base_url(), _gateway_api_key())\n    return None",
-        "    def nested_api_server_transport():\n        if webui_chat_backend_mode() == \"api_server\":\n            return _gateway_transport(_gateway_base_url(), _gateway_api_key())\n    return None",
+        "    if webui_chat_backend_mode() == \"api_server\":\n        return _gateway_transport(_gateway_base_url(config_data), _gateway_api_key())\n    return None",
+        "    def nested_api_server_transport():\n        if webui_chat_backend_mode() == \"api_server\":\n            return _gateway_transport(_gateway_base_url(config_data), _gateway_api_key())\n    return None",
     )
     assert_rejected(
         "api-server-nested-gateway-helper",
         members(gateway=nested_gateway_transport),
-        "api_server branch does not directly call gateway transport",
+        "api_server transport must call _gateway_base_url with exactly one route/handler configuration argument",
         tmp,
     )
     # A literal HTTPServer do_POST entrypoint is mandatory; legacy aliases
@@ -468,13 +468,40 @@ def _run_legacy_chat_streaming():
     # A transport hidden in another branch must not satisfy the api_server
     # branch: that branch itself must consume both configured gateway helpers.
     api_server_legacy_with_else_transport = gateway_source.replace(
-        "return _gateway_transport(_gateway_base_url(), _gateway_api_key())\n    return None",
-        "return None\n    return _gateway_transport(_gateway_base_url(), _gateway_api_key())",
+        "return _gateway_transport(_gateway_base_url(config_data), _gateway_api_key())\n    return None",
+        "return None\n    return _gateway_transport(_gateway_base_url(config_data), _gateway_api_key())",
     )
     assert_rejected(
         "api-server-legacy-else-transport",
         members(gateway=api_server_legacy_with_else_transport),
-        "api_server branch does not directly call gateway transport consuming configured URL/key helpers",
+        "api_server transport must call _gateway_base_url with exactly one route/handler configuration argument",
+        tmp,
+    )
+
+    # The active api_server transport must carry the handler's configuration
+    # through the gateway runner; a required resolver declaration alone is not
+    # evidence that the configured value reaches the transport.
+    assert_rejected(
+        "api-server-zero-argument-base-url-call",
+        members(gateway=gateway_source.replace(
+            "_gateway_base_url(config_data)",
+            "_gateway_base_url()",
+            1,
+        )),
+        "api_server transport must call _gateway_base_url with exactly one route/handler configuration argument",
+        tmp,
+    )
+    assert_rejected(
+        "api-server-unrelated-base-url-config",
+        members(gateway=gateway_source.replace(
+            "def _run_gateway_chat_streaming(config_data):",
+            "def _run_gateway_chat_streaming(config_data):\n    unrelated_config = {}",
+        ).replace(
+            "_gateway_base_url(config_data)",
+            "_gateway_base_url(unrelated_config)",
+            1,
+        )),
+        "api_server transport must call _gateway_base_url with exactly one route/handler configuration argument",
         tmp,
     )
 
@@ -490,4 +517,4 @@ def _run_legacy_chat_streaming():
     assert result.returncode != 0
     assert "compile" in result.stderr
 
-print("roy-webui-api-server-archive-contract: PASS positive=2 negative=23")
+print("roy-webui-api-server-archive-contract: PASS positive=2 negative=25")
