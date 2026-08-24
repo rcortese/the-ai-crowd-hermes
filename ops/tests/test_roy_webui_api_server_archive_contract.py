@@ -2,7 +2,9 @@
 """Causal source-archive contract for Roy's WebUI api_server backend."""
 from __future__ import annotations
 
+import ast
 import io
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -44,6 +46,58 @@ except AssertionError:
     pass
 else:
     raise AssertionError("Roy supervisor contract accepted missing API_SERVER_KEY mapping")
+
+
+def local_gateway_api_key(gateway: str, environ: dict[str, str]) -> str:
+    """Execute only the versioned archive resolver against a supplied env."""
+    module = ast.parse(gateway, filename="api/gateway_chat.py")
+    body = [
+        node
+        for node in module.body
+        if (
+            isinstance(node, (ast.Assign, ast.AnnAssign))
+            and any(
+                isinstance(target, ast.Name) and target.id == "_WEBUI_GATEWAY_API_KEY_ENV"
+                for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+            )
+        )
+        or isinstance(node, ast.FunctionDef) and node.name == "_gateway_api_key"
+    ]
+    assert len(body) == 2, "versioned gateway key resolver is unavailable"
+    namespace = {"os": os}
+    exec(compile(ast.Module(body=body, type_ignores=[]), "api/gateway_chat.py", "exec"), namespace)
+    return namespace["_gateway_api_key"](environ)
+
+
+def require_versioned_archive_key_contract(gateway: str) -> None:
+    # The archive must not silently recover a generic service credential.  The
+    # deployment boundary supplies that value only through supervisor mapping.
+    assert local_gateway_api_key(gateway, {"API_SERVER_KEY": "outer-only"}) == ""
+    assert local_gateway_api_key(
+        gateway,
+        {
+            "HERMES_WEBUI_GATEWAY_API_KEY": "webui-specific",
+            "API_SERVER_KEY": "outer-only",
+        },
+    ) == "webui-specific"
+
+
+versioned_gateway_source = (root / "ops/webui-overrides/api/gateway_chat.py").read_text(encoding="utf-8")
+require_versioned_archive_key_contract(versioned_gateway_source)
+# Causal source mutation: restoring the legacy archive fallback must make the
+# versioned resolver contract RED even while supervisor mapping remains intact.
+fallback_mutant = versioned_gateway_source.replace(
+    "source.get(_WEBUI_GATEWAY_API_KEY_ENV)\n        or \"\"",
+    "source.get(_WEBUI_GATEWAY_API_KEY_ENV)\n        or source.get(\"API_SERVER_KEY\")\n        or \"\"",
+    1,
+)
+assert fallback_mutant != versioned_gateway_source
+try:
+    require_versioned_archive_key_contract(fallback_mutant)
+except AssertionError:
+    pass
+else:
+    raise AssertionError("versioned archive contract accepted API_SERVER_KEY fallback")
 
 
 def archive(path: Path, members: dict[str, str]) -> None:
@@ -406,4 +460,4 @@ def _run_legacy_chat_streaming():
     assert result.returncode != 0
     assert "compile" in result.stderr
 
-print("roy-webui-api-server-archive-contract: PASS positive=1 negative=20")
+print("roy-webui-api-server-archive-contract: PASS positive=2 negative=21")
