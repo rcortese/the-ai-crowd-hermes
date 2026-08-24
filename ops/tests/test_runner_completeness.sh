@@ -3,7 +3,7 @@ set -Eeuo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 runner=$root/ops/tests/run-moss-release-tests.sh
 manifest=$root/ops/tests/package_a_required_suites.txt
-independent_required=(closure compose-rollback roy-all-in-one)
+independent_required=(closure compose-rollback roy-all-in-one roy-webui-api-server)
 fail(){ printf 'runner-completeness: RED %s\n' "$*" >&2; exit 1; }
 [[ -x $runner ]] || fail 'runner is not executable'
 [[ -f $manifest ]] || fail 'required suite manifest missing'
@@ -39,10 +39,11 @@ fi
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/hddt-runner-oracle.XXXXXX"); trap 'rm -rf "$tmp"' EXIT
 check_candidate "$runner" canonical "$tmp/canonical.trace" "$manifest" || fail "canonical runner incomplete"
 printf '%s\n' 'runner-completeness: canonical PASS'
-for mutant in build roy-all-in-one deploy-decoupling closure compose-rollback; do
+for mutant in build roy-all-in-one roy-webui-api-server deploy-decoupling closure compose-rollback; do
  candidate="$tmp/runner-$mutant.sh"; candidate_manifest=$manifest; cp "$runner" "$candidate"
  token='dispatch build bash ops/tests/test_moss_candidate_build_contract.sh "$root"'
  if [[ $mutant == roy-all-in-one ]]; then token='dispatch roy-all-in-one /opt/hermes/.venv/bin/python ops/tests/test_roy_all_in_one_candidate_contract.py "$root"'; fi
+ if [[ $mutant == roy-webui-api-server ]]; then token='dispatch roy-webui-api-server /opt/hermes/.venv/bin/python ops/tests/test_roy_webui_api_server_archive_contract.py "$root"'; fi
  if [[ $mutant == deploy-decoupling ]]; then token='dispatch deploy-decoupling bash ops/tests/test_moss_deploy_decoupling.sh "$root"'; fi
  if [[ $mutant == closure ]]; then
   token='dispatch closure bash ops/tests/test_moss_release_source_closure.sh'
@@ -59,4 +60,4 @@ for mutant in build roy-all-in-one deploy-decoupling closure compose-rollback; d
  grep -Fq "missing suite: $mutant" "$tmp/$mutant.err" || { cat "$tmp/$mutant.err" >&2; fail "$mutant omission did not fail by exact suite name"; }
  printf 'runner-completeness: omission RED suite=%s\n' "$mutant"
 done
-printf '%s\n' 'runner-completeness: PASS canonical=trace omission-mutants=5 independent=closure,compose-rollback,roy-all-in-one'
+printf '%s\n' 'runner-completeness: PASS canonical=trace omission-mutants=6 independent=closure,compose-rollback,roy-all-in-one,roy-webui-api-server'

@@ -24,19 +24,22 @@ RUN apt-get update \
 
 # Clone only to ask Git for the exact immutable object, then verify the archive
 # before extraction. The finished image deliberately contains no WebUI .git.
+COPY ops/scripts/verify-hermes-webui-api-server-contract.py /tmp/verify-hermes-webui-api-server-contract.py
 RUN git clone --no-checkout "${HERMES_WEBUI_REPO}" /tmp/hermes-webui-source \
     && cd /tmp/hermes-webui-source \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
     && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
     && git archive --format=tar "${HERMES_WEBUI_REV}" > /tmp/hermes-webui.tar \
     && printf '%s  %s\n' "${HERMES_WEBUI_ARCHIVE_SHA256}" /tmp/hermes-webui.tar | sha256sum -c - \
+    && python3 /tmp/verify-hermes-webui-api-server-contract.py /tmp/hermes-webui.tar \
     && mkdir -p /opt/hermes-webui \
     && tar -xf /tmp/hermes-webui.tar -C /opt/hermes-webui \
     && test -f /opt/hermes-webui/server.py \
+    && test -f /opt/hermes-webui/api/gateway_chat.py \
     && test ! -e /opt/hermes-webui/.git \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -r /opt/hermes-webui/requirements.txt \
-    && /opt/hermes/.venv/bin/python3 -m py_compile /opt/hermes-webui/server.py \
-    && rm -rf /tmp/hermes-webui-source /tmp/hermes-webui.tar \
+    && /opt/hermes/.venv/bin/python3 -m py_compile /opt/hermes-webui/server.py /opt/hermes-webui/api/gateway_chat.py \
+    && rm -rf /tmp/hermes-webui-source /tmp/hermes-webui.tar /tmp/verify-hermes-webui-api-server-contract.py \
     && chown -R 99:100 /opt/hermes-webui
 
 # Roy is intentionally single-venv: WebUI uses the Hermes runtime Python.

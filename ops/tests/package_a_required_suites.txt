@@ -1,5 +1,6 @@
 build
 roy-all-in-one
+roy-webui-api-server
 deploy-decoupling
 smoke-contract
 supervisor-api-key

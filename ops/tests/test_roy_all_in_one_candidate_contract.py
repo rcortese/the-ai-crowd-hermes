@@ -23,6 +23,9 @@ assert 'test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}"' in dockerfile
 assert 'git archive --format=tar "${HERMES_WEBUI_REV}"' in dockerfile
 assert "sha256sum -c -" in dockerfile
 assert "test -f /opt/hermes-webui/server.py" in dockerfile
+assert "test -f /opt/hermes-webui/api/gateway_chat.py" in dockerfile
+assert "python3 /tmp/verify-hermes-webui-api-server-contract.py /tmp/hermes-webui.tar" in dockerfile
+assert "/opt/hermes-webui/server.py /opt/hermes-webui/api/gateway_chat.py" in dockerfile
 assert "test ! -e /opt/hermes-webui/.git" in dockerfile
 assert "test ! -e /opt/hermes-webui/venv" in dockerfile
 assert "COPY ops/images/roy-all-in-one.supervisor.conf /etc/supervisor/conf.d/roy-all-in-one.conf" in dockerfile
