@@ -12,7 +12,6 @@ REQUIRED = ("server.py", "api/routes.py", "api/gateway_chat.py")
 BACKEND_ENV = "HERMES_WEBUI_CHAT_BACKEND"
 GATEWAY_BASE_URL_ENV = "HERMES_WEBUI_GATEWAY_BASE_URL"
 GATEWAY_API_KEY_ENV = "HERMES_WEBUI_GATEWAY_API_KEY"
-API_SERVER_KEY_ENV = "API_SERVER_KEY"
 DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:8642"
 
 
@@ -237,16 +236,14 @@ def verify_gateway_contract(module: ast.Module) -> None:
         fail("gateway API key resolution missing HERMES_WEBUI_GATEWAY_API_KEY binding")
     api_key = function_return(module, "_gateway_api_key")
     expected_key_env = ast.Name(id="_WEBUI_GATEWAY_API_KEY_ENV")
-    expected_fallback = ast.Constant(value=API_SERVER_KEY_ENV)
     values = flatten_or(api_key) if api_key is not None else []
     if not (
-        len(values) == 3
+        len(values) == 2
         and is_os_environ_get(values[0], expected_key_env)
-        and is_os_environ_get(values[1], expected_fallback)
-        and isinstance(values[2], ast.Constant)
-        and values[2].value == ""
+        and isinstance(values[1], ast.Constant)
+        and values[1].value == ""
     ):
-        fail("API_SERVER_KEY fallback missing from gateway API key resolution")
+        fail("gateway API key resolution must use only HERMES_WEBUI_GATEWAY_API_KEY with an empty fallback")
 
 
 def call_name(node: ast.Call) -> str | None:
