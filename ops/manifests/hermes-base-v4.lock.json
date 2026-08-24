@@ -1,0 +1,17 @@
+{
+  "schema": "the-ai-crowd.hermes-base-contract.v4",
+  "status": "source-only-unbuilt",
+  "source": {
+    "tag": "v2026.8.19",
+    "commit": "fcbd1076a93841fa88855acce810e342a5b78101",
+    "tree": "cc9f987a403a1d02b8b17cc527a57b54402e864b"
+  },
+  "requested_platform": "linux/amd64",
+  "oci_index_digest": "sha256:3811ed13da874fba2ac99b6d492db9a203d34cb6dccf90d886948c00d0ccec09",
+  "resolved_build_identity": {
+    "platform_manifest_digest": null,
+    "config_digest": null,
+    "local_image_id": null
+  },
+  "build_gate": "A real archive-only build must prove every resolved_build_identity value in a receipt before any consumer may use this contract. OCI-index digests are not platform-manifest, config, or local image IDs."
+}
