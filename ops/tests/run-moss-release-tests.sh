@@ -12,6 +12,7 @@ dispatch() {
 if [[ ${HDDT_RUNNER_SELF_CHECK:-0} == 1 ]]; then exec bash ops/tests/test_runner_completeness.sh --self-check; fi
 dispatch build bash ops/tests/test_moss_candidate_build_contract.sh "$root"
 dispatch roy-all-in-one /opt/hermes/.venv/bin/python ops/tests/test_roy_all_in_one_candidate_contract.py "$root"
+dispatch roy-webui-api-server /opt/hermes/.venv/bin/python ops/tests/test_roy_webui_api_server_archive_contract.py "$root"
 dispatch deploy-decoupling bash ops/tests/test_moss_deploy_decoupling.sh "$root"
 dispatch smoke-contract bash ops/tests/test_moss_candidate_smoke_contract.sh "$root"
 dispatch supervisor-api-key bash ops/tests/test_moss_supervisor_api_key_contract.sh "$root"
@@ -28,4 +29,4 @@ dispatch oracles bash ops/tests/test_hddt_moss.sh oracles
 dispatch compose-rollback bash ops/tests/test_hddt_moss.sh compose-rollback
 dispatch adapter bash ops/tests/test_hddt_adapter.sh
 dispatch mutations bash ops/tests/test_hddt_mutations.sh
-printf '%s\n' 'moss-release-tests: PASS suites=package-a,build,roy-all-in-one,deploy-decoupling,smoke-contract,supervisor-api-key,title-topic,binding,closure,bootstrap,hddt,recovery,cas,signals,control,oracles,compose-rollback,adapter,mutations T01-T87'
+printf '%s\n' 'moss-release-tests: PASS suites=package-a,build,roy-all-in-one,roy-webui-api-server,deploy-decoupling,smoke-contract,supervisor-api-key,title-topic,binding,closure,bootstrap,hddt,recovery,cas,signals,control,oracles,compose-rollback,adapter,mutations T01-T87'
