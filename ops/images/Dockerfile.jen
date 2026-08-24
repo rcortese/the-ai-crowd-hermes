@@ -85,7 +85,7 @@ USER root
 # The AI Crowd image owns the Hermes process topology for Jen:
 # gateway in the foreground, dashboard as the entrypoint-managed side process.
 ENV HERMES_DASHBOARD=1 \
-    HERMES_DASHBOARD_HOST=0.0.0.0 \
+    HERMES_DASHBOARD_HOST=127.0.0.1 \
     HERMES_DASHBOARD_PORT=9121 \
     HERMES_DASHBOARD_INSECURE=true \
     HERMES_DASHBOARD_TUI=1
