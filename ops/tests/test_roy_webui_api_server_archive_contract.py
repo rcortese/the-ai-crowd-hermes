@@ -59,8 +59,15 @@ def webui_chat_backend_mode():
     return "legacy"
 def webui_gateway_chat_enabled():
     return webui_chat_backend_mode() == "api_server"
-def _gateway_base_url():
-    return os.environ.get(_WEBUI_GATEWAY_BASE_URL_ENV, "http://127.0.0.1:8642")
+def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None):
+    source = os.environ if environ is None else environ
+    cfg = config_data if isinstance(config_data, dict) else {}
+    raw = str(
+        source.get(_WEBUI_GATEWAY_BASE_URL_ENV)
+        or cfg.get("webui_gateway_base_url")
+        or "http://127.0.0.1:8642"
+    ).strip()
+    return raw.rstrip("/") or "http://127.0.0.1:8642"
 def _gateway_api_key():
     return os.environ.get(_WEBUI_GATEWAY_API_KEY_ENV) or os.environ.get("API_SERVER_KEY") or ""
 def _gateway_transport(base_url, api_key):
@@ -122,6 +129,58 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tmpdir
     result = run(valid)
     assert result.returncode == 0, result.stderr
     assert "PASS" in result.stdout
+
+    # This resolver is the trusted archived-WebUI shape: an explicit
+    # environment override wins over the static WebUI config, then both paths
+    # retain the deployed fallback and trailing-slash normalization.
+    assert_rejected(
+        "gateway-base-url-without-environment-override",
+        members(gateway=gateway_source.replace(
+            "source.get(_WEBUI_GATEWAY_BASE_URL_ENV)\n        or ",
+            "None\n        or ",
+        )),
+        "gateway base URL resolution",
+        tmp,
+    )
+    assert_rejected(
+        "gateway-base-url-without-config-key-path",
+        members(gateway=gateway_source.replace(
+            'cfg.get("webui_gateway_base_url")',
+            'cfg.get("gateway_base_url")',
+        )),
+        "gateway base URL resolution",
+        tmp,
+    )
+    assert_rejected(
+        "gateway-base-url-without-fallback",
+        members(gateway=gateway_source.replace(
+            '        or "http://127.0.0.1:8642"\n    ).strip()',
+            "    ).strip()",
+        )),
+        "gateway base URL resolution",
+        tmp,
+    )
+    assert_rejected(
+        "gateway-base-url-without-normalization",
+        members(gateway=gateway_source.replace(
+            'return raw.rstrip("/") or "http://127.0.0.1:8642"',
+            "return raw",
+        )),
+        "gateway base URL resolution",
+        tmp,
+    )
+    assert_rejected(
+        "gateway-base-url-allows-caller-url",
+        members(gateway=gateway_source.replace(
+            "def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None):",
+            "def _gateway_base_url(config_data=None, environ: dict[str, str] | None = None, user_base_url=None):",
+        ).replace(
+            "source.get(_WEBUI_GATEWAY_BASE_URL_ENV)",
+            "user_base_url or source.get(_WEBUI_GATEWAY_BASE_URL_ENV)",
+        )),
+        "gateway base URL resolution",
+        tmp,
+    )
 
     assert_rejected(
         "missing-api-server-selector",
@@ -306,4 +365,4 @@ def _run_legacy_chat_streaming():
     assert result.returncode != 0
     assert "compile" in result.stderr
 
-print("roy-webui-api-server-archive-contract: PASS positive=1 negative=14")
+print("roy-webui-api-server-archive-contract: PASS positive=1 negative=19")
