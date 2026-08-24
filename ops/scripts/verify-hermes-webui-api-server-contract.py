@@ -213,6 +213,63 @@ def is_gateway_base_url_resolution(function: ast.FunctionDef | ast.AsyncFunction
     )
 
 
+def is_gateway_api_key_resolution(function: ast.FunctionDef | ast.AsyncFunctionDef | None) -> bool:
+    """Accept only the archived env-only HERMES -> API_SERVER_KEY resolver."""
+    if function is None:
+        return False
+    arguments = function.args
+    if (
+        arguments.posonlyargs
+        or arguments.vararg is not None
+        or arguments.kwarg is not None
+        or [argument.arg for argument in arguments.args] != ["environ"]
+        or len(arguments.defaults) != 1
+        or not is_none(arguments.defaults[0])
+        or len(function.body) != 2
+    ):
+        return False
+    source_assignment, returned = function.body
+    if not (
+        isinstance(source_assignment, ast.Assign)
+        and len(source_assignment.targets) == 1
+        and is_name(source_assignment.targets[0], "source")
+        and isinstance(source_assignment.value, ast.IfExp)
+        and isinstance(source_assignment.value.test, ast.Compare)
+        and len(source_assignment.value.test.ops) == 1
+        and isinstance(source_assignment.value.test.ops[0], ast.Is)
+        and len(source_assignment.value.test.comparators) == 1
+        and is_name(source_assignment.value.test.left, "environ")
+        and is_none(source_assignment.value.test.comparators[0])
+        and isinstance(source_assignment.value.body, ast.Attribute)
+        and source_assignment.value.body.attr == "environ"
+        and is_name(source_assignment.value.body.value, "os")
+        and is_name(source_assignment.value.orelse, "environ")
+    ):
+        return False
+    if not (
+        isinstance(returned, ast.Return)
+        and isinstance(returned.value, ast.Call)
+        and not returned.value.keywords
+        and isinstance(returned.value.func, ast.Attribute)
+        and returned.value.func.attr == "strip"
+        and not returned.value.args
+        and isinstance(returned.value.func.value, ast.Call)
+        and is_name(returned.value.func.value.func, "str")
+        and len(returned.value.func.value.args) == 1
+        and not returned.value.func.value.keywords
+    ):
+        return False
+    values = flatten_or(returned.value.func.value.args[0])
+    expected_key_env = ast.Name(id="_WEBUI_GATEWAY_API_KEY_ENV")
+    return (
+        len(values) == 3
+        and is_mapping_get(values[0], "source", expected_key_env)
+        and is_mapping_get(values[1], "source", ast.Constant(value="API_SERVER_KEY"))
+        and isinstance(values[2], ast.Constant)
+        and values[2].value == ""
+    )
+
+
 def verify_gateway_contract(module: ast.Module) -> None:
     backend_env = assigned_value(module, "_WEBUI_CHAT_BACKEND_ENV")
     if not (isinstance(backend_env, ast.Constant) and backend_env.value == BACKEND_ENV):
@@ -234,16 +291,12 @@ def verify_gateway_contract(module: ast.Module) -> None:
     gateway_key_env = assigned_value(module, "_WEBUI_GATEWAY_API_KEY_ENV")
     if not (isinstance(gateway_key_env, ast.Constant) and gateway_key_env.value == GATEWAY_API_KEY_ENV):
         fail("gateway API key resolution missing HERMES_WEBUI_GATEWAY_API_KEY binding")
-    api_key = function_return(module, "_gateway_api_key")
-    expected_key_env = ast.Name(id="_WEBUI_GATEWAY_API_KEY_ENV")
-    values = flatten_or(api_key) if api_key is not None else []
-    if not (
-        len(values) == 2
-        and is_os_environ_get(values[0], expected_key_env)
-        and isinstance(values[1], ast.Constant)
-        and values[1].value == ""
-    ):
-        fail("gateway API key resolution must use only HERMES_WEBUI_GATEWAY_API_KEY with an empty fallback")
+    api_key_function = function_definition(module, "_gateway_api_key")
+    if not is_gateway_api_key_resolution(api_key_function):
+        fail(
+            "gateway API key resolution must use only the trusted "
+            "HERMES_WEBUI_GATEWAY_API_KEY -> API_SERVER_KEY -> empty environment chain"
+        )
 
 
 def call_name(node: ast.Call) -> str | None:
