@@ -36,10 +36,59 @@ assert "ENTRYPOINT [\"/usr/bin/supervisord\"" in dockerfile
 assert "git clone --depth" not in dockerfile
 assert "ARG HERMES_WEBUI_REV=" not in dockerfile
 
-# The deployed Roy Compose contract needs all-in-one WebUI and both gateway
-# surfaces; the healthcheck cannot silently substitute the dashboard port.
-for literal in ("HERMES_WEBUI_PORT: '8787'", "API_SERVER_PORT: '8645'", "curl -fsS http://127.0.0.1:8787/health", "curl -fsS http://127.0.0.1:8645/health"):
-    assert literal in compose
+# The deployed Roy Compose contract needs all-in-one WebUI plus webhook and
+# gateway health surfaces; the healthcheck cannot silently substitute dashboard
+# coverage or omit the webhook endpoint.
+roy_match = re.search(r"^  roy:\n(?P<block>.*?)(?=^  [A-Za-z0-9_-]+:|\Z)", compose, re.MULTILINE | re.DOTALL)
+assert roy_match, "Roy service missing from compose contract"
+roy_compose = roy_match.group("block")
+
+
+def require_roy_compose_contract(roy_service: str) -> None:
+    for literal in (
+        "HERMES_WEBUI_PORT: '8787'",
+        "API_SERVER_PORT: '8645'",
+        "WEBHOOK_ENABLED: 'true'",
+        "WEBHOOK_PORT: '8644'",
+        "- '8644'",
+        "curl -fsS http://127.0.0.1:8787/health",
+        "curl -fsS http://127.0.0.1:8644/health",
+        "curl -fsS http://127.0.0.1:8645/health",
+    ):
+        assert literal in roy_service
+
+
+require_roy_compose_contract(roy_compose)
+# `expose` is internal-only; the webhook must not create a host-published port.
+assert "\n    ports:" not in roy_compose
+
+# Causal mutants prove the runtime inputs and internal projection cannot be
+# deleted while leaving the 8644 health probe behind.
+for runtime_literal in (
+    "WEBHOOK_ENABLED: 'true'",
+    "WEBHOOK_PORT: '8644'",
+    "    - '8644'\n",
+):
+    without_runtime_literal = roy_compose.replace(runtime_literal, "", 1)
+    try:
+        require_roy_compose_contract(without_runtime_literal)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError(
+            f"Roy contract accepted compose without {runtime_literal!r}"
+        )
+
+# This causal mutant proves that deleting the Roy webhook probe is rejected.
+without_webhook_healthcheck = roy_compose.replace(
+    "curl -fsS http://127.0.0.1:8644/health >/dev/null && ", "", 1
+)
+try:
+    require_roy_compose_contract(without_webhook_healthcheck)
+except AssertionError:
+    pass
+else:
+    raise AssertionError("Roy contract accepted compose without 8644 healthcheck")
 for program in ("roy-gateway", "roy-dashboard", "roy-webui"):
     assert f"[program:{program}]" in supervisor
 assert "/opt/hermes-webui/server.py" in supervisor
