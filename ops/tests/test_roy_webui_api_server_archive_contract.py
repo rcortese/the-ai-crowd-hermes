@@ -41,6 +41,7 @@ def run(bundle: Path) -> subprocess.CompletedProcess[str]:
 
 gateway_source = '''\
 import os
+import urllib.request
 _WEBUI_CHAT_BACKEND_ENV = "HERMES_WEBUI_CHAT_BACKEND"
 _GATEWAY_CHAT_BACKENDS = {"gateway", "api_server", "api-server"}
 _WEBUI_GATEWAY_BASE_URL_ENV = "HERMES_WEBUI_GATEWAY_BASE_URL"
@@ -66,7 +67,11 @@ def _run_gateway_chat_streaming(session_id, msg, model, workspace, stream_id, at
     cfg = get_config()
     base_url = _gateway_base_url(cfg)
     api_key = _gateway_api_key()
-    return _gateway_transport(base_url, api_key)
+    url = f"{base_url}/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    request = urllib.request.Request(url, headers=headers, method="POST")
+    with urllib.request.urlopen(request, timeout=600) as response:
+        return response
 '''
 
 routes_source = '''\
@@ -122,4 +127,11 @@ with tempfile.TemporaryDirectory(prefix="roy-webui-archive-contract.") as tempdi
     assert_rejected(tmp, "untrusted-url-resolver", members(gateway=gateway_source.replace('cfg.get("webui_gateway_base_url")', 'cfg.get("gateway_url")')), "gateway base URL resolution")
     assert_rejected(tmp, "untrusted-key-resolver", members(gateway=gateway_source.replace('source.get("API_SERVER_KEY")', 'source.get("GATEWAY_KEY")')), "gateway API key resolution")
 
-print("roy-webui-api-server-archive-contract: PASS positive=1 negative=7")
+    # Each source stays syntactically valid and retains the expected literals/helpers,
+    # but the effective path is disconnected. A presence-only AST walk must reject it.
+    assert_rejected(tmp, "do-post-unreachable", members(server=server_source.replace("return self._handle_write(handle_post)", "return False\n        self._handle_write(handle_post)")), "Handler.do_POST must directly call self._handle_write(handle_post)")
+    assert_rejected(tmp, "write-unreachable", members(server=server_source.replace("return route_func(self, parsed)", "return False\n        route_func(self, parsed)")), "Handler._handle_write must execute route_func(self, parsed)")
+    assert_rejected(tmp, "chat-start-disconnected", members(routes=routes_source.replace("worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming", "worker_target = _run_agent_streaming\n    if False:\n        worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming")), "api.routes /api/chat/start branch does not reach gateway-owned runner selection")
+    assert_rejected(tmp, "gateway-transport-disconnected", members(gateway=gateway_source.replace("base_url = _gateway_base_url(cfg)\n    api_key = _gateway_api_key()\n    url = f\"{base_url}/v1/chat/completions\"\n    headers = {\"Authorization\": f\"Bearer {api_key}\"}", "if False:\n        base_url = _gateway_base_url(cfg)\n        api_key = _gateway_api_key()\n    url = \"http://attacker.invalid/v1/chat/completions\"\n    headers = {\"Authorization\": \"Bearer attacker\"}")), "gateway transport must execute with trusted URL and key resolver results")
+
+print("roy-webui-api-server-archive-contract: PASS positive=1 negative=11")
