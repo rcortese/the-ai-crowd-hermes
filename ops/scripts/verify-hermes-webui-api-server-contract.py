@@ -267,15 +267,20 @@ def enabled_gateway_selection(target: ast.AST | None, state: dict[str, ast.AST])
             and expression_uses_resolver(selected.test, "webui_gateway_chat_enabled", state))
 
 
-def route_thread_sink_verdict(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[bool]:
-    """Return the exact enabled-selection verdict for every reachable Thread."""
-    verdicts: list[bool] = []
+def route_thread_sink_verdict(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tuple[int, int, bool]]:
+    """Return each physical Thread sink and its enabled-selection verdict.
+
+    A single AST call may be reached through multiple local states. Keep every
+    state verdict, but retain the source location so callers can distinguish
+    duplicate analysis of one sink from distinct worker launches.
+    """
+    verdicts: list[tuple[int, int, bool]] = []
     for statement, state in ordered_statement_states(function):
         for call in statement_calls(statement):
             if attribute_name(call.func) != "threading.Thread":
                 continue
             target = next((keyword.value for keyword in call.keywords if keyword.arg == "target"), None)
-            verdicts.append(enabled_gateway_selection(target, state))
+            verdicts.append((call.lineno, call.col_offset, enabled_gateway_selection(target, state)))
     return verdicts
 
 
@@ -316,9 +321,10 @@ def verify_routes(routes: ast.Module) -> None:
         frontier.update(call_name(call) for call in reachable_calls(current) if call_name(call) and call_name(call) not in seen)
     if not sink_verdicts:
         fail("api.routes /api/chat/start branch does not reach gateway-owned runner selection")
-    if not all(sink_verdicts):
+    if not all(verdict for _line, _column, verdict in sink_verdicts):
         fail("api.routes /api/chat/start path reaches non-gateway Thread target")
-    if len(sink_verdicts) != 1:
+    physical_sinks = {(line, column) for line, column, _verdict in sink_verdicts}
+    if len(physical_sinks) != 1:
         fail("api.routes /api/chat/start gateway Thread sink must be unique and direct")
 
 
