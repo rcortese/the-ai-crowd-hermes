@@ -42,6 +42,14 @@ for program in ("roy-gateway", "roy-dashboard", "roy-webui"):
 assert "/opt/hermes-webui/server.py" in supervisor
 assert "--port 9123" in supervisor
 assert re.search(r"^user=hermes$", supervisor, re.MULTILINE)
+# Keep the deployed WebUI process aligned with the archive verifier's exact
+# api_server transport: Roy's service endpoint and inherited API_SERVER_KEY.
+for literal in (
+    'HERMES_WEBUI_CHAT_BACKEND="api_server"',
+    'HERMES_WEBUI_GATEWAY_BASE_URL="http://roy:8645"',
+    'HERMES_WEBUI_GATEWAY_API_KEY="%(ENV_API_SERVER_KEY)s"',
+):
+    assert literal in supervisor
 
 # The builder exports the exact candidate tree, verifies the supplied immutable
 # base ID, labels all three provenance roots, and publishes a write-once receipt.

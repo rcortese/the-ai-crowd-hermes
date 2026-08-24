@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import sys
 import tarfile
 from typing import NoReturn
 
 REQUIRED = ("server.py", "api/gateway_chat.py")
-REQUIRED_GATEWAY_LITERALS = (
-    "HERMES_WEBUI_CHAT_BACKEND",
-    "api_server",
-    "HERMES_WEBUI_GATEWAY_BASE_URL",
-    "HERMES_WEBUI_GATEWAY_API_KEY",
-    "API_SERVER_KEY",
-)
+BACKEND_ENV = "HERMES_WEBUI_CHAT_BACKEND"
+GATEWAY_BASE_URL_ENV = "HERMES_WEBUI_GATEWAY_BASE_URL"
+GATEWAY_API_KEY_ENV = "HERMES_WEBUI_GATEWAY_API_KEY"
+API_SERVER_KEY_ENV = "API_SERVER_KEY"
+DEFAULT_GATEWAY_BASE_URL = "http://127.0.0.1:8642"
 
 
 def fail(message: str) -> NoReturn:
@@ -38,11 +37,96 @@ def source_member(archive: tarfile.TarFile, name: str) -> str:
         fail(f"required archive member is not UTF-8 Python source: {name}")
 
 
-def compile_source(name: str, source: str) -> None:
+def parse_source(name: str, source: str) -> ast.Module:
     try:
-        compile(source, name, "exec", dont_inherit=True)
+        return ast.parse(source, filename=name)
     except SyntaxError as exc:
         fail(f"compile failed for {name}: {exc.msg} at line {exc.lineno}")
+
+
+def assigned_value(module: ast.Module, name: str) -> ast.expr | None:
+    for node in module.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(target, ast.Name) and target.id == name for target in targets):
+                return node.value
+    return None
+
+
+def is_os_environ_get(node: ast.expr, key: ast.expr, default: str | None = None) -> bool:
+    if not isinstance(node, ast.Call) or len(node.args) < 1:
+        return False
+    function = node.func
+    if not (
+        isinstance(function, ast.Attribute)
+        and function.attr == "get"
+        and isinstance(function.value, ast.Attribute)
+        and function.value.attr == "environ"
+        and isinstance(function.value.value, ast.Name)
+        and function.value.value.id == "os"
+        and ast.dump(node.args[0]) == ast.dump(key)
+    ):
+        return False
+    if default is None:
+        return len(node.args) == 1
+    return len(node.args) == 2 and isinstance(node.args[1], ast.Constant) and node.args[1].value == default
+
+
+def function_return(module: ast.Module, name: str) -> ast.expr | None:
+    for node in module.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            for statement in node.body:
+                if isinstance(statement, ast.Return):
+                    return statement.value
+    return None
+
+
+def flatten_or(node: ast.expr) -> list[ast.expr]:
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or):
+        result: list[ast.expr] = []
+        for value in node.values:
+            result.extend(flatten_or(value))
+        return result
+    return [node]
+
+
+def verify_gateway_contract(module: ast.Module) -> None:
+    backend_env = assigned_value(module, "_WEBUI_CHAT_BACKEND_ENV")
+    if not (isinstance(backend_env, ast.Constant) and backend_env.value == BACKEND_ENV):
+        fail("api_server backend selector missing HERMES_WEBUI_CHAT_BACKEND binding")
+
+    selectors = assigned_value(module, "_GATEWAY_CHAT_BACKENDS")
+    if not isinstance(selectors, (ast.Set, ast.List, ast.Tuple)) or not any(
+        isinstance(item, ast.Constant) and item.value == "api_server" for item in selectors.elts
+    ):
+        fail("api_server backend selector missing supported 'api_server' value")
+
+    gateway_base_env = assigned_value(module, "_WEBUI_GATEWAY_BASE_URL_ENV")
+    if not (isinstance(gateway_base_env, ast.Constant) and gateway_base_env.value == GATEWAY_BASE_URL_ENV):
+        fail("gateway base URL resolution missing HERMES_WEBUI_GATEWAY_BASE_URL binding")
+    base_url = function_return(module, "_gateway_base_url")
+    if not (
+        isinstance(gateway_base_env, ast.expr)
+        and base_url is not None
+        and is_os_environ_get(base_url, ast.Name(id="_WEBUI_GATEWAY_BASE_URL_ENV"), DEFAULT_GATEWAY_BASE_URL)
+    ):
+        fail("gateway base URL resolution missing deployed environment/default contract")
+
+    gateway_key_env = assigned_value(module, "_WEBUI_GATEWAY_API_KEY_ENV")
+    if not (isinstance(gateway_key_env, ast.Constant) and gateway_key_env.value == GATEWAY_API_KEY_ENV):
+        fail("gateway API key resolution missing HERMES_WEBUI_GATEWAY_API_KEY binding")
+    api_key = function_return(module, "_gateway_api_key")
+    expected_key_env = ast.Name(id="_WEBUI_GATEWAY_API_KEY_ENV")
+    expected_fallback = ast.Constant(value=API_SERVER_KEY_ENV)
+    values = flatten_or(api_key) if api_key is not None else []
+    if not (
+        len(values) == 3
+        and is_os_environ_get(values[0], expected_key_env)
+        and is_os_environ_get(values[1], expected_fallback)
+        and isinstance(values[2], ast.Constant)
+        and values[2].value == ""
+    ):
+        fail("API_SERVER_KEY fallback missing from gateway API key resolution")
 
 
 def main() -> None:
@@ -56,12 +140,8 @@ def main() -> None:
     except (tarfile.TarError, OSError) as exc:
         fail(f"cannot read WebUI archive: {exc}")
 
-    for name, contents in source.items():
-        compile_source(name, contents)
-    gateway = source["api/gateway_chat.py"]
-    for literal in REQUIRED_GATEWAY_LITERALS:
-        if literal not in gateway:
-            fail(f"api_server backend contract missing {literal!r} in api/gateway_chat.py")
+    parsed = {name: parse_source(name, contents) for name, contents in source.items()}
+    verify_gateway_contract(parsed["api/gateway_chat.py"])
     print("roy-webui-api-server-archive-contract: PASS required=server.py,api/gateway_chat.py")
 
 
