@@ -81,8 +81,8 @@ dockerfile_sha="$(sha256sum "$ROOT/ops/images/Dockerfile.roy-all-in-one" | cut -
 supervisor_sha="$(sha256sum "$ROOT/ops/images/roy-all-in-one.supervisor.conf" | cut -d' ' -f1)"
 verifier_sha="$(sha256sum "$ROOT/ops/scripts/verify-hermes-webui-api-server-contract.py" | cut -d' ' -f1)"
 prebuild_tmp="$(mktemp "$BUILD_RECEIPT_ROOT/.prebuild.XXXXXX")"
-jq -ncS \
-  --arg status PREBUILD_ADMITTED \
+prebuild_receipt_payload="$(jq -ncS \
+  --arg status ROY_PREBUILD_ADMITTED \
   --arg target_tag "$TAG" \
   --arg source_commit "$COMMIT" --arg source_tree "$TREE" --arg source_remote "$SOURCE_REMOTE" \
   --arg stack_source_archive_sha256 "$source_archive_sha" --arg stack_source_archive_size "$source_archive_size" \
@@ -91,17 +91,33 @@ jq -ncS \
   --arg roy_base_hermes_base_id "$candidate_hermes_id" --arg roy_base_hermes_base_source_revision "$candidate_hermes_source" \
   --arg webui_repository "$ROY_WEBUI_REPO" --arg webui_revision "$ROY_WEBUI_REV" --arg webui_tree "$ROY_WEBUI_TREE" --arg webui_archive_sha256 "$ROY_WEBUI_ARCHIVE_SHA256" --arg webui_archive_size "$ROY_WEBUI_ARCHIVE_SIZE" \
   --arg builder_sha256 "$builder_sha" --arg dockerfile_sha256 "$dockerfile_sha" --arg supervisor_sha256 "$supervisor_sha" --arg verifier_sha256 "$verifier_sha" \
-  '{status:$status,target_tag:$target_tag,source_commit:$source_commit,source_tree:$source_tree,source_remote:$source_remote,stack_source_archive_sha256:$stack_source_archive_sha256,stack_source_archive_size:$stack_source_archive_size,roy_base_image_id:$roy_base_image_id,roy_base_candidate_ref:$roy_base_candidate_ref,roy_base_source_commit:$roy_base_source_commit,roy_base_source_tree:$roy_base_source_tree,roy_base_hermes_base_id:$roy_base_hermes_base_id,roy_base_hermes_base_source_revision:$roy_base_hermes_base_source_revision,webui_repository:$webui_repository,webui_revision:$webui_revision,webui_tree:$webui_tree,webui_archive_sha256:$webui_archive_sha256,webui_archive_size:$webui_archive_size,builder_sha256:$builder_sha256,dockerfile_sha256:$dockerfile_sha256,supervisor_sha256:$supervisor_sha256,verifier_sha256:$verifier_sha256}' >"$prebuild_tmp"
+  '{status:$status,target_tag:$target_tag,source_commit:$source_commit,source_tree:$source_tree,source_remote:$source_remote,stack_source_archive_sha256:$stack_source_archive_sha256,stack_source_archive_size:$stack_source_archive_size,roy_base_image_id:$roy_base_image_id,roy_base_candidate_ref:$roy_base_candidate_ref,roy_base_source_commit:$roy_base_source_commit,roy_base_source_tree:$roy_base_source_tree,roy_base_hermes_base_id:$roy_base_hermes_base_id,roy_base_hermes_base_source_revision:$roy_base_hermes_base_source_revision,webui_repository:$webui_repository,webui_revision:$webui_revision,webui_tree:$webui_tree,webui_archive_sha256:$webui_archive_sha256,webui_archive_size:$webui_archive_size,builder_sha256:$builder_sha256,dockerfile_sha256:$dockerfile_sha256,supervisor_sha256:$supervisor_sha256,verifier_sha256:$verifier_sha256}')"
+printf '%s\n' "$prebuild_receipt_payload" >"$prebuild_tmp"
 chmod 600 "$prebuild_tmp"
 sync "$prebuild_tmp"
 ln "$prebuild_tmp" "$prebuild_receipt" || { rm -f "$prebuild_tmp"; fail 'prebuild receipt publication race'; }
 rm -f "$prebuild_tmp"
 sync "$BUILD_RECEIPT_ROOT"
-prebuild_receipt_sha="$(sha256sum "$prebuild_receipt" | cut -d' ' -f1)"
+exec {prebuild_receipt_fd}<"$prebuild_receipt" || fail 'admitted prebuild receipt is unavailable'
+prebuild_receipt_identity="$(stat -Lc '%d:%i' "/proc/$$/fd/$prebuild_receipt_fd")" || fail 'admitted prebuild receipt identity is unavailable'
+verify_admitted_prebuild_receipt() {
+  [[ -f $prebuild_receipt && ! -L $prebuild_receipt ]] || fail 'admitted prebuild receipt is missing or unsafe'
+  [[ $(stat -c '%d:%i' "$prebuild_receipt") == "$prebuild_receipt_identity" ]] || fail 'admitted prebuild receipt identity changed'
+  local observed_sha observed_payload
+  observed_sha="$(sha256sum "/proc/$$/fd/$prebuild_receipt_fd" | cut -d' ' -f1)" || fail 'admitted prebuild receipt hash is unavailable'
+  [[ $observed_sha == "$prebuild_receipt_sha" ]] || fail 'admitted prebuild receipt bytes changed'
+  observed_payload="$(jq -ceS . "/proc/$$/fd/$prebuild_receipt_fd")" || fail 'admitted prebuild receipt is not valid JSON'
+  [[ $observed_payload == "$prebuild_receipt_payload" ]] || fail 'admitted prebuild receipt payload changed'
+}
+prebuild_receipt_sha="$(sha256sum "/proc/$$/fd/$prebuild_receipt_fd" | cut -d' ' -f1)"
+[[ $prebuild_receipt_sha =~ ^[0-9a-f]{64}$ ]] || fail 'admitted prebuild receipt hash is invalid'
+verify_admitted_prebuild_receipt
 # FROM requires a reference. This alias is content-addressed and verified against
 # the supplied image ID; it is not an alternate mutable source.
 base_alias="the-ai-crowd/roy-build-base:${ROY_BASE_IMAGE#sha256:}"
+verify_admitted_prebuild_receipt
 docker image tag "$ROY_BASE_IMAGE" "$base_alias"
+verify_admitted_prebuild_receipt
 alias_id="$(docker image inspect "$base_alias" --format '{{.Id}}')" || fail 'temporary Roy base alias is unavailable locally'
 [[ $alias_id == "$ROY_BASE_IMAGE" ]] || fail 'temporary Roy base alias resolution mismatch'
 
@@ -132,6 +148,7 @@ docker build --pull=false \
   --label "org.opencontainers.image.source=$SOURCE_REMOTE" \
   "$CTX"
 
+verify_admitted_prebuild_receipt
 image_id="$(docker image inspect "$TAG" --format '{{.Id}}')"
 [[ $image_id =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'invalid candidate image ID'
 receipt="$BUILD_RECEIPT_ROOT/sha256-${image_id#sha256:}.json"
@@ -155,8 +172,9 @@ jq -ncS \
   --arg webui_archive_size "$ROY_WEBUI_ARCHIVE_SIZE" \
   --arg prebuild_receipt "$prebuild_receipt" \
   --arg prebuild_receipt_sha256 "$prebuild_receipt_sha" \
+  --argjson prebuild_receipt_payload "$prebuild_receipt_payload" \
   --arg builder_sha256 "$builder_sha" \
-  '{status:$status,source_commit:$source_commit,source_tree:$source_tree,source_remote:$source_remote,image_id:$image_id,roy_base_image_id:$roy_base_image_id,roy_base_candidate_ref:$roy_base_candidate_ref,roy_base_source_commit:$roy_base_source_commit,roy_base_source_tree:$roy_base_source_tree,roy_base_hermes_base_id:$roy_base_hermes_base_id,roy_base_hermes_base_source_revision:$roy_base_hermes_base_source_revision,webui_repository:$webui_repository,webui_revision:$webui_revision,webui_tree:$webui_tree,webui_archive_sha256:$webui_archive_sha256,webui_archive_size:$webui_archive_size,prebuild_receipt:$prebuild_receipt,prebuild_receipt_sha256:$prebuild_receipt_sha256,builder_sha256:$builder_sha256}' >"$tmp"
+  '{status:$status,source_commit:$source_commit,source_tree:$source_tree,source_remote:$source_remote,image_id:$image_id,roy_base_image_id:$roy_base_image_id,roy_base_candidate_ref:$roy_base_candidate_ref,roy_base_source_commit:$roy_base_source_commit,roy_base_source_tree:$roy_base_source_tree,roy_base_hermes_base_id:$roy_base_hermes_base_id,roy_base_hermes_base_source_revision:$roy_base_hermes_base_source_revision,webui_repository:$webui_repository,webui_revision:$webui_revision,webui_tree:$webui_tree,webui_archive_sha256:$webui_archive_sha256,webui_archive_size:$webui_archive_size,prebuild_receipt:$prebuild_receipt,prebuild_receipt_sha256:$prebuild_receipt_sha256,prebuild_receipt_payload:$prebuild_receipt_payload,builder_sha256:$builder_sha256}' >"$tmp"
 chmod 600 "$tmp"
 sync "$tmp"
 if [[ -e $receipt ]]; then

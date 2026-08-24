@@ -119,6 +119,13 @@ for key in (
 assert "ln \"$tmp\" \"$receipt\"" in builder
 assert "divergent or unsafe build receipt already exists" in builder
 assert "prebuild" in builder
+assert "ROY_PREBUILD_ADMITTED" in builder
+assert "exec {prebuild_receipt_fd}<\"$prebuild_receipt\"" in builder
+assert "verify_admitted_prebuild_receipt()" in builder
+assert "admitted prebuild receipt bytes changed" in builder
+assert 'sha256sum \"/proc/$$/fd/$prebuild_receipt_fd\"' in builder
+assert 'prebuild_receipt_payload:$prebuild_receipt_payload' in builder
+assert '--label "the-ai-crowd.prebuild-receipt-sha256=$prebuild_receipt_sha"' in builder
 assert "target candidate tag already exists" in builder
 assert "docker build --pull=false" in builder
 subprocess.run(
