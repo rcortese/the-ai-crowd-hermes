@@ -11,8 +11,8 @@ dispatch() {
 }
 if [[ ${HDDT_RUNNER_SELF_CHECK:-0} == 1 ]]; then exec bash ops/tests/test_runner_completeness.sh --self-check; fi
 dispatch build bash ops/tests/test_moss_candidate_build_contract.sh "$root"
-dispatch roy-all-in-one /opt/hermes/.venv/bin/python ops/tests/test_roy_all_in_one_candidate_contract.py "$root"
-dispatch roy-webui-api-server /opt/hermes/.venv/bin/python ops/tests/test_roy_webui_api_server_archive_contract.py "$root"
+dispatch roy-all-in-one env PYTHONDONTWRITEBYTECODE=1 python3 -B ops/tests/test_roy_all_in_one_candidate_contract.py "$root"
+dispatch roy-webui-api-server env PYTHONDONTWRITEBYTECODE=1 python3 -B ops/tests/test_roy_webui_api_server_archive_contract.py "$root"
 dispatch deploy-decoupling bash ops/tests/test_moss_deploy_decoupling.sh "$root"
 dispatch smoke-contract bash ops/tests/test_moss_candidate_smoke_contract.sh "$root"
 dispatch supervisor-api-key bash ops/tests/test_moss_supervisor_api_key_contract.sh "$root"
