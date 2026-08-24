@@ -27,10 +27,9 @@ assert "git -C \"$ROOT\" archive --format=tar \"$COMMIT\"" in helper
 assert "sha256sum -c \"$CTX/$MANIFEST_REL\"" in helper
 assert 'org.opencontainers.image.revision=' in helper
 assert 'org.opencontainers.image.source=' in helper
-for path in ('ops/scripts/build-a2a-moss-denholm-candidate.sh', 'ops/scripts/build-persona-base-candidate.sh'):
-    builder = (root / path).read_text(encoding='utf-8')
-    assert 'org.opencontainers.image.revision=' in builder
-    assert 'org.opencontainers.image.source=' in builder
+builder = (root / 'ops/scripts/build-persona-base-candidate.sh').read_text(encoding='utf-8')
+assert 'org.opencontainers.image.revision=' in builder
+assert 'org.opencontainers.image.source=' in builder
 assert "--build-context \"clash_royale_build_input=$INPUT_DIR\"" in helper
 for legacy_path in (
     'ops/images/Dockerfile.moss-a2a-overlay',

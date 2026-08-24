@@ -2,7 +2,6 @@
 """Static contract for the phase-1 Moss -> Denholm A2A candidate."""
 from __future__ import annotations
 
-import py_compile
 import unittest
 from pathlib import Path
 
@@ -19,17 +18,16 @@ class A2AMossDenholmCandidateTests(unittest.TestCase):
         self.assertIn("    - '9900'", compose)
         self.assertNotIn("0.0.0.0:9900:9900", compose)
 
-    def test_overlay_is_preimage_bound_and_restricts_exposure(self) -> None:
-        dockerfile = (ROOT / "ops/images/Dockerfile.runtime-a2a-moss-denholm").read_text(encoding="utf-8")
-        patcher = ROOT / "ops/scripts/patch-a2a-moss-denholm-plugin.py"
-        source = patcher.read_text(encoding="utf-8")
-        self.assertIn("--expected-sha256", dockerfile)
-        self.assertIn("outbound_trusted_peers", source)
-        self.assertIn("Direct URLs are intentionally unsupported", source)
-        self.assertIn('name = "a2a_call"', source)
-        self.assertIn("Register only the bounded peer-call tool", source)
-        self.assertIn("Direct URLs are intentionally unsupported", source)
-        py_compile.compile(str(patcher), doraise=True)
+    def test_protected_base_supplies_the_fixed_transport_without_an_overlay(self) -> None:
+        lock = (ROOT / "ops/manifests/protected-hermes-a2a-base.lock.json").read_text(encoding="utf-8")
+        self.assertIn("g1-74a48e796a5-amd64", lock)
+        self.assertIn("74a48e796a5c01c569aba90b2577123124dd2128", lock)
+        self.assertIn("five-tool", lock)
+        self.assertFalse((ROOT / "ops/images/Dockerfile.runtime-a2a-moss-denholm").exists())
+        self.assertFalse((ROOT / "ops/scripts/patch-a2a-moss-denholm-plugin.py").exists())
+        builder = (ROOT / "ops/scripts/build-persona-base-candidate.sh").read_text(encoding="utf-8")
+        self.assertIn("moss|denholm", builder)
+        self.assertIn("protected-hermes-a2a-base.lock.json", builder)
 
     def test_config_stager_is_non_mutating_without_apply(self) -> None:
         source = (ROOT / "ops/scripts/prepare-a2a-moss-denholm-config.py").read_text(encoding="utf-8")
