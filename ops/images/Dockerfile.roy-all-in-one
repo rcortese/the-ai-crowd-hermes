@@ -8,13 +8,17 @@ USER root
 # is accepted here.
 ARG HERMES_WEBUI_REPO
 ARG HERMES_WEBUI_REV
+ARG HERMES_WEBUI_TREE
 ARG HERMES_WEBUI_ARCHIVE_SHA256
+ARG HERMES_WEBUI_ARCHIVE_SIZE
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100" \
     && test -n "${HERMES_WEBUI_REPO}" \
     && printf '%s' "${HERMES_WEBUI_REV}" | grep -Eq '^[0-9a-f]{40}$' \
-    && printf '%s' "${HERMES_WEBUI_ARCHIVE_SHA256}" | grep -Eq '^[0-9a-f]{64}$'
+    && printf '%s' "${HERMES_WEBUI_TREE}" | grep -Eq '^[0-9a-f]{40}$' \
+    && printf '%s' "${HERMES_WEBUI_ARCHIVE_SHA256}" | grep -Eq '^[0-9a-f]{64}$' \
+    && printf '%s' "${HERMES_WEBUI_ARCHIVE_SIZE}" | grep -Eq '^[1-9][0-9]*$'
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -29,7 +33,9 @@ RUN git clone --no-checkout "${HERMES_WEBUI_REPO}" /tmp/hermes-webui-source \
     && cd /tmp/hermes-webui-source \
     && git checkout --detach "${HERMES_WEBUI_REV}" \
     && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
+    && test "$(git rev-parse HEAD^{tree})" = "${HERMES_WEBUI_TREE}" \
     && git archive --format=tar "${HERMES_WEBUI_REV}" > /tmp/hermes-webui.tar \
+    && test "$(stat -c %s /tmp/hermes-webui.tar)" = "${HERMES_WEBUI_ARCHIVE_SIZE}" \
     && printf '%s  %s\n' "${HERMES_WEBUI_ARCHIVE_SHA256}" /tmp/hermes-webui.tar | sha256sum -c - \
     && python3 /tmp/verify-hermes-webui-api-server-contract.py /tmp/hermes-webui.tar \
     && mkdir -p /opt/hermes-webui \
