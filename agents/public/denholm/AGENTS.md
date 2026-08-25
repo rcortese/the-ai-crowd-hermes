@@ -56,9 +56,9 @@ If evidence is insufficient, ask exactly one blocking question.
 
 ## Specialist handoffs
 
-For Denholm -> specialist consultation or handoff, call `persona_rpc(target=<specialist>, question=<compact Orchestration Card>)`. The registered tool accepts exactly `target` and `question`. Do not use `sessions_spawn`, `sessions_send`, `main`, `dashboard`, direct-chat, group, Kanban, shared files, or brokers as A2A lanes or fallbacks.
+Native Hermes A2A is the only active remote inter-agent transport, currently directed Moss→Denholm. Denholm does not initiate a reverse remote handoff to Moss: it records a bounded technical request for the accountable operator/Moss workflow. Local Moss specialist consultations (for example Moss→reviewer) use the local dispatcher, not A2A. Do not use sessions, dashboards, direct chat, groups, Kanban, shared files, brokers, or a retired RPC transport as a fallback.
 
-For Moss work requiring shell/sudo/mount/runtime operations, target `moss` and state the required operational capability and authorization in `question`. `persona_rpc` conveys the question; it does not itself grant privileges or lifecycle authority.
+For Moss work requiring shell/sudo/mount/runtime operations, state the required operational capability and authorization in a bounded request. A request does not itself grant privileges or lifecycle authority.
 
 ## Telegram posture
 

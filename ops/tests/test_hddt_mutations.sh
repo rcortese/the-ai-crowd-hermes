@@ -121,7 +121,6 @@ run_red lote-c path-stable-render T84 "$base" hddt 'ASSERT[t84]' 'config --no-pa
 run_red lote-c render-input-cwd T84 "$base" hddt 'FAKE: render cwd lacks sealed env inputs' 'cd "$inputs" && env -i HOME=/root PATH="$PATH"' 'cd / && env -i HOME=/root PATH="$PATH"'
 run_red lote-c retention-prune T85 "$base" hddt 'ASSERT[t85]: expired-terminal-retained' 'rm -rf -- "$op"' ': # mutation: retain expired operation'
 run_red lote-c peer-invariance T86 "$base" hddt 'ASSERT[t86]' 'fleet_matches "$op"||{ printf '\''%s\n'\'' peer_drift; return 1; }' 'true||{ printf '\''%s\n'\'' peer_drift; return 1; }'
-run_red lote-c a2a-gate T87 "$base" hddt 'ASSERT[t87]' 'a2a_probe||{ printf '\''%s\n'\'' a2a; return 1; }' 'true||{ printf '\''%s\n'\'' a2a; return 1; }'
 
 jq -Rn --arg schema hddt-mutation-ledger/v1 '
   [inputs | split("\t") | {schema:.[0],cohort:.[1],id:.[2],case_id:.[3],target:.[4],oracle:.[5],result:.[6],rc:(.[7]|tonumber)}]
@@ -130,18 +129,18 @@ jq -Rn --arg schema hddt-mutation-ledger/v1 '
 while IFS= read -r line || [[ -n $line ]]; do printf '%s\n' "$line"; done <"$ledger_rows" >>"$ledger_tsv"
 jq -e '
   .schema=="hddt-mutation-ledger/v1"
-  and (.mutants|length)==37
-  and ([.mutants[].id]|unique|length)==37
+  and (.mutants|length)==36
+  and ([.mutants[].id]|unique|length)==36
   and ([.mutants[]|select(.cohort=="existing")]|length)==8
   and ([.mutants[]|select(.cohort=="lote-a")]|length)==11
   and ([.mutants[]|select(.cohort=="lote-b")]|length)==12
-  and ([.mutants[]|select(.cohort=="lote-c")]|length)==6
+  and ([.mutants[]|select(.cohort=="lote-c")]|length)==5
   and ([.mutants[].result]|all(.=="RED"))
-  and ([.mutants[].id]|sort)==(["a2a-gate","apply-env-i","authorization-base-binding","authorization-single-use","base-binding","cas-ignore-id","restart-count-zero","cas-ignore-started-at","confirmation-deadline","container-curl-argv","env-scrub","functional-endpoint","health-none","host-container-vantage","input-drift","mount-overlap","outbox-before-terminal","parser-eval-injection","path-stable-render","peer-invariance","recovery-image-only-third","release-argv","render-input-cwd","reopen-live-input-post-seal","retention-prune","rollback-preapply-incomplete","rollback-render-tag","run-source-base-revalidation","selector-tag-default","set-E-nested-err","signal-rollback-return-status","source-base-ancestry","split-candidate-rollback-render","staged-source-cleanliness","third-state-recovery","trap-duplicate-rollback","trap-omit-rollback"]|sort)
+  and ([.mutants[].id]|sort)==(["apply-env-i","authorization-base-binding","authorization-single-use","base-binding","cas-ignore-id","restart-count-zero","cas-ignore-started-at","confirmation-deadline","container-curl-argv","env-scrub","functional-endpoint","health-none","host-container-vantage","input-drift","mount-overlap","outbox-before-terminal","parser-eval-injection","path-stable-render","peer-invariance","recovery-image-only-third","release-argv","render-input-cwd","reopen-live-input-post-seal","retention-prune","rollback-preapply-incomplete","rollback-render-tag","run-source-base-revalidation","selector-tag-default","set-E-nested-err","signal-rollback-return-status","source-base-ancestry","split-candidate-rollback-render","staged-source-cleanliness","third-state-recovery","trap-duplicate-rollback","trap-omit-rollback"]|sort)
 ' "$ledger_json" >/dev/null || fail 'ledger coverage/schema validation failed'
 printf '%s\n' 'MUTATION_LEDGER_TSV_BEGIN'
 while IFS= read -r line || [[ -n $line ]]; do printf '%s\n' "$line"; done <"$ledger_tsv"
 printf '%s\n' 'MUTATION_LEDGER_JSON_BEGIN'
 jq -cS . "$ledger_json"
 HDDT_SCRIPT="$base" bash "$moss_test" mutations
-printf '%s\n' 'hddt-mutations: PASS semantic-red=true ledger-schema=hddt-mutation-ledger/v1 total=37 existing=8 lote-a=11 lote-b=12 lote-c=6'
+printf '%s\n' 'hddt-mutations: PASS semantic-red=true ledger-schema=hddt-mutation-ledger/v1 total=36 existing=8 lote-a=11 lote-b=12 lote-c=5'

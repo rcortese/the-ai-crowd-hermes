@@ -217,9 +217,23 @@ check_all() {
 run_mutant() {
   local id=$1 path=$2 from=$3 to=$4 expected=$5 mutant
   mutant=$mutant_root/$id
-  mkdir -p "$mutant"
-  cp -a "$root/ops" "$root/docs" "$mutant/"
-  cp -a "$root/compose.yaml" "$mutant/compose.yaml"
+  mkdir -p "$mutant/ops/images" "$mutant/ops/webui-overrides/api" "$mutant/ops/supervisor" "$mutant/ops/tests/fixtures" "$mutant/docs"
+  # Copy only the declared dependencies of check_all/run_mutant. Historical
+  # candidates and unrelated source trees are deliberately outside this fixture.
+  cp -- "$root/ops/images/Dockerfile.moss" "$mutant/ops/images/Dockerfile.moss"
+  cp -- "$root/ops/images/Dockerfile.moss-all-in-one" "$mutant/ops/images/Dockerfile.moss-all-in-one"
+  cp -- "$root/ops/images/Dockerfile.jen" "$mutant/ops/images/Dockerfile.jen"
+  cp -- "$root/ops/images/Dockerfile.denholm" "$mutant/ops/images/Dockerfile.denholm"
+  cp -- "$root/ops/images/Dockerfile.richmond" "$mutant/ops/images/Dockerfile.richmond"
+  cp -- "$root/ops/images/Dockerfile.roy" "$mutant/ops/images/Dockerfile.roy"
+  cp -- "$root/ops/images/Dockerfile.the-elders" "$mutant/ops/images/Dockerfile.the-elders"
+  cp -- "$root/ops/webui-overrides/api/gateway_chat.py" "$mutant/ops/webui-overrides/api/gateway_chat.py"
+  cp -- "$root/ops/webui-overrides/api/profiles.py" "$mutant/ops/webui-overrides/api/profiles.py"
+  cp -- "$root/ops/supervisor/moss-all-in-one-supervisord.conf" "$mutant/ops/supervisor/moss-all-in-one-supervisord.conf"
+  cp -a -- "$root/ops/tests/fixtures/lean-agent-contracts" "$mutant/ops/tests/fixtures/"
+  cp -- "$root/docs/VALIDATION.md" "$mutant/docs/VALIDATION.md"
+  cp -- "$root/compose.yaml" "$mutant/compose.yaml"
+  cp -- "$root/ops/tests/test_lean_agent_deployment_contracts.sh" "$mutant/ops/tests/test_lean_agent_deployment_contracts.sh"
   TARGET="$mutant/$path" FROM="$from" TO="$to" perl -0pi -e '
     BEGIN { $target=$ENV{TARGET}; $from=$ENV{FROM}; $to=$ENV{TO}; }
     if (s/\Q$from\E/$to/ != 1) { die "mutant setup failed for $target\n" }

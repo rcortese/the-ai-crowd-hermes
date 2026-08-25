@@ -77,18 +77,6 @@ services:
       TELEGRAM_HOME_CHANNEL_THREAD_ID: ${MOSS_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
       ANTHROPIC_API_KEY: ${MOSS_ANTHROPIC_API_KEY:-}
       ANTHROPIC_TOKEN: ${MOSS_ANTHROPIC_TOKEN:-}
-      # Persona RPC credentials are directional: each caller identity has a
-      # distinct secret at the target. Values are injected externally only.
-      PERSONA_CALLER_JEN_TOKEN: ${JEN_TO_MOSS_PERSONA_TOKEN:-}
-      PERSONA_TARGET_JEN_TOKEN: ${MOSS_TO_JEN_PERSONA_TOKEN:-}
-      PERSONA_CALLER_DENHOLM_TOKEN: ${DENHOLM_TO_MOSS_PERSONA_TOKEN:-}
-      PERSONA_TARGET_DENHOLM_TOKEN: ${MOSS_TO_DENHOLM_PERSONA_TOKEN:-}
-      PERSONA_CALLER_ROY_TOKEN: ${ROY_TO_MOSS_PERSONA_TOKEN:-}
-      PERSONA_TARGET_ROY_TOKEN: ${MOSS_TO_ROY_PERSONA_TOKEN:-}
-      PERSONA_CALLER_RICHMOND_TOKEN: ${RICHMOND_TO_MOSS_PERSONA_TOKEN:-}
-      PERSONA_TARGET_RICHMOND_TOKEN: ${MOSS_TO_RICHMOND_PERSONA_TOKEN:-}
-      PERSONA_CALLER_THE_ELDERS_TOKEN: ${THE_ELDERS_TO_MOSS_PERSONA_TOKEN:-}
-      PERSONA_TARGET_THE_ELDERS_TOKEN: ${MOSS_TO_THE_ELDERS_PERSONA_TOKEN:-}
       # A2A phase 1: caller credential only; Moss has no A2A listener.
       MOSS_TO_DENHOLM_A2A_TOKEN: ${MOSS_TO_DENHOLM_A2A_TOKEN:?set MOSS_TO_DENHOLM_A2A_TOKEN to the approved directional A2A credential}
     networks:
@@ -157,8 +145,6 @@ services:
       GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
       ANTHROPIC_API_KEY: ${JEN_ANTHROPIC_API_KEY:-}
       ANTHROPIC_TOKEN: ${JEN_ANTHROPIC_TOKEN:-}
-      PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_JEN_PERSONA_TOKEN:-}
-      PERSONA_TARGET_MOSS_TOKEN: ${JEN_TO_MOSS_PERSONA_TOKEN:-}
     networks: *hermes-internal-networks
     env_file:
     - *hermes-fleet-env-file
@@ -206,8 +192,6 @@ services:
       TELEGRAM_HOME_CHANNEL_NAME: ${DENHOLM_TELEGRAM_HOME_CHANNEL_NAME:-}
       ANTHROPIC_API_KEY: ${DENHOLM_ANTHROPIC_API_KEY:-}
       ANTHROPIC_TOKEN: ${DENHOLM_ANTHROPIC_TOKEN:-}
-      PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_DENHOLM_PERSONA_TOKEN:-}
-      PERSONA_TARGET_MOSS_TOKEN: ${DENHOLM_TO_MOSS_PERSONA_TOKEN:-}
       # A2A phase 1 receiver: internal-only listener, one directional identity.
       A2A_HOST: 0.0.0.0
       A2A_PORT: '9900'
@@ -259,8 +243,6 @@ services:
       RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
       RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
       RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
-      PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_RICHMOND_PERSONA_TOKEN:-}
-      PERSONA_TARGET_MOSS_TOKEN: ${RICHMOND_TO_MOSS_PERSONA_TOKEN:-}
     networks: *hermes-internal-networks
     env_file:
     - *hermes-fleet-env-file
@@ -367,8 +349,6 @@ services:
       RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
       RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
       RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
-      PERSONA_CALLER_MOSS_TOKEN: ${MOSS_TO_THE_ELDERS_PERSONA_TOKEN:-}
-      PERSONA_TARGET_MOSS_TOKEN: ${THE_ELDERS_TO_MOSS_PERSONA_TOKEN:-}
     networks: *hermes-internal-networks
     env_file:
     - *hermes-fleet-env-file

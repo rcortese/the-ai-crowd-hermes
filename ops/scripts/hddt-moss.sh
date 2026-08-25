@@ -230,14 +230,15 @@ fleet_identity(){
 }
 seal_fleet_snapshot(){ local op=$1 peers; peers=$(fleet_identity)||die 'peer fleet preimage invalid' 65; jq -ncS --arg request "$request_sha256" --argjson peers "$peers" '{request_sha256:$request,peers:$peers}'|atomic_new "$op/fleet-snapshot.json"||die 'fleet snapshot already sealed' 65; }
 fleet_matches(){ local op=$1 current; regular_private "$op/fleet-snapshot.json"||return 1; current=$(fleet_identity)||return 1; jq -e --arg request "$request_sha256" --argjson current "$current" '.request_sha256==$request and .peers==$current and (.peers|length)==5' "$op/fleet-snapshot.json" >/dev/null; }
-a2a_probe(){
- local nonce="hddt-${request_sha256:0:24}" bin code db
- if rehearsal; then bin=${HDDT_A2A_BIN:?}; "$bin" --from moss --to jen --nonce "$nonce" && "$bin" --from jen --to moss --nonce "$nonce"; return; fi
- code='import asyncio,json,sys; from tools.persona_rpc import _handle_persona_rpc; target,nonce=sys.argv[1:]; question="Reply with exactly "+nonce+" and nothing else."; receipt=json.loads(asyncio.run(_handle_persona_rpc({"target":target,"question":question}))); raise SystemExit(0 if receipt.get("status")=="ok" and receipt.get("answer_text")==nonce else 1)'
- db=$(docker_bin)
- "$db" exec "$CONTAINER" /usr/bin/env PYTHONPATH=/opt/hermes python3 -c "$code" jen "$nonce" >/dev/null
- "$db" exec the-ai-crowd-jen-1 /usr/bin/env PYTHONPATH=/opt/hermes python3 -c "$code" moss "$nonce" >/dev/null
+# Native A2A E2E is an explicit post-activation gate. The lifecycle helper must
+# not invoke retired RPC code or fabricate a reverse peer call during rollback checks.
+native_a2a_e2e_is_external(){
+ if rehearsal; then
+  local bin=${HDDT_A2A_BIN:?}
+  "$bin" --from moss --to denholm --nonce "hddt-${request_sha256:0:24}"
+ fi
 }
+
 seal_deadline(){ local op=$1 deadline=$2; jq -nc --arg request "$request_sha256" --argjson deadline "$deadline" '{request_sha256:$request,confirmation_deadline_epoch:$deadline}'|atomic_new "$op/deadline.json"||die 'deadline already sealed' 65; }
 snapshot_matches(){ local op=$1 j=$2; regular_private "$op/snapshot.json"&&jq -e --arg request "$request_sha256" --argjson live "$j" '.request_sha256==$request and .container_id==$live.Id and .image_id==$live.Image and .running==$live.State.Running and .status==$live.State.Status and .health==($live.State.Health.Status//"unavailable") and .started_at==$live.State.StartedAt and .restart_count==0 and $live.RestartCount==0 and .restart_count==$live.RestartCount' "$op/snapshot.json" >/dev/null; }
 state_gate(){ jq -r 'if .Id==null then "absent" elif .State.Running!=true then (.State.Status//"stopped") elif (.State.Health.Status//"none")!="healthy" then (.State.Health.Status//"none") elif (.RestartCount//-1)!=0 then "restart_count" else "candidate" end' <<<"$1"; }
@@ -265,7 +266,6 @@ probe_once(){
  if [[ $kind == candidate ]]; then [[ $(candidate_relation "$op" "$j") == candidate ]]||{ printf '%s\n' third; return 1; }; else [[ $(rollback_relation "$op" "$j") == rollback ]]||{ printf '%s\n' third; return 1; }; fi
  [[ $(jq -r .Id <<<"$j") == "$before_id" && $(jq -r .State.StartedAt <<<"$j") == "$before_start" && $(jq -r .RestartCount <<<"$j") == "$before_restart" ]]||{ printf '%s\n' restart_or_identity; return 1; }
  fleet_matches "$op"||{ printf '%s\n' peer_drift; return 1; }
- a2a_probe||{ printf '%s\n' a2a; return 1; }
 }
 rollback_live(){ local op=$1 cause=$2 j class; j=$(live); class=$(candidate_recovery_relation "$op" "$j"); case $class in candidate) ;; *) journal "$op" RECOVERY_UNRESOLVED third_state; terminal "$op" RECOVERY_UNRESOLVED third_state; return 2;; esac; journal "$op" ROLLING_BACK "$cause"; if apply_render "$op" rollback && probe_once "$op" rollback; then journal "$op" ROLLED_BACK "$cause"; terminal "$op" ROLLED_BACK "$cause"; else journal "$op" ROLLBACK_FAILED "$cause"; terminal "$op" ROLLBACK_FAILED "$cause"; return 1; fi; }
 CURRENT_OP= CURRENT_PHASE= CURRENT_ROOT= HANDLER_ACTIVE=0 HANDLER_DONE=0

@@ -5,7 +5,7 @@
 
 ## Revised decision
 
-Adopt Hermes' native A2A transport for the first remote product-stewardship consultation, replacing the unmaterialized `persona_rpc` runtime dependency on this edge only. The decision/authority remains Denholm's; A2A carries the request and response without creating a fallback authority.
+Adopt Hermes' native A2A transport for the first remote product-stewardship consultation, replacing the unmaterialized legacy-RPC runtime dependency on this edge only. The decision/authority remains Denholm's; A2A carries the request and response without creating a fallback authority.
 
 The initial graph is deliberately asymmetric:
 
@@ -21,7 +21,7 @@ Moss ──A2A──> Denholm
 
 ## Why this is the first cut
 
-1. **Fixes the operative gap.** The policy names `persona_rpc`, while the live Moss image does not provide its server-side executable/tool registration. Native A2A is present in Hermes 0.20.0 and can be enabled without caller-controlled credentials.
+1. **Fixes the operative gap.** The prior policy named a legacy RPC transport, while the live Moss image does not provide its server-side executable/tool registration. Native A2A is present in Hermes 0.20.0 and can be enabled without caller-controlled credentials.
 2. **Limits trust and blast radius.** One directional credential, one authenticated identity, one target and one service-scoped rollout are auditable. A mesh would multiply token, retention, routing and cancellation surfaces before a real edge has been proven.
 3. **Separates authority from transport.** Denholm remains required for `product_stewardship`; this candidate does not give Moss product authority and does not alter Roy, Viviane, Rodolfo or Moss boundaries.
 4. **Fails closed at the caller.** The protected Hermes 74 base supplies the approved fixed five-tool transport for the named Moss→Denholm edge; Stack does not patch it or add a runtime overlay.
@@ -59,7 +59,7 @@ This drawing is **not** an enabled topology, a trust grant, or a deployment plan
 5. Update only `MOSS_IMAGE_REF` and `DENHOLM_IMAGE_REF` to the immutable candidate IDs, render Compose, and verify no host A2A port is published.
 6. Recreate **Denholm first**, validate unauthenticated/incorrect-token/untrusted-peer denial and successful Moss identity admission; then recreate Moss.
 7. Perform one real Moss→Denholm product-stewardship request and verify a closed result, task/audit correlation and caller-visible outcome.
-8. Keep legacy `persona_rpc` configuration unchanged until the A2A edge is proven and the separate retirement decision is approved. No runtime fallback is permitted.
+8. Keep legacy RPC configuration disabled until the A2A edge is proven and the separate retirement decision is approved. No runtime fallback is permitted.
 
 ## Rollback
 
