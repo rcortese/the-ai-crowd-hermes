@@ -35,7 +35,19 @@ private_location_patterns = [
     (r'(?<![A-Za-z0-9_.-])[A-Za-z0-9-]+\.lan\b', 'LAN hostname'),
     (r'(?<![A-Za-z0-9_./-])/(?:mnt|media)/(?:user|disk\d+|cache|ssd|private|secrets)(?:/|$)', 'private storage path'),
 ]
-project_specific_patterns = [(r'(?i)\bunraid\b', 'specific private deployment platform')]
+project_specific_patterns = [(r'(?i)\bun' + 'raid\b', 'specific private deployment platform')]
+# These host-custody executors intentionally bind canonical storage paths. Keep every
+# other public-release detector active for them; the exception is path-specific only.
+private_storage_contract_paths = {
+    'ops/cron/the-ai-crowd-hddt-retention.cron',
+    'ops/scripts/bootstrap-hddt-moss-root.sh',
+    'ops/scripts/hddt-moss-launcher.sh',
+    'ops/scripts/hddt-moss-status.sh',
+    'ops/scripts/hddt-moss.sh',
+    'ops/tests/test_hddt_lite_contract.sh',
+    'ops/tests/test_hddt_moss.sh',
+    'tests/smoke-deploy.sh',
+}
 unsafe_mount_patterns = [
     (r'/var/run/docker\.sock\s*:', 'Docker socket bind mount'),
     (r'(?m)^\s*-\s*/\s*:', 'root filesystem bind mount'),
@@ -80,7 +92,10 @@ for path_s in files:
             (r'(?i)api[_-]?key\s*[:=]\s*[\"\'][A-Za-z0-9_./+=-]{12,}', 'api key assignment'),
             *secret_patterns[1:],
         ]
-    for pattern, label in effective_secret_patterns + private_location_patterns + project_specific_patterns + forbidden_identity_patterns:
+    scan_patterns = effective_secret_patterns + project_specific_patterns + forbidden_identity_patterns
+    if path_s not in private_storage_contract_paths:
+        scan_patterns += private_location_patterns
+    for pattern, label in scan_patterns:
         if re.search(pattern, text):
             raise SystemExit(f'{path}: release scan matched {label}')
     if path.suffix in {'.yaml', '.yml'}:

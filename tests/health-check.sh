@@ -33,7 +33,7 @@ if [ ! -x ops/repair-agent-permissions.sh ]; then
 fi
 perm_out="$(mktemp -t the-ai-crowd-permissions.XXXXXX)"
 trap 'rm -f "$perm_out"' EXIT
-ops/repair-agent-permissions.sh --all >"$perm_out"
+ops/repair-agent-permissions.sh --root "$PWD" --all >"$perm_out"
 if grep -Eq "\[permfix\] drift_count=[1-9][0-9]*" "$perm_out"; then
   cat "$perm_out" >&2
   echo "health_check_failed: agent permission drift detected; run ops/repair-agent-permissions.sh --apply --all on the Docker host" >&2
