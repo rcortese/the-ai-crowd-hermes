@@ -18,6 +18,8 @@ BASE_IMAGE="${MOSS_BASE_IMAGE:-}"
 [[ $BASE_IMAGE =~ ^sha256:[0-9a-f]{64}$ ]] || { printf '%s\n' 'MOSS_BASE_IMAGE must be an immutable local sha256 image ID' >&2; exit 65; }
 INPUT_DIR="${CLASH_ROYALE_BUILD_INPUT_DIR:?set CLASH_ROYALE_BUILD_INPUT_DIR to the controlled private Node input directory}"
 MANIFEST_REL="ops/build-inputs/moss-clash-royale-war-bot.sha256"
+BROWSER_MANIFEST_REL="ops/build-inputs/moss-playwright-browsers.sha256"
+BROWSER_DIR="$INPUT_DIR/.playwright-browsers"
 TAG="${1:?usage: $0 IMAGE_TAG}"
 source "${ROOT}/ops/scripts/lib/hddt-moss-closure.sh"
 
@@ -28,12 +30,17 @@ fi
 for name in package.json package-lock.json; do
   [[ -f "$INPUT_DIR/$name" && ! -L "$INPUT_DIR/$name" ]] || { printf 'missing or unsafe private build input: %s\n' "$name" >&2; exit 65; }
 done
+[[ -d "$BROWSER_DIR" && ! -L "$BROWSER_DIR" ]] || { printf '%s\n' 'missing or unsafe cached Playwright browser input' >&2; exit 65; }
 CTX="$(mktemp -d "${TMPDIR:-/tmp}/moss-release-context.XXXXXX")"
 trap 'rm -rf "$CTX"' EXIT
 git -C "$ROOT" archive --format=tar "$COMMIT" | tar -xf - -C "$CTX"
 (
   cd "$INPUT_DIR"
   sha256sum -c "$CTX/$MANIFEST_REL"
+)
+(
+  cd "$BROWSER_DIR"
+  sha256sum -c "$CTX/$BROWSER_MANIFEST_REL"
 )
 resolved_base=$(docker image inspect "$BASE_IMAGE" --format '{{.Id}}') || { printf '%s\n' 'immutable Moss base image is unavailable locally' >&2; exit 65; }
 [[ $resolved_base == "$BASE_IMAGE" ]] || { printf '%s\n' 'Moss base image ID resolution mismatch' >&2; exit 65; }
@@ -50,6 +57,7 @@ docker build --pull=false \
   --tag "$TAG" \
   --build-arg "MOSS_BASE_IMAGE=$base_alias" \
   --build-context "clash_royale_build_input=$INPUT_DIR" \
+  --build-context "clash_royale_browser_input=$BROWSER_DIR" \
     --label "org.opencontainers.image.revision=$COMMIT" \
     --label "org.opencontainers.image.source=$(git -C "$ROOT" remote get-url origin)" \
   "$CTX"
