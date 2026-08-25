@@ -52,15 +52,21 @@ def moss_candidate(text: str) -> str:
     text = one(text, "platform_toolsets:\n", "plugins:\n  enabled:\n  - a2a-platform\n  disabled: []\nplatform_toolsets:\n", "Moss plugin block")
     return moss_direct_a2a_schema(text + MOSS_A2A)
 
+def denholm_inbound_platform(text: str) -> str:
+    platform = "platforms:\n  a2a:\n    enabled: true\n"
+    if platform in text:
+        return text
+    return text + "\n" + platform
+
+
 def denholm_candidate(text: str) -> str:
     if MARKER in text:
-        return text
+        return denholm_inbound_platform(text)
     text = one(text, "toolsets:\n  - hermes-cli\n  - persona\n", "toolsets:\n  - hermes-cli\n  - persona\n  - a2a\n", "Denholm toolsets")
     text = one(text, "    - hermes-lcm\n", "    - hermes-lcm\n    - a2a-platform\n", "Denholm plugin block")
     text = one(text, "    - persona\n  api_server:\n", "    - persona\n    - a2a\n  api_server:\n", "Denholm cli toolsets")
     text = one(text, "    - persona\n  cron:\n", "    - persona\n    - a2a\n  cron:\n", "Denholm api_server toolsets")
-    return text + "\n" + MARKER
-
+    return denholm_inbound_platform(text + "\n" + MARKER)
 
 def write_atomic(path: Path, content: str, backup_dir: Path, backup_name: str) -> None:
     backup_dir.mkdir(parents=True, exist_ok=True)
