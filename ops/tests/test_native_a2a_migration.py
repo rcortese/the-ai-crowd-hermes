@@ -35,6 +35,7 @@ for retired in ("agents/public/jen/persona-api.example.yaml", "agents/public/den
 source = (ROOT / "ops/scripts/prepare-a2a-moss-denholm-config.py").read_text(encoding="utf-8")
 assert "outbound_trusted_peers" in source and "denholm" in source
 assert "Moss direct A2A schema" in source
+assert "--moss-only" in source
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
@@ -72,7 +73,7 @@ platform_toolsets:
   cron:
     - persona
 """, encoding="utf-8")
-    subprocess.run(["python3", str(ROOT / "ops/scripts/prepare-a2a-moss-denholm-config.py"), "--moss-config", str(moss), "--denholm-config", str(denholm), "--backup-dir", str(backup), "--apply"], check=True, capture_output=True, text=True)
+    subprocess.run(["python3", str(ROOT / "ops/scripts/prepare-a2a-moss-denholm-config.py"), "--moss-config", str(moss), "--denholm-config", str(denholm), "--backup-dir", str(backup), "--moss-only", "--apply"], check=True, capture_output=True, text=True)
     materialized = moss.read_text(encoding="utf-8")
     assert "tool_search:\n    enabled: off" in materialized
     assert "outbound_trusted_peers:\n  - denholm" in materialized
