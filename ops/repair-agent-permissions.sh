@@ -18,7 +18,7 @@ USAGE
 APPLY=0
 AGENT=""
 ALL=0
-: "${ROOT:?set ROOT to the stack root}"
+ROOT="${ROOT:-}"
 UID_EXPECTED="99"
 GID_EXPECTED="100"
 
@@ -42,6 +42,7 @@ if [ "$ALL" -eq 1 ] && [ -n "$AGENT" ]; then
   echo "error: use either --agent NAME or --all, not both" >&2
   exit 2
 fi
+: "${ROOT:?set ROOT to the stack root}"
 if [ ! -d "$ROOT" ]; then
   echo "error: stack root not found: $ROOT" >&2
   exit 1
@@ -63,7 +64,7 @@ repair_tree_owner() {
   local path="$1"
   [ -e "$path" ] || return 0
   if [ "$APPLY" -eq 1 ]; then
-    chown -R "$UID_EXPECTED:$GID_EXPECTED" "$path"
+    find "$path" -xdev \( ! -user "$UID_EXPECTED" -o ! -group "$GID_EXPECTED" \)       -exec chown -h "$UID_EXPECTED:$GID_EXPECTED" {} +
   fi
 }
 repair_agent() {
@@ -99,7 +100,7 @@ repair_agent() {
     if [ -d "$public" ]; then
       find "$public" -type d -exec chmod u+rwx,g+rx,o+rx {} +
       find "$public" -type f -exec chmod u+rw,g+r,o+r {} +
-      find "$public" -type f \( -path '*/bin/*' -o -path '*/tools/cron-scripts/*' -o -path '*/tests/*' -o -name '*.sh' \) -exec chmod u+rwx,g+rx,o+rx {} +
+      find "$public" -type f \( -path '*/bin/*' -o -path '*/tools/cron-scripts/*' -o -name '*.sh' \) -exec chmod u+rwx,g+rx,o+rx {} +
     fi
   fi
 
@@ -113,9 +114,8 @@ repair_agent() {
 
 
 if [ "$ALL" -eq 1 ]; then
-  for d in "$ROOT"/agents/public/*; do
-    [ -d "$d" ] || continue
-    repair_agent "$(basename "$d")"
+  for agent in denholm jen moss richmond roy the-elders; do
+    repair_agent "$agent"
   done
 else
   repair_agent "$AGENT"
