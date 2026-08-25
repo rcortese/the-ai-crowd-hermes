@@ -46,6 +46,7 @@ allowed_targets = {
     '/agents/roy/private',
     '/agents/the-elders/public',
     '/agents/the-elders/private',
+    '/opt/personal-assistant',
     '/archiveops/richmond',
     '/backups/the-ai-crowd',
     '/mnt/hermes-auth-shared',
@@ -63,6 +64,8 @@ for line in text.splitlines():
             raise SystemExit(f'{label}: broad host bind source {source!r}')
         if target not in allowed_targets:
             raise SystemExit(f'{label}: unexpected bind target {target!r} from source {source!r}')
+        if target == '/opt/personal-assistant' and source != str(repo_root / 'agents/private/roy-v3'):
+            raise SystemExit(f'{label}: unexpected personal-assistant source {source!r}')
         if source.startswith('/PUBLIC_PLACEHOLDER/'):
             source = None
             continue
@@ -81,10 +84,18 @@ for forbidden in ['/workspace/the-ai-crowd', '/mnt/moss-workspace']:
 for required in ['HERMES_UID: "99"', 'HERMES_GID: "100"', 'HOME: /opt/data']:
     if required not in text:
         raise SystemExit(f'{label}: missing required runtime setting {required}')
-for agent in ['moss', 'jen', 'denholm', 'richmond', 'roy', 'the-elders']:
+for agent in ['moss', 'jen', 'denholm', 'richmond', 'the-elders']:
     for target in [f'/agents/{agent}/public', f'/agents/{agent}/private']:
         if target not in text:
             raise SystemExit(f'{label}: missing {target}')
+# Roy v3 is intentionally isolated: its private workspace and read-only product
+# source are the only Roy mounts; it does not consume the generic public plane.
+if '/agents/roy/private' not in text:
+    raise SystemExit(f'{label}: missing /agents/roy/private')
+if '/opt/personal-assistant' not in text:
+    raise SystemExit(f'{label}: missing Roy product source mount')
+if '/agents/roy/public' in text:
+    raise SystemExit(f'{label}: unexpected /agents/roy/public')
 if label == 'project_example':
     project_block = re.search(r'target:\s*/workspace/projects/example-project(?:.|\n){0,300}', text)
     if not project_block or 'read_only: true' not in project_block.group(0):

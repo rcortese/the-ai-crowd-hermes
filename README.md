@@ -10,7 +10,7 @@ Este repositório guarda a parte pública e reproduzível desse sistema: contrat
 
 - Define assistentes com responsabilidades diferentes, em vez de um único agente genérico.
 - Roda esses assistentes como serviços separados, com homes, workspaces e contratos próprios.
-- Usa Persona RPC ask-only sobre os API Servers como canal de coordenação entre assistentes.
+- Usa A2A nativo do Hermes para o edge remoto aprovado Moss→Denholm; consultas entre perfis locais de Moss usam o dispatcher local.
 - Usa storage compartilhado apenas para artefatos passivos referenciados.
 - Usa testes para validar rotas, permissões, mounts e limites de segurança.
 - Separa claramente o que pode ser público do que pertence a uma implantação privada.
@@ -31,12 +31,7 @@ Os papéis são intencionais. Quando um assunto pertence a outro assistente, o s
 
 ## Como a colaboração funciona
 
-Cada persona expõe um API Server Hermes. A ferramenta `persona_rpc.ask` usa uma
-rota estática e credenciais direcionais server-side; caller, target, URL,
-provider, modelo e headers não são controlados pelo pedido. Ausência de uma rota
-explicitamente permitida resulta em recusa, sem fallback para arquivo, Kanban ou
-broker. Artefatos grandes podem permanecer no storage compartilhado, mas apenas
-como dados passivos referenciados pela resposta.
+O transporte remoto ativo é A2A nativo do Hermes, inicialmente somente Moss→Denholm, com alias e credencial direcionais definidos no runtime. Consultas entre perfis locais de Moss (por exemplo, Moss→reviewer) usam o dispatcher local e não criam uma rota remota. Outros edges remotos permanecem sem transporte até uma decisão e ativação próprias; não há fallback para arquivo, Kanban ou broker. Artefatos grandes podem permanecer no storage compartilhado apenas como dados passivos referenciados.
 
 ## Estrutura do repositório
 

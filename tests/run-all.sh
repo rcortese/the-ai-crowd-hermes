@@ -8,6 +8,15 @@ run() {
   "$@"
 }
 
+if [ -x /opt/hermes/.venv/bin/python ]; then
+  PYTHON=/opt/hermes/.venv/bin/python
+else
+  PYTHON="$(command -v python3)"
+fi
+
+HERMES_TEST_IMAGE="$(jq -r '.protected_base.image' ops/manifests/protected-hermes-a2a-base.lock.json)"
+HERMES_TEST_PYTHON=(docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m -v "$PWD:/src:ro" -w /src --entrypoint /opt/hermes/.venv/bin/python "$HERMES_TEST_IMAGE")
+
 run agents/public/moss/tests/contract-smoke-test.sh
 run agents/public/moss/tools/wrappers/preflight-template.sh --capability project_files --target example-project
 run agents/public/moss/tools/wrappers/workspace-dirty-watch.sh --repo . --label hermes-public-scaffold
@@ -15,12 +24,12 @@ run agents/public/moss/tools/wrappers/messaging-dry-run.sh --channel direct-mess
 run agents/public/moss/tools/wrappers/ssh-readonly-preflight.sh --host-ref private-ref:private-infra-host --user-ref private-ref:private-infra-user --command-class host-summary --dry-run
 run agents/public/moss/tools/wrappers/compose-readonly-preflight.sh --repo . --mode config --dry-run
 run tests/image-pin.sh
-run /opt/hermes/.venv/bin/python ops/tests/test_moss_candidate_build_contract.py "$PWD"
-run /opt/hermes/.venv/bin/python ops/tests/test_protected_hermes_a2a_base_lock.py
-run /opt/hermes/.venv/bin/python ops/tests/test_persona_api_materializer.py
-run /opt/hermes/.venv/bin/python ops/tests/test_persona_rpc_docs_contract.py
-run /opt/hermes/.venv/bin/python tests/protocol/test_no_alternative_a2a.py
-run tests/persona-rpc-cutover.sh
+run "$PYTHON" ops/tests/test_moss_candidate_build_contract.py "$PWD"
+run "$PYTHON" ops/tests/test_protected_hermes_a2a_base_lock.py
+run "${HERMES_TEST_PYTHON[@]}" ops/tests/test_persona_api_materializer.py
+run "$PYTHON" ops/tests/test_native_a2a_migration.py
+run "$PYTHON" tests/protocol/test_no_alternative_a2a.py
+run tests/native-a2a-cutover.sh
 run agents/public/jen/tests/jen-state-path-policy.contract.sh
 run ops/tests/test_lean_agent_deployment_contracts.sh --mode fixture --self-test
 run tests/health-check.sh

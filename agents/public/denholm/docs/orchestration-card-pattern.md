@@ -39,11 +39,11 @@ Do not use an Orchestration Card for:
 - review gates, which use the independent review-gate contract instead;
 - emergency containment, where safety instructions should be direct and minimal.
 
-## RPC hygiene
+## Transport hygiene
 
-A new Orchestration Card is sent with one bounded `persona_rpc(target=<specialist>, question=<card>)` call to the owning specialist.
+An Orchestration Card is a bounded request record. The only active remote transport is native Hermes A2A from Moss to Denholm; local Moss specialist consultations use the local dispatcher. Denholm does not select a reverse remote transport to Moss.
 
-Do not route the card through `sessions_spawn`, `sessions_send`, `main`, `dashboard`, direct-chat, group, Kanban, shared files, a broker, or any active Rodolfo conversation. The RPC request is self-contained and the target's private session history is not an input.
+Do not route the card through sessions, dashboards, direct chat, groups, Kanban, shared files, a broker, a retired RPC transport, or any active Rodolfo conversation. The request is self-contained and a target's private session history is not an input.
 
 When continuity matters, state it explicitly in the card without selecting or reusing a session:
 
@@ -54,10 +54,10 @@ Contexto a ignorar: <old/incidental context to disregard>
 
 Default path:
 
-1. Select the accountable specialist target.
-2. Put the complete Orchestration Card in the required `question` field of `persona_rpc`; `target` and `question` are the only accepted arguments.
-3. Treat the returned receipt with `status: ok | error` as the only result for that call.
-4. If RPC fails, report the precise capability failure and stop; do not route the work through another channel.
+1. Select the accountable specialist and transport scope.
+2. Record the complete Orchestration Card as the bounded request.
+3. Use only the active native A2A edge when Moss is the caller and Denholm is the target; use the Moss-local dispatcher for a local specialist profile.
+4. If no eligible route exists, report the precise capability failure and stop; do not route the work through another channel.
 
 The card itself should carry the required context; it should not depend on old session history.
 
