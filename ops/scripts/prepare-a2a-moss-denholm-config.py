@@ -80,16 +80,22 @@ def write_atomic(path: Path, content: str, backup_dir: Path, backup_name: str) -
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--moss-config", type=Path, required=True)
-    parser.add_argument("--denholm-config", type=Path, required=True)
+    parser.add_argument("--denholm-config", type=Path)
+    parser.add_argument("--moss-only", action="store_true")
     parser.add_argument("--backup-dir", type=Path)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     if args.apply and not args.backup_dir:
         raise SystemExit("--apply requires --backup-dir")
+    if not args.moss_only and not args.denholm_config:
+        raise SystemExit("--denholm-config is required unless --moss-only")
     moss_original = args.moss_config.read_text(encoding="utf-8")
-    denholm_original = args.denholm_config.read_text(encoding="utf-8")
     moss = moss_candidate(moss_original)
-    denholm = denholm_candidate(denholm_original)
+    denholm_original = ""
+    denholm = ""
+    if not args.moss_only:
+        denholm_original = args.denholm_config.read_text(encoding="utf-8")
+        denholm = denholm_candidate(denholm_original)
     if not args.apply:
         print("a2a_moss_denholm_config_preflight_ok")
         return
@@ -97,7 +103,7 @@ def main() -> None:
     if moss != moss_original:
         write_atomic(args.moss_config, moss, args.backup_dir, moss_backup.name)
     try:
-        if denholm != denholm_original:
+        if not args.moss_only and denholm != denholm_original:
             write_atomic(
                 args.denholm_config,
                 denholm,
