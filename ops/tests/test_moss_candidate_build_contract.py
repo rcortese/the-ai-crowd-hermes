@@ -61,6 +61,12 @@ builder = (root / 'ops/scripts/build-persona-base-candidate.sh').read_text(encod
 assert 'org.opencontainers.image.revision=' in builder
 assert 'org.opencontainers.image.source=' in builder
 assert "--build-context \"clash_royale_build_input=$INPUT_DIR\"" in helper
+browser_manifest = root / "ops/build-inputs/moss-playwright-browsers.sha256"
+assert browser_manifest.is_file()
+assert "--build-context \"clash_royale_browser_input=$BROWSER_DIR\"" in helper
+assert "COPY --from=clash_royale_browser_input / /opt/playwright-browsers/" in dockerfile
+assert "npx playwright install chromium" not in dockerfile
+assert "cached_playwright_chromium_smoke_ok" in dockerfile
 for legacy_path in (
     'ops/images/Dockerfile.moss-a2a-overlay',
     'ops/images/Dockerfile.runtime-a2a-overlay',
