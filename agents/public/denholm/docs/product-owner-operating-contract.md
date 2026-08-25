@@ -126,7 +126,7 @@ If work affects autonomy, cadence, channel reach, routing rules, role boundaries
 
 Evidence gathering does not authorize implementation. If evidence reveals a behavior-changing decision surface, the specialist stops and returns it to Denholm.
 
-For multi-phase work, use `docs/orchestration-card-pattern.md`: one compact, self-contained `persona_rpc(target=<specialist>, question=<card>)` call per phase, followed by its `status: ok | error` receipt. Do not turn normal specialist coordination into a heavyweight ledger unless the work is long-running enough to need one. Denholm must not use `sessions_spawn`, `sessions_send`, `main`, `dashboard`, direct-chat, group, Kanban, shared files, brokers, or otherwise human-facing channels for A2A consultation or handoff. If continuity matters, name `Contexto a preservar` and `Contexto a ignorar` in the new request rather than relying on session history. Failure is explicit and has no fallback route.
+For multi-phase work, use `docs/orchestration-card-pattern.md`: one compact, self-contained request per phase. Native Hermes A2A is currently limited to Moss→Denholm; local Moss specialist consultation uses the local dispatcher. Denholm must not select a reverse remote route to Moss or fall back to sessions, dashboards, chat, groups, Kanban, shared files, brokers, or a retired RPC transport. If continuity matters, name `Contexto a preservar` and `Contexto a ignorar` in the new request rather than relying on session history. Failure is explicit and has no fallback route.
 
 Default implementation owner is phase-based: decision ownership and implementation ownership can differ, but each current phase must name one owner.
 
