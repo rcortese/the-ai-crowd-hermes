@@ -34,15 +34,23 @@ def one(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def moss_direct_a2a_schema(text: str) -> str:
+    """Keep the mandatory Moss→Denholm caller tool directly model-visible."""
+    enabled = "tools:\n  tool_search:\n    enabled: auto\n"
+    disabled = "tools:\n  tool_search:\n    enabled: off\n"
+    if disabled in text:
+        return text
+    return one(text, enabled, disabled, "Moss direct A2A schema")
+
+
 def moss_candidate(text: str) -> str:
     if MARKER in text or "outbound_trusted_peers:\n  - denholm" in text:
-        return text
+        return moss_direct_a2a_schema(text)
     text = one(text, "toolsets:\n- hermes-cli\n- persona\n", "toolsets:\n- hermes-cli\n- persona\n- a2a\n", "Moss toolsets")
     text = one(text, "  - persona\n  cli:\n", "  - persona\n  - a2a\n  cli:\n", "Moss api_server toolsets")
     text = one(text, "  - persona\n  cron:\n", "  - persona\n  - a2a\n  cron:\n", "Moss cli toolsets")
     text = one(text, "platform_toolsets:\n", "plugins:\n  enabled:\n  - a2a-platform\n  disabled: []\nplatform_toolsets:\n", "Moss plugin block")
-    return text + MOSS_A2A
-
+    return moss_direct_a2a_schema(text + MOSS_A2A)
 
 def denholm_candidate(text: str) -> str:
     if MARKER in text:
