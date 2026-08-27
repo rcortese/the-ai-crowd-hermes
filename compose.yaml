@@ -87,16 +87,16 @@ services:
       local_llm: null
     env_file:
     - *hermes-fleet-env-file
-    - ./env/moss-webui.env
+    - /mnt/user/appdata/the-ai-crowd/env/moss-webui.env
     image: ${MOSS_IMAGE_REF:?set MOSS_IMAGE_REF to the approved immutable Moss image ID}
     working_dir: /agents/moss/private
     volumes:
-    - ./runtime/moss-home:/opt/data
-    - ./agents/public/moss:/agents/moss/public:ro
-    - ./agents/private/moss:/agents/moss/private:rw
-    - ./state/shared:/mnt/hermes-shared
-    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
-    - ${THE_AI_CROWD_BACKUP_ROOT:-./state/private/backups}:/backups/the-ai-crowd:rw
+    - /mnt/user/appdata/the-ai-crowd/runtime/moss-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/agents/public/moss:/agents/moss/public:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/moss:/agents/moss/private:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
+    - ${THE_AI_CROWD_BACKUP_ROOT:-/mnt/user/appdata/the-ai-crowd/state/private/backups}:/backups/the-ai-crowd:rw
     expose:
     - '8787'
     - '9119'
@@ -152,12 +152,12 @@ services:
     image: ${JEN_IMAGE_REF:?set JEN_IMAGE_REF to the approved immutable Jen image ID}
     working_dir: /agents/jen/private
     volumes:
-    - ./runtime/jen-home:/opt/data
-    - ./agents/public/jen:/agents/jen/public:ro
-    - ./agents/private/jen:/agents/jen/private:rw
-    - ./state/shared:/mnt/hermes-shared
-    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
-    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
+    - /mnt/user/appdata/the-ai-crowd/runtime/jen-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/agents/public/jen:/agents/jen/public:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/jen:/agents/jen/private:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
     - '9121'
     - '8642'
@@ -206,12 +206,12 @@ services:
     image: ${DENHOLM_IMAGE_REF:?set DENHOLM_IMAGE_REF to the approved immutable Denholm image ID}
     working_dir: /agents/denholm/private
     volumes:
-    - ./runtime/denholm-home:/opt/data
-    - ./agents/public/denholm:/agents/denholm/public:ro
-    - ./agents/private/denholm:/agents/denholm/private:rw
-    - ./state/shared:/mnt/hermes-shared
-    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
-    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
+    - /mnt/user/appdata/the-ai-crowd/runtime/denholm-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/agents/public/denholm:/agents/denholm/public:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/denholm:/agents/denholm/private:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
     - '9122'
     - '8643'
@@ -250,12 +250,12 @@ services:
     image: ${RICHMOND_IMAGE_REF:?set RICHMOND_IMAGE_REF to the approved immutable Richmond image ID}
     working_dir: /agents/richmond/private
     volumes:
-    - ./runtime/richmond-home:/opt/data
-    - ./agents/public/richmond:/agents/richmond/public:ro
-    - ./agents/private/richmond:/agents/richmond/private:rw
-    - ./state/shared:/mnt/hermes-shared
-    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
-    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
+    - /mnt/user/appdata/the-ai-crowd/runtime/richmond-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/agents/public/richmond:/agents/richmond/public:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond:/agents/richmond/private:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
     - '9120'
     - '8646'
@@ -306,7 +306,7 @@ services:
         aliases:
         - roy
     env_file:
-    - ./env/roy-v3.env
+    - /mnt/user/appdata/the-ai-crowd/env/roy-v3.env
     image: ${ROY_IMAGE_REF:?set ROY_IMAGE_REF to the approved immutable Roy v3 image ID}
     working_dir: /agents/roy/private
     read_only: true
@@ -314,11 +314,11 @@ services:
     - /tmp:exec,nosuid,size=1g
     - /run:exec
     volumes:
-    - ./agents/private/roy-v3:/opt/personal-assistant:ro
-    - ./runtime/roy-v3-home:/opt/data
-    - ./state/private/roy-v3-workspace:/agents/roy/private:rw
-    - ${ROY_TRANSFER_ROOT:-./state/private/roy-transfer}:/transfer:rw
-    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/roy-v3:/opt/personal-assistant:ro
+    - /mnt/user/appdata/the-ai-crowd/runtime/roy-v3-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/state/private/roy-v3-workspace:/agents/roy/private:rw
+    - ${ROY_TRANSFER_ROOT:-/mnt/user/appdata/the-ai-crowd/state/private/roy-transfer}:/transfer:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared:ro
     expose:
     - '8787'
     - '8644'
@@ -360,12 +360,12 @@ services:
     - /tmp
     - /run:exec
     volumes:
-    - ./runtime/the-elders-home:/opt/data
-    - ./agents/public/the-elders:/agents/the-elders/public:ro
-    - ./agents/private/the-elders:/agents/the-elders/private:rw
-    - ./state/shared:/mnt/hermes-shared:ro
-    - ./state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
-    - ./agents/private/richmond-archiveops:/archiveops/richmond:ro
+    - /mnt/user/appdata/the-ai-crowd/runtime/the-elders-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/agents/public/the-elders:/agents/the-elders/public:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/the-elders:/agents/the-elders/private:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared:ro
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
     expose:
     - '9130'
     - '8647'
