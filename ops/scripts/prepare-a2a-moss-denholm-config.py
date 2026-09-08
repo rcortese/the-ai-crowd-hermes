@@ -34,25 +34,39 @@ def one(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
+def moss_direct_a2a_schema(text: str) -> str:
+    """Keep the mandatory Moss→Denholm caller tool directly model-visible."""
+    enabled = "tools:\n  tool_search:\n    enabled: auto\n"
+    disabled = "tools:\n  tool_search:\n    enabled: off\n"
+    if disabled in text:
+        return text
+    return one(text, enabled, disabled, "Moss direct A2A schema")
+
+
 def moss_candidate(text: str) -> str:
     if MARKER in text or "outbound_trusted_peers:\n  - denholm" in text:
-        return text
+        return moss_direct_a2a_schema(text)
     text = one(text, "toolsets:\n- hermes-cli\n- persona\n", "toolsets:\n- hermes-cli\n- persona\n- a2a\n", "Moss toolsets")
     text = one(text, "  - persona\n  cli:\n", "  - persona\n  - a2a\n  cli:\n", "Moss api_server toolsets")
     text = one(text, "  - persona\n  cron:\n", "  - persona\n  - a2a\n  cron:\n", "Moss cli toolsets")
     text = one(text, "platform_toolsets:\n", "plugins:\n  enabled:\n  - a2a-platform\n  disabled: []\nplatform_toolsets:\n", "Moss plugin block")
-    return text + MOSS_A2A
+    return moss_direct_a2a_schema(text + MOSS_A2A)
+
+def denholm_inbound_platform(text: str) -> str:
+    platform = "platforms:\n  a2a:\n    enabled: true\n"
+    if platform in text:
+        return text
+    return text + "\n" + platform
 
 
 def denholm_candidate(text: str) -> str:
     if MARKER in text:
-        return text
+        return denholm_inbound_platform(text)
     text = one(text, "toolsets:\n  - hermes-cli\n  - persona\n", "toolsets:\n  - hermes-cli\n  - persona\n  - a2a\n", "Denholm toolsets")
     text = one(text, "    - hermes-lcm\n", "    - hermes-lcm\n    - a2a-platform\n", "Denholm plugin block")
     text = one(text, "    - persona\n  api_server:\n", "    - persona\n    - a2a\n  api_server:\n", "Denholm cli toolsets")
     text = one(text, "    - persona\n  cron:\n", "    - persona\n    - a2a\n  cron:\n", "Denholm api_server toolsets")
-    return text + "\n" + MARKER
-
+    return denholm_inbound_platform(text + "\n" + MARKER)
 
 def write_atomic(path: Path, content: str, backup_dir: Path, backup_name: str) -> None:
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -72,16 +86,22 @@ def write_atomic(path: Path, content: str, backup_dir: Path, backup_name: str) -
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--moss-config", type=Path, required=True)
-    parser.add_argument("--denholm-config", type=Path, required=True)
+    parser.add_argument("--denholm-config", type=Path)
+    parser.add_argument("--moss-only", action="store_true")
     parser.add_argument("--backup-dir", type=Path)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     if args.apply and not args.backup_dir:
         raise SystemExit("--apply requires --backup-dir")
+    if not args.moss_only and not args.denholm_config:
+        raise SystemExit("--denholm-config is required unless --moss-only")
     moss_original = args.moss_config.read_text(encoding="utf-8")
-    denholm_original = args.denholm_config.read_text(encoding="utf-8")
     moss = moss_candidate(moss_original)
-    denholm = denholm_candidate(denholm_original)
+    denholm_original = ""
+    denholm = ""
+    if not args.moss_only:
+        denholm_original = args.denholm_config.read_text(encoding="utf-8")
+        denholm = denholm_candidate(denholm_original)
     if not args.apply:
         print("a2a_moss_denholm_config_preflight_ok")
         return
@@ -89,7 +109,7 @@ def main() -> None:
     if moss != moss_original:
         write_atomic(args.moss_config, moss, args.backup_dir, moss_backup.name)
     try:
-        if denholm != denholm_original:
+        if not args.moss_only and denholm != denholm_original:
             write_atomic(
                 args.denholm_config,
                 denholm,
