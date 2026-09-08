@@ -318,7 +318,7 @@ services:
     - /mnt/user/appdata/the-ai-crowd/runtime/roy-v3-home:/opt/data
     - /mnt/user/appdata/the-ai-crowd/state/private/roy-v3-workspace:/agents/roy/private:rw
     - ${ROY_TRANSFER_ROOT:-/mnt/user/appdata/the-ai-crowd/state/private/roy-transfer}:/transfer:rw
-    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared:ro
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
     expose:
     - '8787'
     - '8644'
