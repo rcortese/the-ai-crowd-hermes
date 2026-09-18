@@ -43,3 +43,4 @@ venv/
 /ops/candidates/
 /build-contexts/
 /compose.yaml.bak-*
+/operation-control/
