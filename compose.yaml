@@ -44,7 +44,7 @@ services:
       HERMES_WEBUI_PORT: '8787'
       HERMES_WEBUI_STATE_DIR: /opt/data/webui
       HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/moss/private
-      HERMES_WEBUI_CHAT_BACKEND: legacy-direct
+      HERMES_WEBUI_CHAT_BACKEND: gateway
       HERMES_WEBUI_GATEWAY_BASE_URL: http://moss:8648
       HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL: http://jen:8642
       HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY_ENV: API_SERVER_KEY
@@ -72,6 +72,11 @@ services:
       HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_REMOTE_PROFILE: default
       HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_SESSION_KEY_PREFIX: webui:moss:the-elders
       TELEGRAM_BOT_TOKEN: ${MOSS_TELEGRAM_BOT_TOKEN:-}
+      MOSS_TELEGRAM_OWNER_DELIVERY_BOT_TOKEN: ${MOSS_TELEGRAM_BOT_TOKEN:-}
+      MOSS_HERMES_PROTECTED_A2A: 1
+      MOSS_HERMES_PROTECTED_A2A_SHA256: 6fa9eb07d7c4c523ccb3e101edec8371f7eb19e7ada9c5cf19ba5a018c544b98
+      MOSS_A2A_PLUGIN_SEAL_SHA256: 524cd17e73cabca5142dc1ae27575557e98fdd29e3c5045e264047c995710a47
+      MOSS_HERMES_PLUGIN_LOADER_SHA256: 657076a930cd4e9f5ed9be79c1fe3cfd5e6b902a9025325486340bd4198ff98f
       TELEGRAM_HOME_CHANNEL: ${MOSS_TELEGRAM_HOME_CHANNEL:-}
       TELEGRAM_ALLOWED_USERS: ${MOSS_TELEGRAM_ALLOWED_USERS:-}
       TELEGRAM_HOME_CHANNEL_THREAD_ID: ${MOSS_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
@@ -88,12 +93,12 @@ services:
     env_file:
     - *hermes-fleet-env-file
     - /mnt/user/appdata/the-ai-crowd/env/moss-webui.env
-    image: ${MOSS_IMAGE_REF:?set MOSS_IMAGE_REF to the approved immutable Moss image ID}
+    image: sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150
     working_dir: /agents/moss/private
     volumes:
-    - /mnt/user/appdata/the-ai-crowd/runtime/moss-home:/opt/data
-    - /mnt/user/appdata/the-ai-crowd/agents/public/moss:/agents/moss/public:ro
-    - /mnt/user/appdata/the-ai-crowd/agents/private/moss:/agents/moss/private:rw
+    - /mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/runtime/moss-public-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/public:ro
+    - /mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/private:ro
     - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
     - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
     - ${THE_AI_CROWD_BACKUP_ROOT:-/mnt/user/appdata/the-ai-crowd/state/private/backups}:/backups/the-ai-crowd:rw
