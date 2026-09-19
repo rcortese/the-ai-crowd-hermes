@@ -43,6 +43,8 @@ for source in "$AGENT_SOURCE" "$WEBUI_SOURCE"; do
 done
 agent_revision=$(git -C "$AGENT_SOURCE" rev-parse HEAD)
 webui_revision=$(git -C "$WEBUI_SOURCE" rev-parse HEAD)
+agent_tree=$(git -C "$AGENT_SOURCE" rev-parse "$agent_revision^{tree}")
+webui_tree=$(git -C "$WEBUI_SOURCE" rev-parse "$webui_revision^{tree}")
 git -C "$AGENT_SOURCE" archive --format=tar "$agent_revision" | tar -xf - -C "$AGENT_CTX"
 git -C "$WEBUI_SOURCE" archive --format=tar "$webui_revision" | tar -xf - -C "$WEBUI_CTX"
 printf '%s\n' "$agent_revision" >"$AGENT_CTX/.release-source-revision"
@@ -114,7 +116,7 @@ created_epoch=$(git -C "$ROOT" show -s --format=%ct "$COMMIT")
 [[ $created_epoch =~ ^[0-9]+$ ]] || { printf '%s\n' 'invalid source commit epoch' >&2; exit 65; }
 receipt="$BUILD_RECEIPT_ROOT/sha256-${image_id#sha256:}.json"
 tmp=$(mktemp "$BUILD_RECEIPT_ROOT/.receipt.XXXXXX")
-jq -ncS --arg rev "$COMMIT" --arg source_base "$SOURCE_BASE_REVISION" --arg tree "$tree" --arg remote "$source_remote" --arg closure "$source_closure_sha" --arg image "$image_id" --arg base "$BASE_IMAGE" --arg context "$context_sha" --arg builder "$builder_sha" --arg exec "$hddt_executor_sha" --arg launcher "$launcher_sha" --arg toolchain "$toolchain_sha" --argjson created "$created_epoch" '{source_revision:$rev,source_base_revision:$source_base,source_tree:$tree,source_remote:$remote,source_closure_sha256:$closure,candidate_image_id:$image,base_image:$base,context_sha256:$context,builder_sha256:$builder,executor_sha256:$exec,launcher_sha256:$launcher,toolchain_sha256:$toolchain,created_epoch:$created}' >"$tmp"
+jq -ncS --arg rev "$COMMIT" --arg source_base "$SOURCE_BASE_REVISION" --arg tree "$tree" --arg remote "$source_remote" --arg closure "$source_closure_sha" --arg image "$image_id" --arg base "$BASE_IMAGE" --arg context "$context_sha" --arg agent_rev "$agent_revision" --arg agent_tree "$agent_tree" --arg webui_rev "$webui_revision" --arg webui_tree "$webui_tree" --arg builder "$builder_sha" --arg exec "$hddt_executor_sha" --arg launcher "$launcher_sha" --arg toolchain "$toolchain_sha" --argjson created "$created_epoch" '{source_revision:$rev,source_base_revision:$source_base,source_tree:$tree,source_remote:$remote,source_closure_sha256:$closure,candidate_image_id:$image,base_image:$base,context_sha256:$context,agent_source_revision:$agent_rev,agent_source_tree:$agent_tree,webui_source_revision:$webui_rev,webui_source_tree:$webui_tree,builder_sha256:$builder,executor_sha256:$exec,launcher_sha256:$launcher,toolchain_sha256:$toolchain,created_epoch:$created}' >"$tmp"
 chmod 600 "$tmp"; sync "$tmp"
 if [[ -e $receipt ]]; then [[ -f $receipt && ! -L $receipt ]] && cmp -s "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'divergent or unsafe build receipt already exists' >&2; exit 65; }; rm -f "$tmp"; else ln "$tmp" "$receipt" || { rm -f "$tmp"; printf '%s\n' 'receipt publication race' >&2; exit 65; }; rm -f "$tmp"; sync "$BUILD_RECEIPT_ROOT"; fi
 printf 'build-receipt=%s sha256=%s\n' "$receipt" "$(sha256sum "$receipt" | cut -d' ' -f1)"
