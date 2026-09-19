@@ -129,6 +129,8 @@ base_image=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 env_common=(
   PATH="$bin:$PATH"
   CLASH_ROYALE_BUILD_INPUT_DIR="$private_input"
+  HERMES_AGENT_SOURCE="$repo"
+  HERMES_WEBUI_SOURCE="$repo"
   MOSS_BASE_IMAGE="$base_image"
   DOCKER_LOG="$docker_log"
   FIXTURE_IMAGE_ID="$image_id"
@@ -146,7 +148,7 @@ run_without_base(){
 run_raw(){
   local receipts=$1
   shift
-  env "$@" PATH="$bin:$PATH" CLASH_ROYALE_BUILD_INPUT_DIR="$private_input" DOCKER_LOG="$docker_log" FIXTURE_IMAGE_ID="$image_id" FIXTURE_BASE_ID="$base_image" DATE_EPOCH_FILE="$date_epoch_file" BUILD_RECEIPT_ROOT="$receipts" HDDT_SOURCE_BASE_REVISION="$base_revision" "$helper" fixture/moss:test
+  env "$@" PATH="$bin:$PATH" CLASH_ROYALE_BUILD_INPUT_DIR="$private_input" HERMES_AGENT_SOURCE="$repo" HERMES_WEBUI_SOURCE="$repo" DOCKER_LOG="$docker_log" FIXTURE_IMAGE_ID="$image_id" FIXTURE_BASE_ID="$base_image" DATE_EPOCH_FILE="$date_epoch_file" BUILD_RECEIPT_ROOT="$receipts" HDDT_SOURCE_BASE_REVISION="$base_revision" "$helper" fixture/moss:test
 }
 assert_no_effect(){
   local receipts=$1 label=$2

@@ -3,9 +3,13 @@ FROM ${MOSS_BASE_IMAGE}
 
 USER root
 
-ARG HERMES_WEBUI_REPO=https://github.com/rcortese/hermes-webui.git
-ARG HERMES_WEBUI_REV=6fdbedb5217da42fc3a1af85c033f52a2176daee
-ARG HERMES_WEBUI_TREE=8a1e54c2e35111dfc82f4b1b8019640a45b4c44d
+ARG HERMES_AGENT_REV
+ARG HERMES_WEBUI_REV
+
+# Both application trees arrive from clean, commit-bound build contexts. This
+# release never clones an unpinned repository during the image build.
+COPY --from=hermes_agent_source / /opt/hermes/
+COPY --from=hermes_webui_source / /opt/hermes-webui/
 
 RUN test "$(id -u hermes)" = "99" \
     && test "$(id -g hermes)" = "100"
@@ -46,14 +50,10 @@ RUN cd /opt/hermes \
         plugins/kanban/dashboard/plugin_api.py
 
 
-RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
-    && cd /opt/hermes-webui \
-    && git checkout --detach "${HERMES_WEBUI_REV}" \
-    && test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}" \
-    && test "${HERMES_WEBUI_REV}" = "6fdbedb5217da42fc3a1af85c033f52a2176daee" \
-    && test "${HERMES_WEBUI_TREE}" = "8a1e54c2e35111dfc82f4b1b8019640a45b4c44d" \
-    && test "$(git rev-parse HEAD^{tree})" = "${HERMES_WEBUI_TREE}" \
-    && test -z "$(git status --porcelain)" \
+RUN test "$HERMES_AGENT_REV" = "$(cat /opt/hermes/.release-source-revision)" \
+    && test "$HERMES_WEBUI_REV" = "$(cat /opt/hermes-webui/.release-source-revision)" \
+    && rm -f /opt/hermes/.release-source-revision /opt/hermes-webui/.release-source-revision \
+    && rm -rf /opt/hermes/.git /opt/hermes-webui/.git \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir pytest -r /opt/hermes-webui/requirements.txt \
     && cd /opt/hermes \
     && if [ -f tests/hermes_cli/test_auth_commands.py ]; then \

@@ -93,7 +93,7 @@ services:
     env_file:
     - *hermes-fleet-env-file
     - /mnt/user/appdata/the-ai-crowd/env/moss-webui.env
-    image: sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150
+    image: ${MOSS_IMAGE_REF:?set MOSS_IMAGE_REF to the approved immutable Moss image ID}
     working_dir: /agents/moss/private
     volumes:
     - /mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/opt/data
