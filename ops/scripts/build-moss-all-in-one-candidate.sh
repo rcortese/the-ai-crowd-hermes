@@ -17,6 +17,8 @@ git -C "$ROOT" merge-base --is-ancestor "$SOURCE_BASE_REVISION" "$COMMIT" || { p
 BASE_IMAGE="${MOSS_BASE_IMAGE:-}"
 [[ $BASE_IMAGE =~ ^sha256:[0-9a-f]{64}$ ]] || { printf '%s\n' 'MOSS_BASE_IMAGE must be an immutable local sha256 image ID' >&2; exit 65; }
 INPUT_DIR="${CLASH_ROYALE_BUILD_INPUT_DIR:?set CLASH_ROYALE_BUILD_INPUT_DIR to the controlled private Node input directory}"
+AGENT_SOURCE="${HERMES_AGENT_SOURCE:?set HERMES_AGENT_SOURCE to the clean Agent candidate checkout}"
+WEBUI_SOURCE="${HERMES_WEBUI_SOURCE:?set HERMES_WEBUI_SOURCE to the clean WebUI candidate checkout}"
 MANIFEST_REL="ops/build-inputs/moss-clash-royale-war-bot.sha256"
 BROWSER_MANIFEST_REL="ops/build-inputs/moss-playwright-browsers.sha256"
 BROWSER_DIR="$INPUT_DIR/.playwright-browsers"
@@ -32,8 +34,19 @@ for name in package.json package-lock.json; do
 done
 [[ -d "$BROWSER_DIR" && ! -L "$BROWSER_DIR" ]] || { printf '%s\n' 'missing or unsafe cached Playwright browser input' >&2; exit 65; }
 CTX="$(mktemp -d "${TMPDIR:-/tmp}/moss-release-context.XXXXXX")"
-trap 'rm -rf "$CTX"' EXIT
+AGENT_CTX="$(mktemp -d "${TMPDIR:-/tmp}/moss-agent-context.XXXXXX")"
+WEBUI_CTX="$(mktemp -d "${TMPDIR:-/tmp}/moss-webui-context.XXXXXX")"
+trap 'rm -rf "$CTX" "$AGENT_CTX" "$WEBUI_CTX"' EXIT
 git -C "$ROOT" archive --format=tar "$COMMIT" | tar -xf - -C "$CTX"
+for source in "$AGENT_SOURCE" "$WEBUI_SOURCE"; do
+  [[ -d "$source" && -z "$(git -C "$source" status --porcelain)" ]] || { printf '%s\n' 'Agent and WebUI sources must be clean Git checkouts' >&2; exit 65; }
+done
+agent_revision=$(git -C "$AGENT_SOURCE" rev-parse HEAD)
+webui_revision=$(git -C "$WEBUI_SOURCE" rev-parse HEAD)
+git -C "$AGENT_SOURCE" archive --format=tar "$agent_revision" | tar -xf - -C "$AGENT_CTX"
+git -C "$WEBUI_SOURCE" archive --format=tar "$webui_revision" | tar -xf - -C "$WEBUI_CTX"
+printf '%s\n' "$agent_revision" >"$AGENT_CTX/.release-source-revision"
+printf '%s\n' "$webui_revision" >"$WEBUI_CTX/.release-source-revision"
 (
   cd "$INPUT_DIR"
   sha256sum -c "$CTX/$MANIFEST_REL"
@@ -56,8 +69,12 @@ docker build --pull=false \
   --file "$CTX/ops/images/Dockerfile.moss-all-in-one" \
   --tag "$TAG" \
   --build-arg "MOSS_BASE_IMAGE=$base_alias" \
+  --build-arg "HERMES_AGENT_REV=$agent_revision" \
+  --build-arg "HERMES_WEBUI_REV=$webui_revision" \
   --build-context "clash_royale_build_input=$INPUT_DIR" \
   --build-context "clash_royale_browser_input=$BROWSER_DIR" \
+  --build-context "hermes_agent_source=$AGENT_CTX" \
+  --build-context "hermes_webui_source=$WEBUI_CTX" \
     --label "org.opencontainers.image.revision=$COMMIT" \
     --label "org.opencontainers.image.source=$(git -C "$ROOT" remote get-url origin)" \
   "$CTX"
