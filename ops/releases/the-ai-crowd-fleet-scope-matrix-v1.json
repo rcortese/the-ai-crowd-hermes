@@ -13,7 +13,7 @@
     "runtime_revalidated_at": "2026-09-20T18:19:14-03:00",
     "runtime_capture_non_mutating": true,
     "runtime_drift_during_capture": false,
-    "upstream_revalidated_on": "2026-09-20",
+    "upstream_revalidated_on": "2026-09-20T23:29:23Z",
     "upstream_sources": {
       "agent": "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest",
       "webui": "https://api.github.com/repos/nesquena/hermes-webui/releases/latest"
@@ -63,14 +63,22 @@
       "package_version": "0.21.3",
       "published_at": "2026-09-14T16:04:14Z",
       "latest_stable_observed": true,
-      "tag_commit_and_tree": "deferred_to_stage_3"
+      "tag_object": "7a963716b81be13ba513d4f127633b7da493aff2",
+      "commit": "345cd2b057a452236de401d3534b8502a7465e8d",
+      "tree": "6e14b9791cdc5a47068685e9429dd5d6bdc5ef5f",
+      "candidate_commit": "12f3b6a9eeeb917268592e8a1e85eab7cb94c8cb",
+      "candidate_tree": "ead1a6b89145ba5358a14c292e97ec47e985145e"
     },
     "webui": {
       "upstream": "nesquena/hermes-webui",
       "stable_release_tag": "v0.52.113",
       "published_at": "2026-08-14T02:40:45Z",
       "latest_stable_observed": true,
-      "tag_commit_and_tree": "deferred_to_stage_3"
+      "tag_object": "f6e18c2fbaaf0422dd107cc482ca1250189a6e5d",
+      "commit": "c67fd2dd270a1128c2754200406bca58e9d9a25a",
+      "tree": "1751b76ffd34a1b0efa4b9f3da98d211572a08fa",
+      "candidate_commit": "e3d93f6a692372e7ad8c644d2986eb34d1c7776d",
+      "candidate_tree": "2830312b59e4c8d30aaab34a8afe1e8076ee0598"
     }
   },
   "global_verification_catalog": {

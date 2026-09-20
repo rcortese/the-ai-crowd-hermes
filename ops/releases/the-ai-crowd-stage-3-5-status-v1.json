@@ -1,0 +1,95 @@
+{
+  "schema_version": "the-ai-crowd-stage-3-5-status/v1",
+  "recorded_at": "2026-09-20T23:29:23Z",
+  "authoritative_plan_session": "e885671ad181",
+  "scope_matrix": "ops/releases/the-ai-crowd-fleet-scope-matrix-v1.json",
+  "dashboard_policy": "Dashboards are not exposed or used and are not a release acceptance surface. Shared code remains in scope; dashboard failure matters only if it interferes with Agent, gateway, API or WebUI.",
+  "stage_3": {
+    "status": "RELEASE_FROZEN_TEST_LANE_BLOCKED",
+    "agent": {
+      "upstream": "NousResearch/hermes-agent",
+      "stable_tag": "v2026.9.14",
+      "package_version": "0.21.3",
+      "tag_object": "7a963716b81be13ba513d4f127633b7da493aff2",
+      "commit": "345cd2b057a452236de401d3534b8502a7465e8d",
+      "tree": "6e14b9791cdc5a47068685e9429dd5d6bdc5ef5f",
+      "release_note_implications": [
+        "Remote gateway refresh-token concurrency and event-loop fixes are relevant to gateway-backed WebUI operation.",
+        "SessionDB handle sharing/read-only attachment changes are relevant to long-lived gateway and WebUI processes.",
+        "No release note requires a destructive data migration for this fleet preparation."
+      ]
+    },
+    "webui": {
+      "upstream": "nesquena/hermes-webui",
+      "stable_tag": "v0.52.113",
+      "tag_object": "f6e18c2fbaaf0422dd107cc482ca1250189a6e5d",
+      "commit": "c67fd2dd270a1128c2754200406bca58e9d9a25a",
+      "tree": "1751b76ffd34a1b0efa4b9f3da98d211572a08fa",
+      "release_note_implications": [
+        "Streaming, reconnect, run-journal and SessionDB fixes are relevant to the two WebUIs.",
+        "No stable release newer than v0.52.113 was published; exp-v0.52.* tags are not selected as stable releases."
+      ]
+    },
+    "isolated_execution": {
+      "probe_command_sha256": "77ccabfb0864830eb14b5c5d7ac5df11f65a8e9ad68527d3a071b89a0c176fb2",
+      "status": "BLOCKED_BEFORE_EXECUTION",
+      "consume_socket": "/run/moss-lifecycle-authorizations/consume.sock",
+      "consume_socket_present": false,
+      "required_intervention": "External authorization authority must issue the exact-command, short-lived, root-owned, read-only, single-use receipt and expose the external atomic consume socket, or run the same bounded test through an independently authorized host lane. Moss must not self-issue or bypass it.",
+      "guard_runtime_inconsistency": "The guard requires skill self-recreating-runtime-rollouts, but that skill is neither registered nor present in the visible skill roots. This does not waive the receipt requirement."
+    }
+  },
+  "stage_4": {
+    "status": "SOURCE_RECONCILED_EXECUTION_VALIDATION_BLOCKED",
+    "agent_candidate": {
+      "repository_role": "single final Agent source candidate",
+      "commit": "12f3b6a9eeeb917268592e8a1e85eab7cb94c8cb",
+      "tree": "ead1a6b89145ba5358a14c292e97ec47e985145e",
+      "upstream_base": "345cd2b057a452236de401d3534b8502a7465e8d",
+      "comparison_inputs": [
+        "dc64dc6c3e717560d0c3cd7fb36d060d18705e5c",
+        "0d1b18033427c0f7f98c60034b9a3cdbe180d3c6",
+        "690e9ecddf (rejected whole-file overwrite history)"
+      ]
+    },
+    "webui_candidate": {
+      "repository_role": "single final WebUI source candidate for Moss and Roy",
+      "commit": "e3d93f6a692372e7ad8c644d2986eb34d1c7776d",
+      "tree": "2830312b59e4c8d30aaab34a8afe1e8076ee0598",
+      "upstream_base": "c67fd2dd270a1128c2754200406bca58e9d9a25a",
+      "comparison_inputs": [
+        "64918590cdb4d5cc08e9968213a49389d0c6babd",
+        "fe84511935c78533aaf5ab5518411813753416f7",
+        "live Roy marker ending fe845119 (marker only; not a byte-equivalence claim)"
+      ]
+    },
+    "behaviors": [
+      {"component":"agent","behavior":"shared profile authentication home","origin":"reconstructed live Agent / dc64 selective port","personas":["moss","roy","jen","denholm","richmond","the-elders"],"disposition":"ported","candidate_commit":"38bd258d2a","test":"tests/hermes_cli/test_auth_profile_fallback.py"},
+      {"component":"agent","behavior":"ordered web-provider fallback","origin":"reconstructed live Agent / dc64 selective port","personas":["moss","roy","jen","denholm","richmond","the-elders"],"disposition":"ported","candidate_commit":"b5c2bebb2f","test":"tests/tools/test_web_tools_config.py"},
+      {"component":"agent","behavior":"persistent memory only on direct human surfaces","origin":"reconstructed live Agent / dc64 selective port","personas":["moss","roy","jen","denholm","richmond","the-elders"],"disposition":"ported","candidate_commit":"c7220b506a","test":"tests/agent/test_memory_provider_init.py"},
+      {"component":"agent","behavior":"narrow manual approval floor","origin":"reconstructed live Agent / dc64 selective port","personas":["moss","roy","jen","denholm","richmond","the-elders"],"disposition":"ported","candidate_commit":"5c1448c8a3","test":"tests/tools/test_approval.py"},
+      {"component":"agent","behavior":"upstream web API compatibility for configured fallback providers","origin":"dc64 selective port","personas":["moss","roy","jen","denholm","richmond","the-elders"],"disposition":"ported","candidate_commit":"2bbbde343d","test":"tests/tools/test_web_tools_config.py"},
+      {"component":"agent","behavior":"whole-file overwrite of overlapping Agent/gateway modules","origin":"recovery/live-v0.20-overwrite","personas":["moss"],"disposition":"superseded_by_semantic_ports","evidence":"PORT-CLASSIFICATION-v2026.9.14.md; rejected history retained at 690e9ecddf"},
+      {"component":"webui","behavior":"remote profile proxies, credential isolation, selector order and remote cron fail-closed","origin":"64918590 / fe845119 fork lines","personas":["moss","roy"],"disposition":"ported","test":"tests/test_ai_crowd_v05276_port.py; tests/test_remote_cron_proxy_guard.py; tests/test_credentialed_probe_redirects.py"},
+      {"component":"webui","behavior":"service-authorized local session launch","origin":"64918590 / fe845119 fork lines","personas":["moss"],"disposition":"ported","test":"tests/test_ai_crowd_v05276_port.py"},
+      {"component":"webui","behavior":"topic-first conversation titles","origin":"64918590 / fe845119 fork lines","personas":["moss","roy"],"disposition":"ported","test":"tests/test_ai_crowd_title_topic_priority.py"},
+      {"component":"webui","behavior":"terminal no-response evaluator bridge","origin":"64918590 / fe845119 fork lines","personas":["moss","roy"],"disposition":"ported","test":"tests/test_issue5141_terminal_failure_transcript_evaluator.py; tests/test_ai_crowd_v05276_followup.py"},
+      {"component":"webui","behavior":"resolve remote runtime ownership before local revision barrier","origin":"fe84511935c78533aaf5ab5518411813753416f7","personas":["moss","roy"],"disposition":"ported","candidate_commit":"e3d93f6a692372e7ad8c644d2986eb34d1c7776d","test":"tests/test_ai_crowd_v05276_port.py::test_remote_target_owns_runtime_before_local_revision_barrier"}
+    ],
+    "verification": {
+      "agent_diff_check": "PASS",
+      "webui_diff_check": "PASS",
+      "webui_immutable_commit_diff_tree_check": "PASS",
+      "focused_runtime_tests": "BLOCKED_BEFORE_EXECUTION_BY_LIFECYCLE_GUARD",
+      "acceptance_limit": "Source reconciliation is complete and immutable, but stage 4 acceptance remains blocked until focused tests run through the authorized isolated lane."
+    }
+  },
+  "stage_5": {
+    "status": "BLOCKED_BEFORE_BUILD",
+    "required_final_artifacts": ["moss all-in-one Agent+WebUI","roy all-in-one Agent+WebUI","jen Agent","denholm Agent","richmond Agent","the-elders Agent"],
+    "build_started": false,
+    "images_created": 0,
+    "reason": "The current builders are not stage-5-ready (generic personas still consume protected old Agent base; Roy binds old stack commit a2bddaf9), and executable validation/build commands are denied without the external receipt lane. Creating untested replacement builders would repeat the prior incomplete-script failure.",
+    "production_effects": "none"
+  }
+}
