@@ -4,10 +4,12 @@ ops/cron/the-ai-crowd-hddt-retention.cron
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
 ops/scripts/build-moss-all-in-one-candidate.sh
+ops/scripts/bootstrap-hddt-moss-root.sh
 ops/scripts/hddt-moss-launcher.sh
 ops/scripts/hddt-moss-status.sh
 ops/scripts/hddt-moss.sh
 ops/scripts/lib/hddt-moss-closure.sh
+ops/scripts/release-moss-agent-webui.sh
 ops/scripts/validate-moss-native-conversation.sh
 ops/scripts/validate-moss-release-binding.sh
 ops/supervisor/moss-all-in-one-supervisord.conf
