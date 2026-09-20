@@ -91,10 +91,44 @@ install_retention_schedule(){
   fi
   rm -f -- "$previous" || fail 'retention scheduler snapshot cleanup failed' 74
 }
+upgrade_existing_root(){
+  local stage backup_bin backup_source receipt_file old_bin old_source
+  [[ -d $target && ! -L $target && $(realpath -e -- "$target") == "$target" && $(stat -c '%u:%g:%a' "$target") == 0:0:700 ]] || fail 'existing root custody invalid' 65
+  # Never replace the executor while an operation is live. A terminal operation
+  # has terminal.json; a nonterminal directory is an active/recovery boundary.
+  for op in "$target/state/operations"/*; do
+    [[ -e $op ]] || continue
+    [[ -f $op/terminal.json ]] || fail 'active operation prevents executor upgrade' 75
+  done
+  receipt_file=$target/state/build-receipts/sha256-${candidate_image#sha256:}.json
+  [[ -f $receipt && ! -L $receipt ]] || fail 'receipt path unsafe' 65
+  stage=$(mktemp -d "$parent/.hddt-upgrade.XXXXXX")
+  chmod 700 "$stage"; mkdir -m 700 "$stage/bin"
+  for p in hddt-moss.sh hddt-moss-launcher.sh hddt-moss-status.sh; do install -o 0 -g 0 -m 700 "$source/ops/scripts/$p" "$stage/bin/$p"; done
+  "$git_bin" clone --no-local --no-hardlinks --quiet "$source" "$stage/release-source" || fail 'staged release checkout failed' 65
+  "$git_bin" -c safe.directory="$stage/release-source" -C "$stage/release-source" checkout --detach --quiet "$revision"
+  "$git_bin" -c safe.directory="$stage/release-source" -C "$stage/release-source" remote set-url origin "$CANONICAL_REMOTE"
+  "$git_bin" -c safe.directory="$stage/release-source" -C "$stage/release-source" config core.fileMode false
+  chown -R 0:0 "$stage/release-source"; find "$stage/release-source" -type d -exec chmod 700 {} +; find "$stage/release-source" -type f -exec chmod 600 {} +
+  validate_release_checkout "$stage/release-source"
+  validate_receipt "$receipt" "$stage/bin/hddt-moss.sh" "$stage/bin/hddt-moss-launcher.sh" "$stage/release-source/ops/scripts/build-moss-all-in-one-candidate.sh"
+  backup_bin="$parent/.hddt-bin.previous.$$.${RANDOM}"; backup_source="$parent/.hddt-source.previous.$$.${RANDOM}"
+  mv "$target/bin" "$backup_bin" && mv "$target/release-source" "$backup_source" && mv "$stage/bin" "$target/bin" && mv "$stage/release-source" "$target/release-source" || {
+    [[ -e $target/bin ]] || mv "$backup_bin" "$target/bin" || true
+    [[ -e $target/release-source ]] || mv "$backup_source" "$target/release-source" || true
+    fail 'executor upgrade replacement failed and was restored' 74
+  }
+  if ! install -o 0 -g 0 -m 600 "$receipt" "$receipt_file" || ! validate_existing_root || ! install_retention_schedule; then
+    rm -rf -- "$target/bin" "$target/release-source" || true
+    mv "$backup_bin" "$target/bin" || true
+    mv "$backup_source" "$target/release-source" || true
+    fail 'executor upgrade verification failed and was restored' 74
+  fi
+  rm -rf -- "$backup_bin" "$backup_source" "$stage"
+  printf 'HDDT_BOOTSTRAP=PASS existing=upgraded target=%s revision=%s\n' "$target" "$revision"
+}
 if [[ -e $target ]]; then
-  validate_existing_root
-  install_retention_schedule
-  printf 'HDDT_BOOTSTRAP=PASS existing=yes target=%s revision=%s\n' "$target" "$revision"
+  upgrade_existing_root
   exit 0
 fi
 head=$(git_at "$source" rev-parse HEAD); source_tree=$(git_at "$source" rev-parse 'HEAD^{tree}'); remote=$(git_at "$source" remote get-url origin)
