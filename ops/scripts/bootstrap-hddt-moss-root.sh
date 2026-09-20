@@ -118,7 +118,7 @@ upgrade_existing_root(){
     [[ -e $target/release-source ]] || mv "$backup_source" "$target/release-source" || true
     fail 'executor upgrade replacement failed and was restored' 74
   }
-  if ! install -o 0 -g 0 -m 600 "$receipt" "$receipt_file" || ! validate_existing_root || ! install_retention_schedule; then
+  if { [[ $receipt == "$receipt_file" ]] || install -o 0 -g 0 -m 600 "$receipt" "$receipt_file"; } && validate_existing_root && install_retention_schedule; then :; else
     rm -rf -- "$target/bin" "$target/release-source" || true
     mv "$backup_bin" "$target/bin" || true
     mv "$backup_source" "$target/release-source" || true
