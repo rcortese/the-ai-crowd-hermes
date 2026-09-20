@@ -1,0 +1,311 @@
+{
+  "schema_version": "the-ai-crowd-release-scope/v1",
+  "stage": 1,
+  "stage_name": "fixar escopo e remover ambiguidades de conclusao",
+  "status": "complete",
+  "artifact_role": "single canonical fleet matrix for build, validation and deploy planning",
+  "release_readiness": "not_assessed_by_stage_1",
+  "lifecycle_authorization": false,
+  "evidence": {
+    "runtime_host": "MEDIA",
+    "runtime_capture_started_at": "2026-09-20T18:13:57-03:00",
+    "runtime_capture_ended_at": "2026-09-20T18:13:58-03:00",
+    "runtime_revalidated_at": "2026-09-20T18:19:14-03:00",
+    "runtime_capture_non_mutating": true,
+    "runtime_drift_during_capture": false,
+    "upstream_revalidated_on": "2026-09-20",
+    "upstream_sources": {
+      "agent": "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest",
+      "webui": "https://api.github.com/repos/nesquena/hermes-webui/releases/latest"
+    },
+    "limitations": [
+      "Current Agent versions are package metadata from each active venv; they do not identify every runtime byte.",
+      "Current WebUI versions come from api/_version.py; Roy uses a git-describe marker and the complete live tree was not equated to that commit.",
+      "This stage does not validate candidate source, build images, run application smokes, approve deployment or authorize lifecycle operations."
+    ]
+  },
+  "scope_contract": {
+    "service_ids_in_order": [
+      "moss",
+      "roy",
+      "jen",
+      "denholm",
+      "richmond",
+      "the-elders"
+    ],
+    "agent_required_for_every_service": true,
+    "webui_required_service_ids": [
+      "moss",
+      "roy"
+    ],
+    "webui_not_applicable_service_ids": [
+      "jen",
+      "denholm",
+      "richmond",
+      "the-elders"
+    ],
+    "completion_rule": "All six Agent rows and both applicable WebUI rows must pass. Preserving any old Agent version is not an update. A deliberately absent WebUI is N/A, not pending and not success-by-installation.",
+    "topology_rule": "Preserve persona identity, persistent state, channel ownership, mount boundaries, network membership, published-port exposure and allowlisted communication unless a later separately approved scope change says otherwise.",
+    "non_goals": [
+      "install WebUI for Jen, Denholm, Richmond or The Elders",
+      "redesign profiles or persona identities",
+      "change models, providers or credentials",
+      "expand communication or data access between personas",
+      "change channel ownership or recipients",
+      "create a CI/CD platform",
+      "build, deploy, restart or recreate any service in stage 1"
+    ]
+  },
+  "targets": {
+    "agent": {
+      "upstream": "NousResearch/hermes-agent",
+      "stable_release_tag": "v2026.9.14",
+      "package_version": "0.21.3",
+      "published_at": "2026-09-14T16:04:14Z",
+      "latest_stable_observed": true,
+      "tag_commit_and_tree": "deferred_to_stage_3"
+    },
+    "webui": {
+      "upstream": "nesquena/hermes-webui",
+      "stable_release_tag": "v0.52.113",
+      "published_at": "2026-08-14T02:40:45Z",
+      "latest_stable_observed": true,
+      "tag_commit_and_tree": "deferred_to_stage_3"
+    }
+  },
+  "global_verification_catalog": {
+    "G01": "Resolve and freeze exact upstream tag, commit and tree; no dynamic latest lookup during deploy.",
+    "G02": "Classify every relevant downstream behavior as ported and tested, superseded with evidence, or deliberately retired by an authorized decision.",
+    "G03": "Bind each service candidate to immutable source, image ID or digest, build inputs and test receipts.",
+    "G04": "Verify Hermes Agent reports package version 0.21.3 inside the exact candidate image and after promotion.",
+    "G05": "Verify WebUI v0.52.113 plus accepted downstream ports on Moss and Roy; verify no WebUI was implicitly added to the other four services.",
+    "G06": "Compare pre/post container network membership, published ports and persistent mount source, destination and access mode; reject unapproved expansion.",
+    "G07": "Verify persona identity, HERMES_HOME, profiles, plugins, tools, channels and supervised processes against a per-service preflight inventory.",
+    "G08": "Run the effective service healthcheck and named application probes against the immutable candidate before and after promotion.",
+    "G09": "Exercise allowlisted inter-persona API/proxy paths and prove non-allowlisted reachability was not broadened.",
+    "G10": "Record exact rollback image and state selector per service and prove rollback/recovery procedure before fleet completion.",
+    "G11": "Report PASS or FAIL separately for every matrix row; any failed or untested required row makes fleet status incomplete.",
+    "G12": "Deploy consumes already verified images with --no-build; release preparation and production promotion remain separate gates."
+  },
+  "services": [
+    {
+      "service_id": "moss",
+      "compose_service": "moss",
+      "container_name": "the-ai-crowd-moss-1",
+      "current": {
+        "container_state": "running",
+        "container_health": "healthy",
+        "restart_count": 0,
+        "image_id": "sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150",
+        "agent_package_version": "0.20.0",
+        "webui_state": "installed",
+        "webui_version_marker": "v0.52.76-the-ai-crowd.3"
+      },
+      "target": {
+        "agent_package_version": "0.21.3",
+        "agent_release_tag": "v2026.9.14",
+        "webui_applicability": "required",
+        "webui_release_tag": "v0.52.113"
+      },
+      "topology_baseline": {
+        "networks": ["local-llm-net", "network_default", "the-ai-crowd_internal"],
+        "host_published_ports": ["8644/tcp->0.0.0.0:8644"],
+        "mounts": [
+          "ro:/agents/moss/public",
+          "ro:/agents/moss/private",
+          "rw:/mnt/hermes-shared",
+          "ro:/archiveops/richmond",
+          "rw:/backups/the-ai-crowd",
+          "rw:/opt/data"
+        ],
+        "health_probes": [
+          "http://127.0.0.1:8787/health",
+          "http://127.0.0.1:8644/health",
+          "http://127.0.0.1:8648/health"
+        ]
+      },
+      "required_verifications": ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11", "G12"]
+    },
+    {
+      "service_id": "roy",
+      "compose_service": "roy",
+      "container_name": "the-ai-crowd-roy-1",
+      "current": {
+        "container_state": "running",
+        "container_health": "healthy",
+        "restart_count": 0,
+        "image_id": "sha256:8133dbd61632bfecb7f5857de9a6027be37db6e9132f6678d1e090c41ed5a69e",
+        "agent_package_version": "0.20.3",
+        "webui_state": "installed",
+        "webui_version_marker": "v0.51.150-4187-gfe845119"
+      },
+      "target": {
+        "agent_package_version": "0.21.3",
+        "agent_release_tag": "v2026.9.14",
+        "webui_applicability": "required",
+        "webui_release_tag": "v0.52.113"
+      },
+      "topology_baseline": {
+        "networks": ["network_default", "the-ai-crowd_internal"],
+        "host_published_ports": [],
+        "mounts": [
+          "rw:/agents/roy/private",
+          "rw:/transfer",
+          "rw:/mnt/hermes-auth-shared",
+          "rw:/opt/data",
+          "ro:/opt/personal-assistant"
+        ],
+        "health_probes": [
+          "http://127.0.0.1:8787/health",
+          "http://127.0.0.1:8644/health",
+          "http://127.0.0.1:8645/health"
+        ]
+      },
+      "required_verifications": ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11", "G12"]
+    },
+    {
+      "service_id": "jen",
+      "compose_service": "jen",
+      "container_name": "the-ai-crowd-jen-1",
+      "current": {
+        "container_state": "running",
+        "container_health": "healthy",
+        "restart_count": 0,
+        "image_id": "sha256:e432b9c99bf185836f7ad4191db470481f49443fca5fe2ac71618d0065f7dc75",
+        "agent_package_version": "0.19.1",
+        "webui_state": "not_installed_by_design",
+        "webui_version_marker": null
+      },
+      "target": {
+        "agent_package_version": "0.21.3",
+        "agent_release_tag": "v2026.9.14",
+        "webui_applicability": "not_applicable",
+        "webui_release_tag": null
+      },
+      "topology_baseline": {
+        "networks": ["the-ai-crowd_internal"],
+        "host_published_ports": [],
+        "mounts": [
+          "rw:/agents/jen/private",
+          "ro:/agents/jen/public",
+          "ro:/archiveops/richmond",
+          "rw:/mnt/hermes-auth-shared",
+          "rw:/mnt/hermes-shared",
+          "rw:/opt/data"
+        ],
+        "health_probes": ["http://127.0.0.1:9121/"]
+      },
+      "required_verifications": ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11", "G12"]
+    },
+    {
+      "service_id": "denholm",
+      "compose_service": "denholm",
+      "container_name": "the-ai-crowd-denholm-1",
+      "current": {
+        "container_state": "running",
+        "container_health": "healthy",
+        "restart_count": 0,
+        "image_id": "sha256:caa4c50a766ea23cc2f7b56a7da28a9e7d1192891b175b4fbfeb3439fd1e58e3",
+        "agent_package_version": "0.19.1",
+        "webui_state": "not_installed_by_design",
+        "webui_version_marker": null
+      },
+      "target": {
+        "agent_package_version": "0.21.3",
+        "agent_release_tag": "v2026.9.14",
+        "webui_applicability": "not_applicable",
+        "webui_release_tag": null
+      },
+      "topology_baseline": {
+        "networks": ["the-ai-crowd_internal"],
+        "host_published_ports": [],
+        "mounts": [
+          "rw:/agents/denholm/private",
+          "ro:/agents/denholm/public",
+          "ro:/archiveops/richmond",
+          "rw:/mnt/hermes-auth-shared",
+          "rw:/mnt/hermes-shared",
+          "rw:/opt/data"
+        ],
+        "health_probes": ["http://127.0.0.1:8643/health"]
+      },
+      "required_verifications": ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11", "G12"]
+    },
+    {
+      "service_id": "richmond",
+      "compose_service": "richmond",
+      "container_name": "the-ai-crowd-richmond-1",
+      "current": {
+        "container_state": "running",
+        "container_health": "healthy",
+        "restart_count": 0,
+        "image_id": "sha256:a944e57c9f3e8d315c5b2ad21d21274973e07240c3198031adc1d8b79633da22",
+        "agent_package_version": "0.19.1",
+        "webui_state": "not_installed_by_design",
+        "webui_version_marker": null
+      },
+      "target": {
+        "agent_package_version": "0.21.3",
+        "agent_release_tag": "v2026.9.14",
+        "webui_applicability": "not_applicable",
+        "webui_release_tag": null
+      },
+      "topology_baseline": {
+        "networks": ["the-ai-crowd_internal"],
+        "host_published_ports": [],
+        "mounts": [
+          "rw:/agents/richmond/private",
+          "ro:/agents/richmond/public",
+          "ro:/archiveops/richmond",
+          "rw:/mnt/hermes-auth-shared",
+          "rw:/mnt/hermes-shared",
+          "rw:/opt/data"
+        ],
+        "health_probes": ["http://127.0.0.1:8646/health"]
+      },
+      "required_verifications": ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11", "G12"]
+    },
+    {
+      "service_id": "the-elders",
+      "compose_service": "the-elders",
+      "container_name": "the-ai-crowd-the-elders-1",
+      "current": {
+        "container_state": "running",
+        "container_health": "healthy",
+        "restart_count": 0,
+        "image_id": "sha256:78fa806167a65a4ada1cb40165481010ce81118d197839bb888f204ae5f3359b",
+        "agent_package_version": "0.19.1",
+        "webui_state": "not_installed_by_design",
+        "webui_version_marker": null
+      },
+      "target": {
+        "agent_package_version": "0.21.3",
+        "agent_release_tag": "v2026.9.14",
+        "webui_applicability": "not_applicable",
+        "webui_release_tag": null
+      },
+      "topology_baseline": {
+        "networks": ["the-ai-crowd_internal"],
+        "host_published_ports": [],
+        "mounts": [
+          "rw:/opt/data",
+          "rw:/agents/the-elders/private",
+          "ro:/agents/the-elders/public",
+          "ro:/archiveops/richmond",
+          "rw:/mnt/hermes-auth-shared",
+          "ro:/mnt/hermes-shared"
+        ],
+        "health_probes": ["http://127.0.0.1:8647/health"]
+      },
+      "required_verifications": ["G01", "G02", "G03", "G04", "G05", "G06", "G07", "G08", "G09", "G10", "G11", "G12"]
+    }
+  ],
+  "stage_1_acceptance": {
+    "expected_service_count": 6,
+    "expected_required_agent_rows": 6,
+    "expected_required_webui_rows": 2,
+    "expected_not_applicable_webui_rows": 4,
+    "matrix_is_single_scope_authority": true,
+    "later_stage_rule": "Build, test and deploy tooling must consume or validate against this exact six-row matrix rather than maintain independent service lists."
+  }
+}
