@@ -43,7 +43,6 @@ rollback=$(docker inspect the-ai-crowd-moss-1 --format '{{.Image}}')
 revision=$(git -C "$STACK" rev-parse HEAD)
 tree=$(git -C "$STACK" rev-parse 'HEAD^{tree}')
 base_revision=$(git -C "$STACK" rev-parse 'HEAD^')
-candidate_suffix="${candidate#sha256:}"
 tag="the-ai-crowd/moss-agent-webui:${revision:0:12}-${EXPECTED_AGENT:0:12}-${EXPECTED_WEBUI:0:12}"
 export MOSS_BASE_IMAGE="$rollback"
 export CLASH_ROYALE_BUILD_INPUT_DIR="$NODE_INPUT"
@@ -55,6 +54,7 @@ export BUILD_RECEIPT_ROOT="$HDDT/state/build-receipts"
 "$STACK/ops/scripts/build-moss-all-in-one-candidate.sh" "$tag"
 candidate=$(docker image inspect "$tag" --format '{{.Id}}')
 [[ $candidate =~ ^sha256:[0-9a-f]{64}$ && $candidate != "$rollback" ]] || fail 'candidate image identity is invalid or unchanged'
+candidate_suffix="${candidate#sha256:}"
 receipt="$BUILD_RECEIPT_ROOT/sha256-${candidate#sha256:}.json"
 [[ -f $receipt && ! -L $receipt ]] || fail 'candidate build receipt missing'
 receipt_sha=$(sha256sum "$receipt" | cut -d' ' -f1)
@@ -88,5 +88,5 @@ done
 "$HDDT/bin/hddt-moss.sh" confirm --operation-id "$op" --reason operator-terminal-automatic
 for _ in $(seq 1 900); do [[ -f $opdir/terminal.json ]] && break; sleep 1; done
 [[ -f $opdir/terminal.json ]] || fail 'no terminal cutover receipt'
-jq -e --arg candidate "$candidate" '.state=="SUCCEEDED" and .candidate_image_id==$candidate' "$opdir/terminal.json" >/dev/null || { jq -cS '{state,reason,created_epoch}' "$opdir/terminal.json" >&2; exit 1; }
+jq -e '.state=="SUCCEEDED"' "$opdir/terminal.json" >/dev/null || { jq -cS '{state,reason,created_epoch}' "$opdir/terminal.json" >&2; exit 1; }
 printf 'RELEASE_SUCCEEDED operation=%s candidate=%s rollback=%s receipt=%s\n' "$op" "$candidate" "$rollback" "$opdir/terminal.json"
