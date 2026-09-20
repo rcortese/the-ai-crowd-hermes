@@ -59,6 +59,9 @@
   "targets": {
     "agent": {
       "upstream": "NousResearch/hermes-agent",
+      "candidate_repository_path_on_MEDIA": "/mnt/user/appdata/the-ai-crowd-candidates/update-20260916/hermes-agent-liveport-v2026.9.14",
+      "candidate_branch": "candidate/liveport-v2026.9.14",
+      "candidate_remote": "git@github.com:rcortese/hermes-agent.git",
       "stable_release_tag": "v2026.9.14",
       "package_version": "0.21.3",
       "published_at": "2026-09-14T16:04:14Z",
@@ -71,6 +74,9 @@
     },
     "webui": {
       "upstream": "nesquena/hermes-webui",
+      "candidate_repository_path_on_MEDIA": "/mnt/user/appdata/the-ai-crowd-candidates/update-20260916/hermes-webui",
+      "candidate_branch": "candidate/v0.52.113",
+      "candidate_remote": "git@github.com:rcortese/hermes-webui.git",
       "stable_release_tag": "v0.52.113",
       "published_at": "2026-08-14T02:40:45Z",
       "latest_stable_observed": true,
