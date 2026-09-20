@@ -1,0 +1,2816 @@
+{
+  "schema_version": 1,
+  "stage": 2,
+  "status": "INVENTORY_COMPLETE_WITH_EXECUTION_BLOCKER",
+  "created_utc": "2026-09-20T23:08:55.940840+00:00",
+  "scope_services": [
+    "denholm",
+    "jen",
+    "moss",
+    "richmond",
+    "roy",
+    "the-elders"
+  ],
+  "source_input_commit": "755005309ee083df166f34a25a82462d4ef9a527",
+  "matrix_sha256": "005acb6958160c50ddb1b763e3b25d87b19f9a8b3d98375f073b5da579cec09b",
+  "collection_provenance": [
+    {
+      "capture": "stage2-baseline.json",
+      "capture_completed_utc": "2026-09-20T22:58:46.342950+00:00",
+      "sanitized_capture_sha256": "5a0563628086979eb54645c0842a716b4ad10cf8366d381a5790f7c6446b6024"
+    },
+    {
+      "capture": "stage2-after.json",
+      "capture_completed_utc": "2026-09-20T23:05:27.020133+00:00",
+      "sanitized_capture_sha256": "5e29b6074df559920c9b5b2a36f0d1c107f8e0e7b72f0eb047de40b09c6ab618"
+    },
+    {
+      "capture": "stage2-compose.json",
+      "capture_completed_utc": "2026-09-20T23:00:52.132066+00:00",
+      "sanitized_capture_sha256": "73ca739ec5bbc1c0146c40930570445e36f793b13e1403e2c01441ed4d38629f"
+    },
+    {
+      "capture": "stage2-complements.json",
+      "capture_completed_utc": "2026-09-20T23:01:50.895653+00:00",
+      "sanitized_capture_sha256": "e9e0accda1ab6d64b8c65e83df15b3234043c0ff15db0793f0c002fdf42655da"
+    },
+    {
+      "capture": "stage2-personas-raw.txt",
+      "capture_completed_utc": "2026-09-20T23:00:13.689337+00:00",
+      "sanitized_capture_sha256": "95016b3d00e5a360ce564e672885b996d1fa1cfa5b2e96c55db29c411b3960f3"
+    },
+    {
+      "capture": "stage2-platform-tools.jsonl",
+      "capture_completed_utc": "2026-09-20T23:02:40.798302+00:00",
+      "sanitized_capture_sha256": "4e3bc11daff1e3cf187c9bc15482e5f584b6fa67b7b7df0c4d76a5c46936dc5f"
+    },
+    {
+      "capture": "stage2-channel-config.jsonl",
+      "capture_completed_utc": "2026-09-20T23:02:55.640198+00:00",
+      "sanitized_capture_sha256": "81601f97d95bff7d9f143153d1fcf65eb1dfc73b56fb1159400cc099937499af"
+    },
+    {
+      "capture": "stage2-binaries.jsonl",
+      "capture_completed_utc": "2026-09-20T23:04:30.151534+00:00",
+      "sanitized_capture_sha256": "6fee57aa54a7394f694a5fede7f138d8c5aba3abe678fe5793ed6815ee21a383"
+    },
+    {
+      "capture": "stage2-process-env.json",
+      "capture_completed_utc": "2026-09-20T23:03:15.929055+00:00",
+      "sanitized_capture_sha256": "0b833de1df835a3c4d13c558a3397e95c8daba18b44f2d48b5aad0cd5c2990b8"
+    },
+    {
+      "capture": "stage2-webui-env.json",
+      "capture_completed_utc": "2026-09-20T23:03:32.650938+00:00",
+      "sanitized_capture_sha256": "2490b3bdd5cccd15421f64e107d06d4b16c429f77f19377da786d707bc4aa57b"
+    },
+    {
+      "capture": "stage2-aliases.json",
+      "capture_completed_utc": "2026-09-20T23:05:26.742136+00:00",
+      "sanitized_capture_sha256": "fd0ad5564605b5f873e942af0c5611cd276ca83a7660cadd9dfbcd2202ba1bb5"
+    }
+  ],
+  "collection_methods": {
+    "before_after": "SSH media: docker inspect exact six container names; allowlisted projection of identity/state/mounts/networks/ports/Compose labels/home values; secret values excluded before capture",
+    "compose": "SSH media: docker compose --project-directory /mnt/user/appdata/the-ai-crowd -f /mnt/user/appdata/the-ai-crowd/compose.yaml config --no-env-resolution --format json; only image/build/volumes/ports/networks/user/cwd/entrypoint/command fields retained",
+    "persona": "docker exec exact six containers Python read-only config YAML projection; toolsets/plugins/known paths only; root and discovered named config separated",
+    "process": "docker top -eo pid,args to locate gateway and WebUI; host /proc/PID/environ read into explicit home/routing allowlist; raw environment never retained",
+    "capture_semantics": "UTC file completion timestamps; sequential non-atomic captures. StartedAt is NOT the collection timestamp."
+  },
+  "compose_complements": {
+    "include": null,
+    "services": {
+      "moss": {
+        "env_file": [
+          "./env/fleet.env",
+          "/mnt/user/appdata/the-ai-crowd/env/moss-webui.env"
+        ]
+      },
+      "jen": {
+        "env_file": [
+          "./env/fleet.env"
+        ]
+      },
+      "denholm": {
+        "env_file": [
+          "./env/fleet.env"
+        ]
+      },
+      "richmond": {
+        "env_file": [
+          "./env/fleet.env"
+        ]
+      },
+      "roy": {
+        "env_file": [
+          "/mnt/user/appdata/the-ai-crowd/env/roy-v3.env"
+        ]
+      },
+      "the-elders": {
+        "env_file": [
+          "./env/fleet.env"
+        ]
+      }
+    }
+  },
+  "services": [
+    {
+      "service": "moss",
+      "observed_before": {
+        "name": "/the-ai-crowd-moss-1",
+        "id": "6aa2275dd185d325cc4fed8ccaaa11437723be73b56af1726ada94059d4cddce",
+        "image_id": "sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150",
+        "image_ref": "sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150",
+        "started": "2026-09-18T10:06:34.952881159Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+            "Destination": "/agents/moss/private",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-public-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+            "Destination": "/agents/moss/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/private/backups",
+            "Destination": "/backups/the-ai-crowd",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "local-llm-net",
+          "network_default",
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8644/tcp": [
+            {
+              "HostIp": "0.0.0.0",
+              "HostPort": "8644"
+            }
+          ],
+          "8648/tcp": null,
+          "8787/tcp": null,
+          "9119/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/moss/private",
+        "labels": {
+          "com.docker.compose.config-hash": "05490ce834b5922b0c5e48222b34858e085107ce8a7b9bf0359324464620a3ab",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "moss-1",
+          "com.docker.compose.service": "moss",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "observed_after": {
+        "name": "/the-ai-crowd-moss-1",
+        "id": "6aa2275dd185d325cc4fed8ccaaa11437723be73b56af1726ada94059d4cddce",
+        "image_id": "sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150",
+        "image_ref": "sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150",
+        "started": "2026-09-18T10:06:34.952881159Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+            "Destination": "/agents/moss/private",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-public-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+            "Destination": "/agents/moss/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/private/backups",
+            "Destination": "/backups/the-ai-crowd",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "local-llm-net",
+          "network_default",
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8644/tcp": [
+            {
+              "HostIp": "0.0.0.0",
+              "HostPort": "8644"
+            }
+          ],
+          "8648/tcp": null,
+          "8787/tcp": null,
+          "9119/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/moss/private",
+        "labels": {
+          "com.docker.compose.config-hash": "05490ce834b5922b0c5e48222b34858e085107ce8a7b9bf0359324464620a3ab",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "moss-1",
+          "com.docker.compose.service": "moss",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "declared_compose": {
+        "image": "sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150",
+        "volumes": [
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+            "target": "/opt/data",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-public-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+            "target": "/agents/moss/public",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+            "target": "/agents/moss/private",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "target": "/mnt/hermes-shared",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "target": "/archiveops/richmond",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/private/backups",
+            "target": "/backups/the-ai-crowd",
+            "bind": {
+              "create_host_path": true
+            }
+          }
+        ],
+        "ports": [
+          {
+            "mode": "ingress",
+            "host_ip": "0.0.0.0",
+            "target": 8644,
+            "published": "8644",
+            "protocol": "tcp"
+          }
+        ],
+        "networks": {
+          "internal": null,
+          "local_llm": null,
+          "private_proxy": {
+            "aliases": [
+              "hermes"
+            ]
+          }
+        },
+        "user": "0:0",
+        "working_dir": "/agents/moss/private",
+        "entrypoint": null,
+        "command": null
+      },
+      "discovered_configuration": {
+        "home_env": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data",
+          "HERMES_PROFILE": null,
+          "MOSS_PROFILE_HOME": null
+        },
+        "profiles": [
+          "moss",
+          "reviewer"
+        ],
+        "configs": [
+          {
+            "path": "/opt/data/config.yaml",
+            "toolsets": [
+              "hermes-cli",
+              "persona",
+              "a2a"
+            ],
+            "tools": {
+              "tool_search": {
+                "enabled": "auto",
+                "threshold_pct": 10,
+                "search_default_limit": 5,
+                "max_search_limit": 20
+              }
+            },
+            "plugins": {
+              "enabled": [
+                "hermes-lcm",
+                "claude-code-tool",
+                "lifecycle-authorization-guard",
+                "a2a-platform"
+              ],
+              "disabled": []
+            },
+            "platform_names": [],
+            "gateway_keys": [
+              "strict",
+              "media_delivery_allow_dirs",
+              "trust_recent_files",
+              "trust_recent_files_seconds",
+              "enabled",
+              "platforms"
+            ],
+            "webui_keys": []
+          },
+          {
+            "path": "/opt/data/profiles/reviewer/config.yaml",
+            "toolsets": [
+              "terminal",
+              "file",
+              "skills",
+              "session_search"
+            ],
+            "tools": null,
+            "plugins": null,
+            "platform_names": [],
+            "gateway_keys": [
+              "enabled"
+            ],
+            "webui_keys": []
+          }
+        ]
+      },
+      "configured_platform_tools": {
+        "platform_toolsets": {
+          "api_server": [
+            "terminal",
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "no_mcp"
+          ],
+          "cli": [
+            "terminal",
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "webui_session_launch",
+            "moss_telegram_owner_delivery",
+            "persona",
+            "a2a"
+          ],
+          "cron": [
+            "terminal",
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "no_mcp"
+          ],
+          "discord": [
+            "terminal",
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "no_mcp"
+          ],
+          "email": [
+            "terminal",
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "no_mcp"
+          ],
+          "telegram": [
+            "terminal",
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "no_mcp",
+            "persona"
+          ],
+          "webhook": [
+            "terminal",
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "no_mcp"
+          ]
+        },
+        "mcp_names": [
+          "webui_session_launch",
+          "moss_telegram_owner_delivery"
+        ]
+      },
+      "configured_channels": {
+        "gateway_enabled": true,
+        "gateway_platforms": [],
+        "api_server": {
+          "enabled": true,
+          "host": null,
+          "port": null
+        },
+        "persona_api": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "a2a_agent_names": [
+          "denholm"
+        ]
+      },
+      "command_path_availability": {
+        "binaries": {
+          "git": "/usr/bin/git",
+          "node": "/usr/local/bin/node",
+          "npm": "/usr/local/bin/npm",
+          "uv": "/usr/local/bin/uv",
+          "python3": "/opt/hermes/.venv/bin/python3",
+          "ffmpeg": "/usr/bin/ffmpeg",
+          "gog": null,
+          "agent-browser": null,
+          "chromium": null,
+          "pandoc": null,
+          "pdftotext": null,
+          "soffice": null,
+          "ssh": "/usr/bin/ssh"
+        },
+        "user_plugins": [
+          "claude-code-tool",
+          "hermes-lcm",
+          "lifecycle-authorization-guard"
+        ]
+      },
+      "gateway_process": {
+        "pid": 3788042,
+        "environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        },
+        "routing_environment": {
+          "HERMES_WEBUI_PORT": "8787",
+          "WEBHOOK_ENABLED": "true",
+          "API_SERVER_HOST": "0.0.0.0",
+          "API_SERVER_PORT": "8648",
+          "API_SERVER_ENABLED": "true",
+          "HERMES_WEBUI_HOST": "0.0.0.0",
+          "WEBHOOK_PORT": "8644"
+        },
+        "configured_credential_categories": [
+          "telegram"
+        ]
+      },
+      "webui_process_environment": {
+        "HERMES_WEBUI_DEFAULT_WORKSPACE": "/agents/moss/private",
+        "HERMES_WEBUI_AGENT_DIR": "/opt/hermes",
+        "HOME": "/opt/data",
+        "HERMES_WEBUI_STATE_DIR": "/opt/data/webui",
+        "HERMES_WEBUI_CHAT_BACKEND": "gateway",
+        "HERMES_WEBUI_HOST": "0.0.0.0",
+        "HERMES_WEBUI_GATEWAY_BASE_URL": "http://moss:8648",
+        "HERMES_WEBUI_PORT": "8787",
+        "HERMES_HOME": "/opt/data"
+      },
+      "network_aliases": {
+        "local-llm-net": {
+          "Aliases": [
+            "the-ai-crowd-moss-1",
+            "moss"
+          ],
+          "DNSNames": [
+            "the-ai-crowd-moss-1",
+            "moss",
+            "6aa2275dd185"
+          ]
+        },
+        "network_default": {
+          "Aliases": [
+            "the-ai-crowd-moss-1",
+            "moss",
+            "hermes"
+          ],
+          "DNSNames": [
+            "the-ai-crowd-moss-1",
+            "moss",
+            "hermes",
+            "6aa2275dd185"
+          ]
+        },
+        "the-ai-crowd_internal": {
+          "Aliases": [
+            "the-ai-crowd-moss-1",
+            "moss"
+          ],
+          "DNSNames": [
+            "the-ai-crowd-moss-1",
+            "moss",
+            "6aa2275dd185"
+          ]
+        }
+      },
+      "functional_test_status": "NOT_RUN_STAGE_2_INVENTORY_ONLY"
+    },
+    {
+      "service": "roy",
+      "observed_before": {
+        "name": "/the-ai-crowd-roy-1",
+        "id": "0bbb36d1fb3523153d9e3ea9b620bdd2365cee53ebe9bb4e71022ee89d0516e1",
+        "image_id": "sha256:8133dbd61632bfecb7f5857de9a6027be37db6e9132f6678d1e090c41ed5a69e",
+        "image_ref": "the-ai-crowd/roy-all-in-one:20260819-relaxed-a2a",
+        "started": "2026-09-18T10:01:08.695215928Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/private/roy-v3-workspace",
+            "Destination": "/agents/roy/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/roy-v3-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/roy-v3",
+            "Destination": "/opt/personal-assistant",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/private/roy-transfer",
+            "Destination": "/transfer",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "network_default",
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8644/tcp": null,
+          "8645/tcp": null,
+          "8787/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/roy/private",
+        "labels": {
+          "com.docker.compose.config-hash": "945eb933d0e043b40c14a5fc3f6a1330d649cb4be646d6e1d30761c2e779a6aa",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:8133dbd61632bfecb7f5857de9a6027be37db6e9132f6678d1e090c41ed5a69e",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "roy-1",
+          "com.docker.compose.service": "roy",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "observed_after": {
+        "name": "/the-ai-crowd-roy-1",
+        "id": "0bbb36d1fb3523153d9e3ea9b620bdd2365cee53ebe9bb4e71022ee89d0516e1",
+        "image_id": "sha256:8133dbd61632bfecb7f5857de9a6027be37db6e9132f6678d1e090c41ed5a69e",
+        "image_ref": "the-ai-crowd/roy-all-in-one:20260819-relaxed-a2a",
+        "started": "2026-09-18T10:01:08.695215928Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/private/roy-v3-workspace",
+            "Destination": "/agents/roy/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/roy-v3-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/roy-v3",
+            "Destination": "/opt/personal-assistant",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/private/roy-transfer",
+            "Destination": "/transfer",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "network_default",
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8644/tcp": null,
+          "8645/tcp": null,
+          "8787/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/roy/private",
+        "labels": {
+          "com.docker.compose.config-hash": "945eb933d0e043b40c14a5fc3f6a1330d649cb4be646d6e1d30761c2e779a6aa",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:8133dbd61632bfecb7f5857de9a6027be37db6e9132f6678d1e090c41ed5a69e",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "roy-1",
+          "com.docker.compose.service": "roy",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "declared_compose": {
+        "image": "the-ai-crowd/roy-all-in-one:20260819-relaxed-a2a",
+        "volumes": [
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/roy-v3",
+            "target": "/opt/personal-assistant",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/runtime/roy-v3-home",
+            "target": "/opt/data",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/private/roy-v3-workspace",
+            "target": "/agents/roy/private",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/private/roy-transfer",
+            "target": "/transfer",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "target": "/mnt/hermes-auth-shared",
+            "bind": {
+              "create_host_path": true
+            }
+          }
+        ],
+        "networks": {
+          "internal": null,
+          "private_proxy": {
+            "aliases": [
+              "roy"
+            ]
+          }
+        },
+        "user": "0:0",
+        "working_dir": "/agents/roy/private",
+        "entrypoint": null,
+        "command": null
+      },
+      "discovered_configuration": {
+        "home_env": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data",
+          "HERMES_PROFILE": null,
+          "MOSS_PROFILE_HOME": null
+        },
+        "profiles": [],
+        "configs": [
+          {
+            "path": "/opt/data/config.yaml",
+            "toolsets": null,
+            "tools": null,
+            "plugins": {
+              "enabled": [
+                "personal-assistant-integrator",
+                "roy-pdf"
+              ],
+              "disabled": []
+            },
+            "platform_names": [],
+            "gateway_keys": [
+              "strict",
+              "trust_recent_files",
+              "trust_recent_files_seconds",
+              "media_delivery_allow_dirs"
+            ],
+            "webui_keys": []
+          }
+        ]
+      },
+      "configured_platform_tools": {
+        "platform_toolsets": {
+          "api_server": [
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "file",
+            "vision",
+            "personal_assistant_core",
+            "roy_pdf"
+          ],
+          "cli": [
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "file",
+            "vision",
+            "personal_assistant_core",
+            "roy_pdf"
+          ],
+          "telegram": [
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "file",
+            "vision",
+            "personal_assistant_core",
+            "roy_pdf"
+          ]
+        },
+        "mcp_names": []
+      },
+      "configured_channels": {
+        "gateway_enabled": null,
+        "gateway_platforms": null,
+        "api_server": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "persona_api": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "a2a_agent_names": []
+      },
+      "command_path_availability": {
+        "binaries": {
+          "git": "/usr/bin/git",
+          "node": "/usr/local/bin/node",
+          "npm": "/usr/local/bin/npm",
+          "uv": "/usr/local/bin/uv",
+          "python3": "/opt/hermes/.venv/bin/python3",
+          "ffmpeg": "/usr/bin/ffmpeg",
+          "gog": "/usr/local/bin/gog",
+          "agent-browser": null,
+          "chromium": null,
+          "pandoc": null,
+          "pdftotext": "/usr/bin/pdftotext",
+          "soffice": null,
+          "ssh": "/usr/bin/ssh"
+        },
+        "user_plugins": [
+          "personal-assistant-integrator",
+          "roy-viviane-fiscal",
+          "roy-pdf"
+        ]
+      },
+      "gateway_process": {
+        "pid": 3779254,
+        "environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        },
+        "routing_environment": {
+          "WEBHOOK_ENABLED": "true",
+          "HERMES_WEBUI_HOST": "0.0.0.0",
+          "API_SERVER_HOST": "0.0.0.0",
+          "HERMES_WEBUI_PORT": "8787",
+          "API_SERVER_PORT": "8645",
+          "API_SERVER_ENABLED": "true",
+          "WEBHOOK_PORT": "8644"
+        },
+        "configured_credential_categories": [
+          "telegram"
+        ]
+      },
+      "webui_process_environment": {
+        "HERMES_WEBUI_HOST": "0.0.0.0",
+        "HERMES_WEBUI_STATE_DIR": "/opt/data/webui",
+        "HERMES_WEBUI_AGENT_DIR": "/opt/hermes",
+        "HOME": "/opt/data",
+        "HERMES_WEBUI_GATEWAY_BASE_URL": "http://roy:8645",
+        "HERMES_WEBUI_PORT": "8787",
+        "HERMES_WEBUI_DEFAULT_WORKSPACE": "/agents/roy/private",
+        "HERMES_HOME": "/opt/data",
+        "HERMES_WEBUI_CHAT_BACKEND": "api_server"
+      },
+      "network_aliases": {
+        "network_default": {
+          "Aliases": [
+            "the-ai-crowd-roy-1",
+            "roy",
+            "roy"
+          ],
+          "DNSNames": [
+            "the-ai-crowd-roy-1",
+            "roy",
+            "0bbb36d1fb35"
+          ]
+        },
+        "the-ai-crowd_internal": {
+          "Aliases": [
+            "the-ai-crowd-roy-1",
+            "roy"
+          ],
+          "DNSNames": [
+            "the-ai-crowd-roy-1",
+            "roy",
+            "0bbb36d1fb35"
+          ]
+        }
+      },
+      "functional_test_status": "NOT_RUN_STAGE_2_INVENTORY_ONLY"
+    },
+    {
+      "service": "jen",
+      "observed_before": {
+        "name": "/the-ai-crowd-jen-1",
+        "id": "96c21ebd77554e079adc3c70ac85726f7d367c404efa9dd0dc420a3985dfadc5",
+        "image_id": "sha256:e432b9c99bf185836f7ad4191db470481f49443fca5fe2ac71618d0065f7dc75",
+        "image_ref": "the-ai-crowd/jen:release-ceec74beb2cc46095600ba8e3b7f6aa9970453d3",
+        "started": "2026-09-18T10:11:14.769130249Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/jen",
+            "Destination": "/agents/jen/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/jen",
+            "Destination": "/agents/jen/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/jen-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8642/tcp": null,
+          "9121/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/jen/private",
+        "labels": {
+          "com.docker.compose.config-hash": "c021069483cef7174e49afd52aca27971ae0b57dafdcf48080cbc923055f46ad",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:e432b9c99bf185836f7ad4191db470481f49443fca5fe2ac71618d0065f7dc75",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "jen-1",
+          "com.docker.compose.service": "jen",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "observed_after": {
+        "name": "/the-ai-crowd-jen-1",
+        "id": "96c21ebd77554e079adc3c70ac85726f7d367c404efa9dd0dc420a3985dfadc5",
+        "image_id": "sha256:e432b9c99bf185836f7ad4191db470481f49443fca5fe2ac71618d0065f7dc75",
+        "image_ref": "the-ai-crowd/jen:release-ceec74beb2cc46095600ba8e3b7f6aa9970453d3",
+        "started": "2026-09-18T10:11:14.769130249Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/jen",
+            "Destination": "/agents/jen/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/jen",
+            "Destination": "/agents/jen/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/jen-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8642/tcp": null,
+          "9121/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/jen/private",
+        "labels": {
+          "com.docker.compose.config-hash": "c021069483cef7174e49afd52aca27971ae0b57dafdcf48080cbc923055f46ad",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:e432b9c99bf185836f7ad4191db470481f49443fca5fe2ac71618d0065f7dc75",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "jen-1",
+          "com.docker.compose.service": "jen",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "declared_compose": {
+        "image": "the-ai-crowd/jen:release-ceec74beb2cc46095600ba8e3b7f6aa9970453d3",
+        "volumes": [
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/runtime/jen-home",
+            "target": "/opt/data",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/public/jen",
+            "target": "/agents/jen/public",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/jen",
+            "target": "/agents/jen/private",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "target": "/mnt/hermes-shared",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "target": "/mnt/hermes-auth-shared",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "target": "/archiveops/richmond",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          }
+        ],
+        "networks": {
+          "internal": null
+        },
+        "user": "0:0",
+        "working_dir": "/agents/jen/private",
+        "entrypoint": null,
+        "command": null
+      },
+      "discovered_configuration": {
+        "home_env": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data",
+          "HERMES_PROFILE": null,
+          "MOSS_PROFILE_HOME": null
+        },
+        "profiles": [
+          "jen"
+        ],
+        "configs": [
+          {
+            "path": "/opt/data/config.yaml",
+            "toolsets": [
+              "hermes-cli",
+              "persona"
+            ],
+            "tools": {
+              "tool_search": {
+                "enabled": "auto",
+                "threshold_pct": 10,
+                "search_default_limit": 5,
+                "max_search_limit": 20
+              }
+            },
+            "plugins": {
+              "enabled": [
+                "disk-cleanup",
+                "hermes-lcm",
+                "jen_calendar_process",
+                "jen_todoist_process",
+                "jen_weather_process",
+                "jen_document_task_candidates"
+              ],
+              "disabled": []
+            },
+            "platform_names": [],
+            "gateway_keys": [
+              "message_timestamps",
+              "strict",
+              "media_delivery_allow_dirs",
+              "trust_recent_files",
+              "trust_recent_files_seconds"
+            ],
+            "webui_keys": []
+          },
+          {
+            "path": "/opt/data/profiles/jen/config.yaml",
+            "toolsets": [
+              "hermes-cli"
+            ],
+            "tools": null,
+            "plugins": {
+              "enabled": [
+                "disk-cleanup",
+                "hermes-lcm"
+              ],
+              "disabled": []
+            },
+            "platform_names": [],
+            "gateway_keys": [],
+            "webui_keys": []
+          }
+        ]
+      },
+      "configured_platform_tools": {
+        "platform_toolsets": {
+          "cli": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "persona"
+          ],
+          "api_server": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "persona"
+          ],
+          "cron": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "persona"
+          ],
+          "discord": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search"
+          ],
+          "email": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search"
+          ],
+          "telegram": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "persona"
+          ],
+          "webhook": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search"
+          ]
+        },
+        "mcp_names": [
+          "todoist"
+        ]
+      },
+      "configured_channels": {
+        "gateway_enabled": null,
+        "gateway_platforms": null,
+        "api_server": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "persona_api": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "a2a_agent_names": []
+      },
+      "command_path_availability": {
+        "binaries": {
+          "git": "/usr/bin/git",
+          "node": "/usr/local/bin/node",
+          "npm": "/usr/local/bin/npm",
+          "uv": "/usr/local/bin/uv",
+          "python3": "/opt/hermes/.venv/bin/python3",
+          "ffmpeg": "/usr/bin/ffmpeg",
+          "gog": "/usr/local/bin/gog",
+          "agent-browser": null,
+          "chromium": null,
+          "pandoc": null,
+          "pdftotext": null,
+          "soffice": null,
+          "ssh": "/usr/bin/ssh"
+        },
+        "user_plugins": [
+          "hermes-lcm",
+          "jen-todoist-process",
+          "jen-calendar-process",
+          "jen-weather-process",
+          "jen-document-task-candidates"
+        ]
+      },
+      "gateway_process": {
+        "pid": 3795639,
+        "environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        },
+        "routing_environment": {
+          "API_SERVER_HOST": "0.0.0.0",
+          "API_SERVER_PORT": "8642",
+          "API_SERVER_ENABLED": "true"
+        },
+        "configured_credential_categories": [
+          "telegram"
+        ]
+      },
+      "webui_process_environment": null,
+      "network_aliases": {
+        "the-ai-crowd_internal": {
+          "Aliases": [
+            "the-ai-crowd-jen-1",
+            "jen"
+          ],
+          "DNSNames": [
+            "the-ai-crowd-jen-1",
+            "jen",
+            "96c21ebd7755"
+          ]
+        }
+      },
+      "functional_test_status": "NOT_RUN_STAGE_2_INVENTORY_ONLY"
+    },
+    {
+      "service": "denholm",
+      "observed_before": {
+        "name": "/the-ai-crowd-denholm-1",
+        "id": "178d5f3e6d8539e71664374d19a543ad986cd0f40affa6cd153cfca45810f7b0",
+        "image_id": "sha256:caa4c50a766ea23cc2f7b56a7da28a9e7d1192891b175b4fbfeb3439fd1e58e3",
+        "image_ref": "the-ai-crowd/denholm:release-4e83d7d17913",
+        "started": "2026-09-18T10:15:51.319922657Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/denholm",
+            "Destination": "/agents/denholm/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/denholm",
+            "Destination": "/agents/denholm/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/denholm-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8643/tcp": null,
+          "9122/tcp": null,
+          "9900/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/denholm/private",
+        "labels": {
+          "com.docker.compose.config-hash": "cefd24a8fc7baf3179394ab14842b7672ff4dace12a78066a8e2cbb404881709",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:caa4c50a766ea23cc2f7b56a7da28a9e7d1192891b175b4fbfeb3439fd1e58e3",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "denholm-1",
+          "com.docker.compose.service": "denholm",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "observed_after": {
+        "name": "/the-ai-crowd-denholm-1",
+        "id": "178d5f3e6d8539e71664374d19a543ad986cd0f40affa6cd153cfca45810f7b0",
+        "image_id": "sha256:caa4c50a766ea23cc2f7b56a7da28a9e7d1192891b175b4fbfeb3439fd1e58e3",
+        "image_ref": "the-ai-crowd/denholm:release-4e83d7d17913",
+        "started": "2026-09-18T10:15:51.319922657Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/denholm",
+            "Destination": "/agents/denholm/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/denholm",
+            "Destination": "/agents/denholm/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/denholm-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8643/tcp": null,
+          "9122/tcp": null,
+          "9900/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/denholm/private",
+        "labels": {
+          "com.docker.compose.config-hash": "cefd24a8fc7baf3179394ab14842b7672ff4dace12a78066a8e2cbb404881709",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:caa4c50a766ea23cc2f7b56a7da28a9e7d1192891b175b4fbfeb3439fd1e58e3",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "denholm-1",
+          "com.docker.compose.service": "denholm",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "declared_compose": {
+        "image": "the-ai-crowd/denholm:release-4e83d7d17913",
+        "volumes": [
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/runtime/denholm-home",
+            "target": "/opt/data",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/public/denholm",
+            "target": "/agents/denholm/public",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/denholm",
+            "target": "/agents/denholm/private",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "target": "/mnt/hermes-shared",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "target": "/mnt/hermes-auth-shared",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "target": "/archiveops/richmond",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          }
+        ],
+        "networks": {
+          "internal": null
+        },
+        "user": "0:0",
+        "working_dir": "/agents/denholm/private",
+        "entrypoint": null,
+        "command": null
+      },
+      "discovered_configuration": {
+        "home_env": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data",
+          "HERMES_PROFILE": null,
+          "MOSS_PROFILE_HOME": null
+        },
+        "profiles": [
+          "denholm"
+        ],
+        "configs": [
+          {
+            "path": "/opt/data/config.yaml",
+            "toolsets": [
+              "hermes-cli",
+              "persona",
+              "a2a"
+            ],
+            "tools": {
+              "tool_search": {
+                "enabled": "auto",
+                "threshold_pct": 10,
+                "search_default_limit": 5,
+                "max_search_limit": 20
+              }
+            },
+            "plugins": {
+              "enabled": [
+                "disk-cleanup",
+                "hermes-lcm",
+                "a2a-platform"
+              ],
+              "disabled": []
+            },
+            "platform_names": [
+              "a2a"
+            ],
+            "gateway_keys": [
+              "message_timestamps",
+              "strict",
+              "media_delivery_allow_dirs",
+              "trust_recent_files",
+              "trust_recent_files_seconds"
+            ],
+            "webui_keys": []
+          },
+          {
+            "path": "/opt/data/profiles/denholm/config.yaml",
+            "toolsets": [
+              "hermes-cli"
+            ],
+            "tools": null,
+            "plugins": {
+              "enabled": [
+                "disk-cleanup",
+                "hermes-lcm"
+              ],
+              "disabled": []
+            },
+            "platform_names": [],
+            "gateway_keys": [],
+            "webui_keys": []
+          }
+        ]
+      },
+      "configured_platform_tools": {
+        "platform_toolsets": {
+          "cli": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "persona",
+            "a2a"
+          ],
+          "api_server": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "persona",
+            "a2a"
+          ],
+          "cron": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "persona"
+          ],
+          "discord": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search"
+          ],
+          "email": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search"
+          ],
+          "telegram": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "persona"
+          ],
+          "webhook": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search"
+          ]
+        },
+        "mcp_names": []
+      },
+      "configured_channels": {
+        "gateway_enabled": null,
+        "gateway_platforms": null,
+        "api_server": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "persona_api": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "a2a_agent_names": []
+      },
+      "command_path_availability": {
+        "binaries": {
+          "git": "/usr/bin/git",
+          "node": "/usr/local/bin/node",
+          "npm": "/usr/local/bin/npm",
+          "uv": "/usr/local/bin/uv",
+          "python3": "/opt/hermes/.venv/bin/python3",
+          "ffmpeg": "/usr/bin/ffmpeg",
+          "gog": null,
+          "agent-browser": null,
+          "chromium": null,
+          "pandoc": null,
+          "pdftotext": null,
+          "soffice": null,
+          "ssh": "/usr/bin/ssh"
+        },
+        "user_plugins": [
+          "hermes-lcm"
+        ]
+      },
+      "gateway_process": {
+        "pid": 3803314,
+        "environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        },
+        "routing_environment": {
+          "API_SERVER_HOST": "0.0.0.0",
+          "API_SERVER_PORT": "8643",
+          "API_SERVER_ENABLED": "true"
+        },
+        "configured_credential_categories": [
+          "telegram"
+        ]
+      },
+      "webui_process_environment": null,
+      "network_aliases": {
+        "the-ai-crowd_internal": {
+          "Aliases": [
+            "the-ai-crowd-denholm-1",
+            "denholm"
+          ],
+          "DNSNames": [
+            "the-ai-crowd-denholm-1",
+            "denholm",
+            "178d5f3e6d85"
+          ]
+        }
+      },
+      "functional_test_status": "NOT_RUN_STAGE_2_INVENTORY_ONLY"
+    },
+    {
+      "service": "richmond",
+      "observed_before": {
+        "name": "/the-ai-crowd-richmond-1",
+        "id": "1fc7e3dd2846425c5772f5fcf8674b94c69af6c46302a7dc4e54db18079d614b",
+        "image_id": "sha256:a944e57c9f3e8d315c5b2ad21d21274973e07240c3198031adc1d8b79633da22",
+        "image_ref": "the-ai-crowd/richmond:release-ceec74beb2cc46095600ba8e3b7f6aa9970453d3",
+        "started": "2026-09-18T10:28:34.960344867Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond",
+            "Destination": "/agents/richmond/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/richmond",
+            "Destination": "/agents/richmond/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/richmond-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8646/tcp": null,
+          "9120/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/richmond/private",
+        "labels": {
+          "com.docker.compose.config-hash": "9ea33e2f73e18ebb97ae2d5d396d6fce6f92f6f80161a796797b69ca00eae399",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:a944e57c9f3e8d315c5b2ad21d21274973e07240c3198031adc1d8b79633da22",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "richmond-1",
+          "com.docker.compose.service": "richmond",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "observed_after": {
+        "name": "/the-ai-crowd-richmond-1",
+        "id": "1fc7e3dd2846425c5772f5fcf8674b94c69af6c46302a7dc4e54db18079d614b",
+        "image_id": "sha256:a944e57c9f3e8d315c5b2ad21d21274973e07240c3198031adc1d8b79633da22",
+        "image_ref": "the-ai-crowd/richmond:release-ceec74beb2cc46095600ba8e3b7f6aa9970453d3",
+        "started": "2026-09-18T10:28:34.960344867Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond",
+            "Destination": "/agents/richmond/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/richmond",
+            "Destination": "/agents/richmond/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/richmond-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8646/tcp": null,
+          "9120/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/richmond/private",
+        "labels": {
+          "com.docker.compose.config-hash": "9ea33e2f73e18ebb97ae2d5d396d6fce6f92f6f80161a796797b69ca00eae399",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:a944e57c9f3e8d315c5b2ad21d21274973e07240c3198031adc1d8b79633da22",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "richmond-1",
+          "com.docker.compose.service": "richmond",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "declared_compose": {
+        "image": "the-ai-crowd/richmond:release-ceec74beb2cc46095600ba8e3b7f6aa9970453d3",
+        "volumes": [
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/runtime/richmond-home",
+            "target": "/opt/data",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/public/richmond",
+            "target": "/agents/richmond/public",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond",
+            "target": "/agents/richmond/private",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "target": "/mnt/hermes-shared",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "target": "/mnt/hermes-auth-shared",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "target": "/archiveops/richmond",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          }
+        ],
+        "networks": {
+          "internal": null
+        },
+        "user": "0:0",
+        "working_dir": "/agents/richmond/private",
+        "entrypoint": null,
+        "command": null
+      },
+      "discovered_configuration": {
+        "home_env": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data",
+          "HERMES_PROFILE": null,
+          "MOSS_PROFILE_HOME": null
+        },
+        "profiles": [],
+        "configs": [
+          {
+            "path": "/opt/data/config.yaml",
+            "toolsets": [
+              "hermes-cli",
+              "persona"
+            ],
+            "tools": {
+              "tool_search": {
+                "enabled": "auto",
+                "threshold_pct": 10,
+                "search_default_limit": 5,
+                "max_search_limit": 20
+              }
+            },
+            "plugins": null,
+            "platform_names": [],
+            "gateway_keys": [
+              "message_timestamps",
+              "strict",
+              "media_delivery_allow_dirs",
+              "trust_recent_files",
+              "trust_recent_files_seconds"
+            ],
+            "webui_keys": []
+          }
+        ]
+      },
+      "configured_platform_tools": {
+        "platform_toolsets": {
+          "cli": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "vision",
+            "persona"
+          ],
+          "telegram": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "vision",
+            "persona"
+          ],
+          "discord": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "vision"
+          ],
+          "whatsapp": [
+            "hermes-whatsapp"
+          ],
+          "slack": [
+            "hermes-slack"
+          ],
+          "signal": [
+            "hermes-signal"
+          ],
+          "homeassistant": [
+            "hermes-homeassistant"
+          ],
+          "qqbot": [
+            "hermes-qqbot"
+          ],
+          "yuanbao": [
+            "hermes-yuanbao"
+          ],
+          "teams": [
+            "hermes-teams"
+          ],
+          "google_chat": [
+            "hermes-google_chat"
+          ],
+          "api_server": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "vision",
+            "persona"
+          ],
+          "cron": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "vision",
+            "persona"
+          ],
+          "email": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "vision"
+          ],
+          "webhook": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "todo",
+            "session_search",
+            "vision"
+          ]
+        },
+        "mcp_names": []
+      },
+      "configured_channels": {
+        "gateway_enabled": null,
+        "gateway_platforms": null,
+        "api_server": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "persona_api": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "a2a_agent_names": []
+      },
+      "command_path_availability": {
+        "binaries": {
+          "git": "/usr/bin/git",
+          "node": "/usr/local/bin/node",
+          "npm": "/usr/local/bin/npm",
+          "uv": "/usr/local/bin/uv",
+          "python3": "/opt/hermes/.venv/bin/python3",
+          "ffmpeg": "/usr/bin/ffmpeg",
+          "gog": null,
+          "agent-browser": null,
+          "chromium": null,
+          "pandoc": null,
+          "pdftotext": "/usr/bin/pdftotext",
+          "soffice": null,
+          "ssh": "/usr/bin/ssh"
+        },
+        "user_plugins": []
+      },
+      "gateway_process": {
+        "pid": 3831447,
+        "environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        },
+        "routing_environment": {
+          "API_SERVER_HOST": "0.0.0.0",
+          "API_SERVER_PORT": "8646",
+          "API_SERVER_ENABLED": "true"
+        },
+        "configured_credential_categories": []
+      },
+      "webui_process_environment": null,
+      "network_aliases": {
+        "the-ai-crowd_internal": {
+          "Aliases": [
+            "the-ai-crowd-richmond-1",
+            "richmond"
+          ],
+          "DNSNames": [
+            "the-ai-crowd-richmond-1",
+            "richmond",
+            "1fc7e3dd2846"
+          ]
+        }
+      },
+      "functional_test_status": "NOT_RUN_STAGE_2_INVENTORY_ONLY"
+    },
+    {
+      "service": "the-elders",
+      "observed_before": {
+        "name": "/the-ai-crowd-the-elders-1",
+        "id": "314fb858afc936f2c9e69eb53d6ce83553c06b98fc9214e43c6bbb922f796f3e",
+        "image_id": "sha256:78fa806167a65a4ada1cb40165481010ce81118d197839bb888f204ae5f3359b",
+        "image_ref": "the-ai-crowd/the-elders:release-ceec74beb2cc46095600ba8e3b7f6aa9970453d3",
+        "started": "2026-09-18T10:33:09.963308621Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/the-elders",
+            "Destination": "/agents/the-elders/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/the-elders",
+            "Destination": "/agents/the-elders/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/the-elders-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8647/tcp": null,
+          "9130/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/the-elders/private",
+        "labels": {
+          "com.docker.compose.config-hash": "b7062f8157284e3baf32d79f4ddff5c95f50f66ef8f1f42d43d4866e322f8a0c",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:78fa806167a65a4ada1cb40165481010ce81118d197839bb888f204ae5f3359b",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "the-elders-1",
+          "com.docker.compose.service": "the-elders",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "observed_after": {
+        "name": "/the-ai-crowd-the-elders-1",
+        "id": "314fb858afc936f2c9e69eb53d6ce83553c06b98fc9214e43c6bbb922f796f3e",
+        "image_id": "sha256:78fa806167a65a4ada1cb40165481010ce81118d197839bb888f204ae5f3359b",
+        "image_ref": "the-ai-crowd/the-elders:release-ceec74beb2cc46095600ba8e3b7f6aa9970453d3",
+        "started": "2026-09-18T10:33:09.963308621Z",
+        "restart_count": 0,
+        "status": "running",
+        "health": "healthy",
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/the-elders",
+            "Destination": "/agents/the-elders/private",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/the-elders",
+            "Destination": "/agents/the-elders/public",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "Destination": "/archiveops/richmond",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "Destination": "/mnt/hermes-auth-shared",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "Destination": "/mnt/hermes-shared",
+            "Mode": "ro",
+            "RW": false,
+            "Propagation": "rprivate"
+          },
+          {
+            "Type": "bind",
+            "Source": "/mnt/user/appdata/the-ai-crowd/runtime/the-elders-home",
+            "Destination": "/opt/data",
+            "Mode": "rw",
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ],
+        "networks": [
+          "the-ai-crowd_internal"
+        ],
+        "ports": {
+          "8647/tcp": null,
+          "9130/tcp": null
+        },
+        "user": "0:0",
+        "cwd": "/agents/the-elders/private",
+        "labels": {
+          "com.docker.compose.config-hash": "b7062f8157284e3baf32d79f4ddff5c95f50f66ef8f1f42d43d4866e322f8a0c",
+          "com.docker.compose.container-number": "1",
+          "com.docker.compose.depends_on": "",
+          "com.docker.compose.image": "sha256:78fa806167a65a4ada1cb40165481010ce81118d197839bb888f204ae5f3359b",
+          "com.docker.compose.oneoff": "False",
+          "com.docker.compose.project": "the-ai-crowd",
+          "com.docker.compose.project.config_files": "/mnt/user/appdata/the-ai-crowd/compose.yaml",
+          "com.docker.compose.project.working_dir": "/mnt/user/appdata/the-ai-crowd",
+          "com.docker.compose.replace": "the-elders-1",
+          "com.docker.compose.service": "the-elders",
+          "com.docker.compose.version": "2.40.3"
+        },
+        "home_environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        }
+      },
+      "declared_compose": {
+        "image": "the-ai-crowd/the-elders:release-ceec74beb2cc46095600ba8e3b7f6aa9970453d3",
+        "volumes": [
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/runtime/the-elders-home",
+            "target": "/opt/data",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/public/the-elders",
+            "target": "/agents/the-elders/public",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/the-elders",
+            "target": "/agents/the-elders/private",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+            "target": "/mnt/hermes-shared",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+            "target": "/mnt/hermes-auth-shared",
+            "bind": {
+              "create_host_path": true
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+            "target": "/archiveops/richmond",
+            "read_only": true,
+            "bind": {
+              "create_host_path": true
+            }
+          }
+        ],
+        "networks": {
+          "internal": null
+        },
+        "user": "0:0",
+        "working_dir": "/agents/the-elders/private",
+        "entrypoint": null,
+        "command": null
+      },
+      "discovered_configuration": {
+        "home_env": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data",
+          "HERMES_PROFILE": null,
+          "MOSS_PROFILE_HOME": null
+        },
+        "profiles": [],
+        "configs": [
+          {
+            "path": "/opt/data/config.yaml",
+            "toolsets": [
+              "hermes-cli",
+              "persona"
+            ],
+            "tools": {
+              "tool_search": {
+                "enabled": "auto",
+                "threshold_pct": 10,
+                "search_default_limit": 5,
+                "max_search_limit": 20
+              }
+            },
+            "plugins": null,
+            "platform_names": [],
+            "gateway_keys": [
+              "message_timestamps",
+              "strict",
+              "media_delivery_allow_dirs",
+              "trust_recent_files",
+              "trust_recent_files_seconds"
+            ],
+            "webui_keys": []
+          }
+        ]
+      },
+      "configured_platform_tools": {
+        "platform_toolsets": {
+          "cli": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "session_search",
+            "vision",
+            "persona"
+          ],
+          "telegram": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "session_search",
+            "vision",
+            "persona"
+          ],
+          "discord": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "session_search",
+            "vision"
+          ],
+          "whatsapp": [
+            "hermes-whatsapp"
+          ],
+          "slack": [
+            "hermes-slack"
+          ],
+          "signal": [
+            "hermes-signal"
+          ],
+          "homeassistant": [
+            "hermes-homeassistant"
+          ],
+          "qqbot": [
+            "hermes-qqbot"
+          ],
+          "yuanbao": [
+            "hermes-yuanbao"
+          ],
+          "teams": [
+            "hermes-teams"
+          ],
+          "google_chat": [
+            "hermes-google_chat"
+          ],
+          "api_server": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "session_search",
+            "vision",
+            "persona"
+          ],
+          "cron": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "session_search",
+            "vision",
+            "persona"
+          ],
+          "email": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "session_search",
+            "vision"
+          ],
+          "webhook": [
+            "file",
+            "web",
+            "search",
+            "skills",
+            "session_search",
+            "vision"
+          ]
+        },
+        "mcp_names": []
+      },
+      "configured_channels": {
+        "gateway_enabled": null,
+        "gateway_platforms": null,
+        "api_server": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "persona_api": {
+          "enabled": null,
+          "host": null,
+          "port": null
+        },
+        "a2a_agent_names": []
+      },
+      "command_path_availability": {
+        "binaries": {
+          "git": "/usr/bin/git",
+          "node": "/usr/local/bin/node",
+          "npm": "/usr/local/bin/npm",
+          "uv": "/usr/local/bin/uv",
+          "python3": "/opt/hermes/.venv/bin/python3",
+          "ffmpeg": "/usr/bin/ffmpeg",
+          "gog": null,
+          "agent-browser": null,
+          "chromium": null,
+          "pandoc": null,
+          "pdftotext": null,
+          "soffice": null,
+          "ssh": "/usr/bin/ssh"
+        },
+        "user_plugins": []
+      },
+      "gateway_process": {
+        "pid": 3839229,
+        "environment": {
+          "HOME": "/opt/data",
+          "HERMES_HOME": "/opt/data"
+        },
+        "routing_environment": {
+          "API_SERVER_HOST": "0.0.0.0",
+          "API_SERVER_PORT": "8647",
+          "API_SERVER_ENABLED": "true"
+        },
+        "configured_credential_categories": []
+      },
+      "webui_process_environment": null,
+      "network_aliases": {
+        "the-ai-crowd_internal": {
+          "Aliases": [
+            "the-ai-crowd-the-elders-1",
+            "the-elders"
+          ],
+          "DNSNames": [
+            "the-ai-crowd-the-elders-1",
+            "the-elders",
+            "314fb858afc9"
+          ]
+        }
+      },
+      "functional_test_status": "NOT_RUN_STAGE_2_INVENTORY_ONLY"
+    }
+  ],
+  "checks": [
+    {
+      "service": "moss",
+      "before_after_equal": true,
+      "declared_actual_mounts_and_image_equal": true
+    },
+    {
+      "service": "roy",
+      "before_after_equal": true,
+      "declared_actual_mounts_and_image_equal": true
+    },
+    {
+      "service": "jen",
+      "before_after_equal": true,
+      "declared_actual_mounts_and_image_equal": true
+    },
+    {
+      "service": "denholm",
+      "before_after_equal": true,
+      "declared_actual_mounts_and_image_equal": true
+    },
+    {
+      "service": "richmond",
+      "before_after_equal": true,
+      "declared_actual_mounts_and_image_equal": true
+    },
+    {
+      "service": "the-elders",
+      "before_after_equal": true,
+      "declared_actual_mounts_and_image_equal": true
+    }
+  ],
+  "isolated_build": {
+    "command": "ssh -F /opt/data/.ssh/config media docker build --network none --pull=false --tag stage2-execution-probe:20260920 - < /opt/data/stage2-probe.Dockerfile",
+    "dockerfile": "FROM scratch\nLABEL purpose=\"stage2-build-lane-probe-not-release\"\nLABEL production=\"false\"\n",
+    "dockerfile_sha256": "49f87256ec69d4d7164762164139ff0d5e8f683afe1a2f7175d022c1ac5c1675",
+    "exit_code": 0,
+    "image_id": "sha256:7e9ce30ecdf613ca7be85684889125a219e7a742e75dc6a98c6fb92251b354f9",
+    "verified_by": "docker image inspect stage2-execution-probe:20260920",
+    "scope_limit": "Scratch build with labels only; no RUN or release source/dependencies tested; image retained"
+  },
+  "isolated_test_blocker": {
+    "exact_outer_command": "ssh -F /opt/data/.ssh/config media 'docker run --rm --name stage2-isolated-lane-probe --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 32 --memory 128m --cpus 0.5 --no-healthcheck --user 65534:65534 --entrypoint /opt/hermes/.venv/bin/python sha256:1b6f460b5afb5a8ef7d5069230186f549cce6f3b854112ddc8c200a756ef4150 -c '\"'\"'import os,socket; assert os.getuid()==65534; assert socket.if_nameindex()==[(1,\"lo\")]; print(\"ISOLATED_TEST_LANE_OK uid=65534 network=loopback-only production_mounts=none\")'\"'\"''",
+    "sha256_command_strip": "77ccabfb0864830eb14b5c5d7ac5df11f65a8e9ad68527d3a071b89a0c176fb2",
+    "execution_status": "BLOCKED_BEFORE_EXECUTION",
+    "reason": "Lifecycle authorization guard blocked a command that can replace or disconnect the initiating Moss runtime. No MOSS_LIFECYCLE_RECEIPT assignment was supplied.",
+    "external_consume_socket_present": false,
+    "required_intervention": "External authority supplies exact-command short-lived root-owned read-only single-use receipt plus external atomic consume socket, or arranges independently authorized host execution with command-bound evidence; no self-issued authorization",
+    "application_test_result": null
+  },
+  "production_findings": [
+    {
+      "service": "moss",
+      "finding": "Supervisor moss-dashboard FATAL: Exited too quickly; gateway and WebUI RUNNING",
+      "scope": "preexisting observed condition; root cause not investigated or repaired; container healthy is not whole-application health"
+    }
+  ],
+  "review_history": {
+    "claude_attempt": "No-tools plan review exited 1: 401 OAuth access token expired; no technical verdict",
+    "hermes_independent_plan_review": "completed with requested amendments; session 20260920_200152_b4cf07; corrections integrated, including explicit correction that StartedAt is not capture time",
+    "final_review": "Bound to final file hashes in external review record and final delivery, not claimed here in advance"
+  }
+}
