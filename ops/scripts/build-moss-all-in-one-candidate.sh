@@ -21,7 +21,8 @@ AGENT_SOURCE="${HERMES_AGENT_SOURCE:?set HERMES_AGENT_SOURCE to the clean Agent 
 WEBUI_SOURCE="${HERMES_WEBUI_SOURCE:?set HERMES_WEBUI_SOURCE to the clean WebUI candidate checkout}"
 MANIFEST_REL="ops/build-inputs/moss-clash-royale-war-bot.sha256"
 BROWSER_MANIFEST_REL="ops/build-inputs/moss-playwright-browsers.sha256"
-BROWSER_DIR="$INPUT_DIR/.playwright-browsers"
+BROWSER_DIR="${MOSS_PLAYWRIGHT_BROWSER_DIR:-$INPUT_DIR/.playwright-browsers}"
+BROWSER_DIR="$(realpath -e -- "$BROWSER_DIR")" || { printf '%s\n' 'cached Playwright browser input cannot be resolved' >&2; exit 65; }
 TAG="${1:?usage: $0 IMAGE_TAG}"
 source "${ROOT}/ops/scripts/lib/hddt-moss-closure.sh"
 

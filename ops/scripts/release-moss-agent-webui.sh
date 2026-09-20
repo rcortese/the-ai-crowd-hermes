@@ -46,6 +46,7 @@ base_revision=$(git -C "$STACK" rev-parse 'HEAD^')
 tag="the-ai-crowd/moss-agent-webui:${revision:0:12}-${EXPECTED_AGENT:0:12}-${EXPECTED_WEBUI:0:12}"
 export MOSS_BASE_IMAGE="$rollback"
 export CLASH_ROYALE_BUILD_INPUT_DIR="$NODE_INPUT"
+export MOSS_PLAYWRIGHT_BROWSER_DIR="$NODE_INPUT/.playwright-browsers"
 export HERMES_AGENT_SOURCE="$AGENT"
 export HERMES_WEBUI_SOURCE="$WEBUI"
 export HDDT_SOURCE_BASE_REVISION="$base_revision"
