@@ -65,10 +65,17 @@ private_input="$fx/private-node-input"
 mkdir -m 700 "$private_input"
 printf '%s\n' '{"name":"fixture-private-input"}' >"$private_input/package.json"
 printf '%s\n' '{"name":"fixture-private-input","lockfileVersion":3,"packages":{}}' >"$private_input/package-lock.json"
+mkdir -p "$private_input/.playwright-browsers/chromium-1217/chrome-linux64"
+printf '%s\n' fixture-browser >"$private_input/.playwright-browsers/chromium-1217/chrome-linux64/chrome"
+chmod 700 "$private_input/.playwright-browsers/chromium-1217/chrome-linux64/chrome"
 (
   cd "$private_input"
   sha256sum package.json package-lock.json
 ) >"$repo/ops/build-inputs/moss-clash-royale-war-bot.sha256"
+(
+  cd "$private_input/.playwright-browsers"
+  sha256sum chromium-1217/chrome-linux64/chrome
+) >"$repo/ops/build-inputs/moss-playwright-browsers.sha256"
 printf '%s\n' 'FROM scratch' >"$repo/ops/images/Dockerfile.moss-all-in-one"
 {
   printf '%s\n' "${required_closure_paths[@]}"
@@ -129,6 +136,7 @@ base_image=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 env_common=(
   PATH="$bin:$PATH"
   CLASH_ROYALE_BUILD_INPUT_DIR="$private_input"
+  MOSS_PLAYWRIGHT_BROWSER_DIR="$private_input/.playwright-browsers"
   HERMES_AGENT_SOURCE="$repo"
   HERMES_WEBUI_SOURCE="$repo"
   MOSS_BASE_IMAGE="$base_image"
@@ -148,7 +156,7 @@ run_without_base(){
 run_raw(){
   local receipts=$1
   shift
-  env "$@" PATH="$bin:$PATH" CLASH_ROYALE_BUILD_INPUT_DIR="$private_input" HERMES_AGENT_SOURCE="$repo" HERMES_WEBUI_SOURCE="$repo" DOCKER_LOG="$docker_log" FIXTURE_IMAGE_ID="$image_id" FIXTURE_BASE_ID="$base_image" DATE_EPOCH_FILE="$date_epoch_file" BUILD_RECEIPT_ROOT="$receipts" HDDT_SOURCE_BASE_REVISION="$base_revision" "$helper" fixture/moss:test
+  env "$@" PATH="$bin:$PATH" CLASH_ROYALE_BUILD_INPUT_DIR="$private_input" MOSS_PLAYWRIGHT_BROWSER_DIR="$private_input/.playwright-browsers" HERMES_AGENT_SOURCE="$repo" HERMES_WEBUI_SOURCE="$repo" DOCKER_LOG="$docker_log" FIXTURE_IMAGE_ID="$image_id" FIXTURE_BASE_ID="$base_image" DATE_EPOCH_FILE="$date_epoch_file" BUILD_RECEIPT_ROOT="$receipts" HDDT_SOURCE_BASE_REVISION="$base_revision" "$helper" fixture/moss:test
 }
 assert_no_effect(){
   local receipts=$1 label=$2
