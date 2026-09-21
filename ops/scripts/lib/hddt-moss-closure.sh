@@ -10,11 +10,13 @@ ops/build-inputs/moss-clash-royale-war-bot.sha256
 ops/cron/the-ai-crowd-hddt-retention.cron
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
+ops/scripts/bootstrap-hddt-moss-root.sh
 ops/scripts/build-moss-all-in-one-candidate.sh
 ops/scripts/hddt-moss-launcher.sh
 ops/scripts/hddt-moss-status.sh
 ops/scripts/hddt-moss.sh
 ops/scripts/lib/hddt-moss-closure.sh
+ops/scripts/release-moss-agent-webui.sh
 ops/scripts/validate-moss-native-conversation.sh
 ops/scripts/validate-moss-release-binding.sh
 ops/supervisor/moss-all-in-one-supervisord.conf
@@ -40,7 +42,7 @@ ops/tests/test_runner_completeness.sh
 ops/tests/test_validate_moss_release_binding.sh
 tests/smoke-deploy.sh
 REQUIRED_CLOSURE_PATHS
- ((${#expected[@]} == 34)) || return 65
+ ((${#expected[@]} == 36)) || return 65
  cmp -s <(printf '%s\n' "${expected[@]}") <(LC_ALL=C sort "$manifest") || return 65
 }
 hddt_source_closure(){
