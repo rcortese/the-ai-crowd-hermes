@@ -17,13 +17,9 @@ assert entries[0].endswith("  package.json")
 assert entries[1].endswith("  package-lock.json")
 assert "COPY --from=clash_royale_build_input package.json" in dockerfile
 assert "COPY agents/private/moss/projects/clash-royale-war-bot" not in dockerfile
-assert "ARG HERMES_WEBUI_REV=6fdbedb5217da42fc3a1af85c033f52a2176daee" in dockerfile
-assert "ARG HERMES_WEBUI_TREE=8a1e54c2e35111dfc82f4b1b8019640a45b4c44d" in dockerfile
-assert 'git checkout --detach "${HERMES_WEBUI_REV}"' in dockerfile
-assert 'test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}"' in dockerfile
-assert 'test "${HERMES_WEBUI_TREE}" = "8a1e54c2e35111dfc82f4b1b8019640a45b4c44d"' in dockerfile
-assert 'test "$(git rev-parse HEAD^{tree})" = "${HERMES_WEBUI_TREE}"' in dockerfile
-assert 'test -z "$(git status --porcelain)"' in dockerfile
+assert "ARG HERMES_WEBUI_VERSION" in dockerfile
+assert 'test -n "$HERMES_WEBUI_VERSION"' in dockerfile
+assert "printf \"__version__ = '%s'\\\\n\" \"$HERMES_WEBUI_VERSION\"" in dockerfile
 for legacy_patch in (
     "moss-agent-health-auth.patch",
     "moss-profile-selector-order.patch",
@@ -57,7 +53,23 @@ assert "git -C \"$ROOT\" archive --format=tar \"$COMMIT\"" in helper
 assert "sha256sum -c \"$CTX/$MANIFEST_REL\"" in helper
 assert 'org.opencontainers.image.revision=' in helper
 assert 'org.opencontainers.image.source=' in helper
+assert 'WEBUI_VERSION="${HERMES_WEBUI_VERSION:?' in helper
+assert '--build-arg "HERMES_WEBUI_VERSION=$WEBUI_VERSION"' in helper
+for label in (
+    "the-ai-crowd.agent-source-commit",
+    "the-ai-crowd.agent-source-tree",
+    "the-ai-crowd.webui-source-commit",
+    "the-ai-crowd.webui-source-tree",
+    "the-ai-crowd.webui-version",
+):
+    assert label in helper
 builder = (root / 'ops/scripts/build-persona-base-candidate.sh').read_text(encoding='utf-8')
+assert 'HERMES_AGENT_IMAGE_ID' in builder
+assert 'HERMES_AGENT_SOURCE_REVISION' in builder
+assert 'HERMES_AGENT_SOURCE_TREE' in builder
+assert 'Agent source revision label mismatch' in builder
+assert 'Agent source tree label mismatch' in builder
+assert 'the-ai-crowd.hermes-base-source-tree' in builder
 assert 'org.opencontainers.image.revision=' in builder
 assert 'org.opencontainers.image.source=' in builder
 assert "--build-context \"clash_royale_build_input=$INPUT_DIR\"" in helper

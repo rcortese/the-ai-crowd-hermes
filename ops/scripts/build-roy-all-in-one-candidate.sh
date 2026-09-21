@@ -34,13 +34,12 @@ fi
 COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 TREE="$(git -C "$ROOT" rev-parse HEAD^{tree})"
 SOURCE_REMOTE="$(git -C "$ROOT" remote get-url origin)"
-# Roy's base candidate is the all-persona stack candidate a2bdd; bind its
-# immutable source labels directly so the local image is independently checked.
-ROY_BASE_SOURCE_COMMIT="a2bddaf9921c8b8b10f96e188bb61f0a33d9bfc5"
-ROY_BASE_SOURCE_TREE="9f483dffbf04b33efb4e7bffd3a0a7247f82e223"
-PROTECTED_A2A_LOCK="$ROOT/ops/manifests/protected-hermes-a2a-base.lock.json"
-ROY_BASE_HERMES_ID="$(jq -er '.protected_base.image_id' "$PROTECTED_A2A_LOCK")" || fail 'protected Hermes base ID is unavailable'
-ROY_BASE_HERMES_SOURCE="$(jq -er '.protected_base.source_revision' "$PROTECTED_A2A_LOCK")" || fail 'protected Hermes base source is unavailable'
+# Roy's base is produced from this exact stack commit by the generic persona
+# builder and carries the immutable Agent candidate provenance as labels.
+ROY_BASE_SOURCE_COMMIT="$COMMIT"
+ROY_BASE_SOURCE_TREE="$TREE"
+ROY_BASE_HERMES_ID="${HERMES_AGENT_IMAGE_ID:?set HERMES_AGENT_IMAGE_ID to the immutable Agent candidate image ID}"
+ROY_BASE_HERMES_SOURCE="${HERMES_AGENT_SOURCE_REVISION:?set HERMES_AGENT_SOURCE_REVISION to the full Agent commit}"
 CTX="$(mktemp -d "${TMPDIR:-/tmp}/roy-all-in-one-context.XXXXXX")"
 trap 'rm -rf "$CTX"' EXIT
 

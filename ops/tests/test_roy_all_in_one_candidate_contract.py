@@ -122,8 +122,10 @@ for label in (
     "the-ai-crowd.hermes-base-source-revision",
 ):
     assert f'{{{{index .Config.Labels "{label}"}}}}' in builder
-assert "a2bddaf9921c8b8b10f96e188bb61f0a33d9bfc5" in builder
-assert "9f483dffbf04b33efb4e7bffd3a0a7247f82e223" in builder
+assert 'ROY_BASE_SOURCE_COMMIT="$COMMIT"' in builder
+assert 'ROY_BASE_SOURCE_TREE="$TREE"' in builder
+assert 'ROY_BASE_HERMES_ID="${HERMES_AGENT_IMAGE_ID:?' in builder
+assert 'ROY_BASE_HERMES_SOURCE="${HERMES_AGENT_SOURCE_REVISION:?' in builder
 assert "Roy base candidate source labels do not match all-persona stack candidate" in builder
 assert "Roy base candidate Hermes base provenance does not match protected base" in builder
 assert 'base_alias="the-ai-crowd/roy-build-base:${ROY_BASE_IMAGE#sha256:}"' in builder

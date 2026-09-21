@@ -46,6 +46,7 @@ agent_revision=$(git -C "$AGENT_SOURCE" rev-parse HEAD)
 webui_revision=$(git -C "$WEBUI_SOURCE" rev-parse HEAD)
 agent_tree=$(git -C "$AGENT_SOURCE" rev-parse "$agent_revision^{tree}")
 webui_tree=$(git -C "$WEBUI_SOURCE" rev-parse "$webui_revision^{tree}")
+WEBUI_VERSION="${HERMES_WEBUI_VERSION:?set HERMES_WEBUI_VERSION to the frozen WebUI release tag}"
 git -C "$AGENT_SOURCE" archive --format=tar "$agent_revision" | tar -xf - -C "$AGENT_CTX"
 git -C "$WEBUI_SOURCE" archive --format=tar "$webui_revision" | tar -xf - -C "$WEBUI_CTX"
 printf '%s\n' "$agent_revision" >"$AGENT_CTX/.release-source-revision"
@@ -74,12 +75,18 @@ docker build --pull=false \
   --build-arg "MOSS_BASE_IMAGE=$base_alias" \
   --build-arg "HERMES_AGENT_REV=$agent_revision" \
   --build-arg "HERMES_WEBUI_REV=$webui_revision" \
+  --build-arg "HERMES_WEBUI_VERSION=$WEBUI_VERSION" \
   --build-context "clash_royale_build_input=$INPUT_DIR" \
   --build-context "clash_royale_browser_input=$BROWSER_DIR" \
   --build-context "hermes_agent_source=$AGENT_CTX" \
   --build-context "hermes_webui_source=$WEBUI_CTX" \
     --label "org.opencontainers.image.revision=$COMMIT" \
     --label "org.opencontainers.image.source=$(git -C "$ROOT" remote get-url origin)" \
+    --label "the-ai-crowd.agent-source-commit=$agent_revision" \
+    --label "the-ai-crowd.agent-source-tree=$agent_tree" \
+    --label "the-ai-crowd.webui-source-commit=$webui_revision" \
+    --label "the-ai-crowd.webui-source-tree=$webui_tree" \
+    --label "the-ai-crowd.webui-version=$WEBUI_VERSION" \
   "$CTX"
 docker image inspect "$TAG" --format 'tag={{index .RepoTags 0}} image={{.Id}} created={{.Created}}'
 
