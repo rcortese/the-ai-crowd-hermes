@@ -3,8 +3,8 @@ ops/build-inputs/moss-clash-royale-war-bot.sha256
 ops/cron/the-ai-crowd-hddt-retention.cron
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
-ops/scripts/build-moss-all-in-one-candidate.sh
 ops/scripts/bootstrap-hddt-moss-root.sh
+ops/scripts/build-moss-all-in-one-candidate.sh
 ops/scripts/hddt-moss-launcher.sh
 ops/scripts/hddt-moss-status.sh
 ops/scripts/hddt-moss.sh

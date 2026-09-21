@@ -12,11 +12,13 @@ ops/build-inputs/moss-clash-royale-war-bot.sha256
 ops/cron/the-ai-crowd-hddt-retention.cron
 ops/images/Dockerfile.moss-all-in-one
 ops/manifests/moss-release-source-closure.paths
+ops/scripts/bootstrap-hddt-moss-root.sh
 ops/scripts/build-moss-all-in-one-candidate.sh
 ops/scripts/hddt-moss-launcher.sh
 ops/scripts/hddt-moss-status.sh
 ops/scripts/hddt-moss.sh
 ops/scripts/lib/hddt-moss-closure.sh
+ops/scripts/release-moss-agent-webui.sh
 ops/scripts/validate-moss-native-conversation.sh
 ops/scripts/validate-moss-release-binding.sh
 ops/supervisor/moss-all-in-one-supervisord.conf
@@ -42,7 +44,7 @@ ops/tests/test_runner_completeness.sh
 ops/tests/test_validate_moss_release_binding.sh
 tests/smoke-deploy.sh
 REQUIRED_CLOSURE_PATHS
-((${#required[@]} == 34)) || fail 'test expected-set cardinality drift'
+((${#required[@]} == 36)) || fail 'test expected-set cardinality drift'
 assert_oracle(){
  local candidate=$1
  bash -c 'source "$1"; hddt_required_source_closure "$2"' _ "$closure" "$candidate"
@@ -64,7 +66,7 @@ if assert_oracle "$candidate"; then fail 'addition accepted: ops/tests/unapprove
 if [[ ${MOSS_CLOSURE_ORACLE_MUTANT_CHILD:-0} != 1 ]]; then
  mutant="$tmp/hddt-moss-closure-mutant.sh"
  cp -- "$closure" "$mutant"
- perl -0pi -e 's/^compose\.yaml\n//m; s/^ \(\(\$\{#expected\[@\]\} == 34\)\) \|\| return 65\n//m' "$mutant"
+ perl -0pi -e 's/^compose\.yaml\n//m; s/^ \(\(\$\{#expected\[@\]\} == 36\)\) \|\| return 65\n//m' "$mutant"
  set +e
  MOSS_CLOSURE_ORACLE_MUTANT_CHILD=1 HDDT_CLOSURE_SCRIPT="$mutant" bash "$0" >"$tmp/mutant.out" 2>&1
  rc=$?
