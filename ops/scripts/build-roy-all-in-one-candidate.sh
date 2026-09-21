@@ -41,7 +41,20 @@ ROY_BASE_SOURCE_TREE="$TREE"
 ROY_BASE_HERMES_ID="${HERMES_AGENT_IMAGE_ID:?set HERMES_AGENT_IMAGE_ID to the immutable Agent candidate image ID}"
 ROY_BASE_HERMES_SOURCE="${HERMES_AGENT_SOURCE_REVISION:?set HERMES_AGENT_SOURCE_REVISION to the full Agent commit}"
 CTX="$(mktemp -d "${TMPDIR:-/tmp}/roy-all-in-one-context.XXXXXX")"
-trap 'rm -rf "$CTX"' EXIT
+WEBUI_CTX="$(mktemp -d "${TMPDIR:-/tmp}/roy-webui-context.XXXXXX")"
+trap 'rm -rf "$CTX" "$WEBUI_CTX"' EXIT
+
+[[ -d $ROY_WEBUI_REPO && -z "$(git -C "$ROY_WEBUI_REPO" status --porcelain)" ]] || fail 'ROY_WEBUI_REPO must be a clean local Git checkout'
+[[ "$(git -C "$ROY_WEBUI_REPO" rev-parse HEAD)" == "$ROY_WEBUI_REV" ]] || fail 'WebUI checkout revision mismatch'
+[[ "$(git -C "$ROY_WEBUI_REPO" rev-parse HEAD^{tree})" == "$ROY_WEBUI_TREE" ]] || fail 'WebUI checkout tree mismatch'
+webui_archive="$CTX/hermes-webui.tar"
+git -C "$ROY_WEBUI_REPO" archive --format=tar "$ROY_WEBUI_REV" >"$webui_archive"
+[[ "$(sha256sum "$webui_archive" | cut -d' ' -f1)" == "$ROY_WEBUI_ARCHIVE_SHA256" ]] || fail 'WebUI archive SHA-256 mismatch'
+[[ "$(stat -c %s "$webui_archive")" == "$ROY_WEBUI_ARCHIVE_SIZE" ]] || fail 'WebUI archive size mismatch'
+tar -xf "$webui_archive" -C "$WEBUI_CTX"
+rm -f "$webui_archive"
+printf '%s\n' "$ROY_WEBUI_REV" >"$WEBUI_CTX/.release-source-revision"
+printf '%s\n' "$ROY_WEBUI_TREE" >"$WEBUI_CTX/.release-source-tree"
 
 resolved_base="$(docker image inspect "$ROY_BASE_IMAGE" --format '{{.Id}}')" || fail 'immutable Roy base image is unavailable locally'
 [[ $resolved_base == "$ROY_BASE_IMAGE" ]] || fail 'Roy base image ID resolution mismatch'
@@ -132,6 +145,7 @@ docker build --pull=false \
   --build-arg "HERMES_WEBUI_TREE=$ROY_WEBUI_TREE" \
   --build-arg "HERMES_WEBUI_ARCHIVE_SHA256=$ROY_WEBUI_ARCHIVE_SHA256" \
   --build-arg "HERMES_WEBUI_ARCHIVE_SIZE=$ROY_WEBUI_ARCHIVE_SIZE" \
+  --build-context "hermes_webui_source=$WEBUI_CTX" \
   --label "the-ai-crowd.source-commit=$COMMIT" \
   --label "the-ai-crowd.source-tree=$TREE" \
   --label "the-ai-crowd.roy-base-id=$ROY_BASE_IMAGE" \

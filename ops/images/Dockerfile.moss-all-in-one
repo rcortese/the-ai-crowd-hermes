@@ -69,14 +69,12 @@ RUN test "$HERMES_AGENT_REV" = "$(cat /opt/hermes/.release-source-revision)" \
     && /opt/hermes/.venv/bin/python3 -m py_compile api/agent_health.py api/kanban_bridge.py api/config.py api/providers.py api/routes.py api/service_session_launch.py api/streaming.py api/gateway_chat.py api/profiles.py server.py \
     && /opt/hermes/.venv/bin/python3 -c 'from api.streaming import _title_prompts; qa, prompts = _title_prompts("Audit the deployment method for a broken release", "The release failed because runtime and build inputs were coupled"); assert len(prompts) == 2; assert all(isinstance(p, str) and p.strip() for p in prompts)' \
     && /opt/hermes/.venv/bin/python3 -m pytest -o addopts= -q \
-        tests/test_agent_health_remote.py \
-        tests/test_issue716_agent_heartbeat.py \
-        tests/test_kanban_bridge.py \
+        tests/test_ai_crowd_v05276_port.py \
         tests/test_remote_cron_proxy_guard.py \
-        tests/test_webui_gateway_chat_backend.py \
-        tests/test_stage364_opus_live_sse_event_id.py \
+        tests/test_credentialed_probe_redirects.py \
+        tests/test_ai_crowd_title_topic_priority.py \
         tests/test_issue5141_terminal_failure_transcript_evaluator.py \
-        tests/test_session_channel_option_x.py \
+        tests/test_ai_crowd_v05276_followup.py \
     && test -n "$HERMES_WEBUI_VERSION" \
     && printf "__version__ = '%s'\\n" "$HERMES_WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
