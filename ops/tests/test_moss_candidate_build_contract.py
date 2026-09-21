@@ -31,14 +31,12 @@ for legacy_patch in (
     assert legacy_patch not in dockerfile
     assert not (root / "ops/hermes-webui-overrides" / legacy_patch).exists()
 for target_native_test in (
-    "tests/test_agent_health_remote.py",
-    "tests/test_issue716_agent_heartbeat.py",
-    "tests/test_kanban_bridge.py",
+    "tests/test_ai_crowd_v05276_port.py",
     "tests/test_remote_cron_proxy_guard.py",
-    "tests/test_webui_gateway_chat_backend.py",
-    "tests/test_stage364_opus_live_sse_event_id.py",
+    "tests/test_credentialed_probe_redirects.py",
+    "tests/test_ai_crowd_title_topic_priority.py",
     "tests/test_issue5141_terminal_failure_transcript_evaluator.py",
-    "tests/test_session_channel_option_x.py",
+    "tests/test_ai_crowd_v05276_followup.py",
 ):
     assert target_native_test in dockerfile
 assert "tests/test_profile_proxy_jen.py" not in dockerfile

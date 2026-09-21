@@ -22,6 +22,20 @@ git -C "$repo" config user.name fixture
 git -C "$repo" config user.email fixture@example.invalid
 git -C "$repo" add . && git -C "$repo" commit -qm fixture
 git -C "$repo" remote add origin ssh://fixture/roy
+webui_repo="$fx/webui"
+mkdir -p "$webui_repo/api"
+printf '%s\n' 'print("fixture")' >"$webui_repo/server.py"
+printf '%s\n' 'FIXTURE = True' >"$webui_repo/api/gateway_chat.py"
+: >"$webui_repo/requirements.txt"
+git -C "$webui_repo" init -q -b main
+git -C "$webui_repo" config user.name fixture
+git -C "$webui_repo" config user.email fixture@example.invalid
+git -C "$webui_repo" add . && git -C "$webui_repo" commit -qm fixture
+webui_rev=$(git -C "$webui_repo" rev-parse HEAD)
+webui_tree=$(git -C "$webui_repo" rev-parse HEAD^{tree})
+git -C "$webui_repo" archive --format=tar "$webui_rev" >"$fx/webui.tar"
+webui_archive_sha=$(sha256sum "$fx/webui.tar" | cut -d' ' -f1)
+webui_archive_size=$(stat -c %s "$fx/webui.tar")
 base_id=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 other_id=sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 image_id=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
@@ -109,21 +123,21 @@ esac
 DOCKER
 chmod 700 "$bin/docker" "$bin/jq"
 helper="$repo/ops/scripts/build-roy-all-in-one-candidate.sh"
-common=(PATH="$bin:$PATH" DOCKER_LOG="$docker_log" FAKE_BUILT="$fx/built" FAKE_FINAL_PREBUILD_LABEL="$fx/final-prebuild-label" TARGET_TAG=fixture/roy:test BASE_ID="$base_id" OTHER_BASE_ID="$other_id" IMAGE_ID="$image_id" EXPECTED_COMMIT="$expected_commit" EXPECTED_TREE="$expected_tree" EXPECTED_HERMES_ID="$expected_hermes_id" EXPECTED_HERMES_SOURCE="$expected_hermes_source" HERMES_AGENT_IMAGE_ID="$expected_hermes_id" HERMES_AGENT_SOURCE_REVISION="$expected_hermes_source" ROY_BASE_IMAGE="$base_id" ROY_WEBUI_REPO=https://fixture.invalid/webui ROY_WEBUI_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ROY_WEBUI_ARCHIVE_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_ARCHIVE_SIZE=123)
+common=(PATH="$bin:$PATH" DOCKER_LOG="$docker_log" FAKE_BUILT="$fx/built" FAKE_FINAL_PREBUILD_LABEL="$fx/final-prebuild-label" TARGET_TAG=fixture/roy:test BASE_ID="$base_id" OTHER_BASE_ID="$other_id" IMAGE_ID="$image_id" EXPECTED_COMMIT="$expected_commit" EXPECTED_TREE="$expected_tree" EXPECTED_HERMES_ID="$expected_hermes_id" EXPECTED_HERMES_SOURCE="$expected_hermes_source" HERMES_AGENT_IMAGE_ID="$expected_hermes_id" HERMES_AGENT_SOURCE_REVISION="$expected_hermes_source" ROY_BASE_IMAGE="$base_id" ROY_WEBUI_REPO="$webui_repo" ROY_WEBUI_REV="$webui_rev" ROY_WEBUI_TREE="$webui_tree" ROY_WEBUI_ARCHIVE_SHA256="$webui_archive_sha" ROY_WEBUI_ARCHIVE_SIZE="$webui_archive_size")
 run(){ local receipts=$1; shift; local prebuild="$receipts/prebuild-$(printf '%s' fixture/roy:test | sha256sum | cut -d' ' -f1).json"; env "${common[@]}" ROY_BASE_CANDIDATE_REF="$candidate_ref" PREBUILD_RECEIPT_PATH="$prebuild" "$@" BUILD_RECEIPT_ROOT="$receipts" "$helper" fixture/roy:test; }
 assert_no_receipt(){ local receipts=$1 label=$2; [[ ! -d $receipts ]] || ! compgen -G "$receipts/*.json" >/dev/null || fail "$label published a receipt"; }
 receipts="$fx/receipts-happy"; : >"$docker_log"
 run "$receipts" >"$fx/happy.out"
 receipt="$receipts/sha256-${image_id#sha256:}.json"
 [[ -f $receipt && ! -L $receipt ]] || fail 'happy receipt missing'
-python3 - "$receipt" "$candidate_ref" "$base_id" "$expected_commit" "$expected_tree" "$expected_hermes_id" "$expected_hermes_source" "$fx/final-prebuild-label" <<'PY'
+python3 - "$receipt" "$candidate_ref" "$base_id" "$expected_commit" "$expected_tree" "$expected_hermes_id" "$expected_hermes_source" "$fx/final-prebuild-label" "$webui_tree" "$webui_archive_size" <<'PY'
 import hashlib, json, sys
-receipt, ref, image, commit, tree, hermes_id, hermes_source, final_label = sys.argv[1:]
+receipt, ref, image, commit, tree, hermes_id, hermes_source, final_label, webui_tree, webui_archive_size = sys.argv[1:]
 data = json.load(open(receipt))
 expected = {"roy_base_candidate_ref": ref, "roy_base_image_id": image, "roy_base_source_commit": commit, "roy_base_source_tree": tree, "roy_base_hermes_base_id": hermes_id, "roy_base_hermes_base_source_revision": hermes_source}
 assert all(data.get(key) == value for key, value in expected.items())
-assert data["webui_tree"] == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-assert data["webui_archive_size"] == "123"
+assert data["webui_tree"] == webui_tree
+assert data["webui_archive_size"] == webui_archive_size
 prebuild_path = data["prebuild_receipt"]
 prebuild_bytes = open(prebuild_path, "rb").read()
 assert data["prebuild_receipt_sha256"] == hashlib.sha256(prebuild_bytes).hexdigest()

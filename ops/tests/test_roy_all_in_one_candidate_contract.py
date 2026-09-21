@@ -19,21 +19,17 @@ for arg in ("HERMES_WEBUI_REPO", "HERMES_WEBUI_REV", "HERMES_WEBUI_TREE", "HERME
     assert f"ARG {arg}" in dockerfile
 assert "grep -Eq '^[0-9a-f]{40}$'" in dockerfile
 assert "grep -Eq '^[0-9a-f]{64}$'" in dockerfile
-assert 'git checkout --detach "${HERMES_WEBUI_REV}"' in dockerfile
-assert 'test "$(git rev-parse HEAD)" = "${HERMES_WEBUI_REV}"' in dockerfile
-assert 'test "$(git rev-parse HEAD^{tree})" = "${HERMES_WEBUI_TREE}"' in dockerfile
-assert 'test "$(stat -c %s /tmp/hermes-webui.tar)" = "${HERMES_WEBUI_ARCHIVE_SIZE}"' in dockerfile
-assert 'git archive --format=tar "${HERMES_WEBUI_REV}"' in dockerfile
-assert "sha256sum -c -" in dockerfile
+assert "COPY --from=hermes_webui_source / /opt/hermes-webui/" in dockerfile
+assert 'test "$(cat /opt/hermes-webui/.release-source-revision)" = "${HERMES_WEBUI_REV}"' in dockerfile
+assert 'test "$(cat /opt/hermes-webui/.release-source-tree)" = "${HERMES_WEBUI_TREE}"' in dockerfile
 assert "test -f /opt/hermes-webui/server.py" in dockerfile
 assert "test -f /opt/hermes-webui/api/gateway_chat.py" in dockerfile
-assert "python3 /tmp/verify-hermes-webui-api-server-contract.py /tmp/hermes-webui.tar" in dockerfile
 assert "/opt/hermes-webui/server.py /opt/hermes-webui/api/gateway_chat.py" in dockerfile
 assert "test ! -e /opt/hermes-webui/.git" in dockerfile
 assert "test ! -e /opt/hermes-webui/venv" in dockerfile
 assert "COPY ops/images/roy-all-in-one.supervisor.conf /etc/supervisor/conf.d/roy-all-in-one.conf" in dockerfile
 assert "ENTRYPOINT [\"/usr/bin/supervisord\"" in dockerfile
-assert "git clone --depth" not in dockerfile
+assert "git clone" not in dockerfile
 assert "ARG HERMES_WEBUI_REV=" not in dockerfile
 
 # The deployed Roy Compose contract needs all-in-one WebUI plus webhook and
@@ -112,6 +108,12 @@ assert 'ROY_WEBUI_REV must be a full immutable Git revision' in builder
 assert 'ROY_WEBUI_TREE must be a full immutable Git tree' in builder
 assert 'ROY_WEBUI_ARCHIVE_SHA256 must be a Git archive SHA-256' in builder
 assert 'ROY_WEBUI_ARCHIVE_SIZE must be a positive Git archive byte size' in builder
+assert 'ROY_WEBUI_REPO must be a clean local Git checkout' in builder
+assert 'WebUI checkout revision mismatch' in builder
+assert 'WebUI checkout tree mismatch' in builder
+assert 'WebUI archive SHA-256 mismatch' in builder
+assert 'WebUI archive size mismatch' in builder
+assert '--build-context "hermes_webui_source=$WEBUI_CTX"' in builder
 assert 'ROY_BASE_CANDIDATE_REF must name the required local Roy base candidate' in builder
 assert 'docker image inspect "$ROY_BASE_CANDIDATE_REF" --format \'{{.Id}}\'' in builder
 assert "Roy base candidate ref does not resolve to ROY_BASE_IMAGE" in builder
