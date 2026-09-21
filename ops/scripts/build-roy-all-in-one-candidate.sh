@@ -52,7 +52,7 @@ git -C "$ROY_WEBUI_REPO" archive --format=tar "$ROY_WEBUI_REV" >"$webui_archive"
 [[ "$(sha256sum "$webui_archive" | cut -d' ' -f1)" == "$ROY_WEBUI_ARCHIVE_SHA256" ]] || fail 'WebUI archive SHA-256 mismatch'
 [[ "$(stat -c %s "$webui_archive")" == "$ROY_WEBUI_ARCHIVE_SIZE" ]] || fail 'WebUI archive size mismatch'
 tar -xf "$webui_archive" -C "$WEBUI_CTX"
-rm -f "$webui_archive"
+rm -f "$webui_archive" "$WEBUI_CTX/.dockerignore"
 printf '%s\n' "$ROY_WEBUI_REV" >"$WEBUI_CTX/.release-source-revision"
 printf '%s\n' "$ROY_WEBUI_TREE" >"$WEBUI_CTX/.release-source-tree"
 
