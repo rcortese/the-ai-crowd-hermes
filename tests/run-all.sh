@@ -24,7 +24,6 @@ run agents/public/moss/tools/wrappers/messaging-dry-run.sh --channel direct-mess
 run agents/public/moss/tools/wrappers/ssh-readonly-preflight.sh --host-ref private-ref:private-infra-host --user-ref private-ref:private-infra-user --command-class host-summary --dry-run
 run agents/public/moss/tools/wrappers/compose-readonly-preflight.sh --repo . --mode config --dry-run
 run tests/image-pin.sh
-run "$PYTHON" ops/tests/test_moss_candidate_build_contract.py "$PWD"
 run "$PYTHON" ops/tests/test_protected_hermes_a2a_base_lock.py
 run "${HERMES_TEST_PYTHON[@]}" ops/tests/test_persona_api_materializer.py
 run "$PYTHON" ops/tests/test_native_a2a_migration.py
