@@ -113,6 +113,7 @@ assert 'WebUI checkout revision mismatch' in builder
 assert 'WebUI checkout tree mismatch' in builder
 assert 'WebUI archive SHA-256 mismatch' in builder
 assert 'WebUI archive size mismatch' in builder
+assert 'rm -f "$webui_archive" "$WEBUI_CTX/.dockerignore"' in builder
 assert '--build-context "hermes_webui_source=$WEBUI_CTX"' in builder
 assert 'ROY_BASE_CANDIDATE_REF must name the required local Roy base candidate' in builder
 assert 'docker image inspect "$ROY_BASE_CANDIDATE_REF" --format \'{{.Id}}\'' in builder

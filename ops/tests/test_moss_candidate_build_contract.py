@@ -51,6 +51,7 @@ assert "git -C \"$ROOT\" archive --format=tar \"$COMMIT\"" in helper
 assert "sha256sum -c \"$CTX/$MANIFEST_REL\"" in helper
 assert 'org.opencontainers.image.revision=' in helper
 assert 'org.opencontainers.image.source=' in helper
+assert "rm -f \"$AGENT_CTX/.dockerignore\" \"$WEBUI_CTX/.dockerignore\"" in helper
 assert 'WEBUI_VERSION="${HERMES_WEBUI_VERSION:?' in helper
 assert '--build-arg "HERMES_WEBUI_VERSION=$WEBUI_VERSION"' in helper
 for label in (

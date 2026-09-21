@@ -49,6 +49,7 @@ webui_tree=$(git -C "$WEBUI_SOURCE" rev-parse "$webui_revision^{tree}")
 WEBUI_VERSION="${HERMES_WEBUI_VERSION:?set HERMES_WEBUI_VERSION to the frozen WebUI release tag}"
 git -C "$AGENT_SOURCE" archive --format=tar "$agent_revision" | tar -xf - -C "$AGENT_CTX"
 git -C "$WEBUI_SOURCE" archive --format=tar "$webui_revision" | tar -xf - -C "$WEBUI_CTX"
+rm -f "$AGENT_CTX/.dockerignore" "$WEBUI_CTX/.dockerignore"
 printf '%s\n' "$agent_revision" >"$AGENT_CTX/.release-source-revision"
 printf '%s\n' "$webui_revision" >"$WEBUI_CTX/.release-source-revision"
 (
