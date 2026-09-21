@@ -5,6 +5,7 @@ USER root
 
 ARG HERMES_AGENT_REV
 ARG HERMES_WEBUI_REV
+ARG HERMES_WEBUI_VERSION
 
 # Both application trees arrive from clean, commit-bound build contexts. This
 # release never clones an unpinned repository during the image build.
@@ -76,8 +77,8 @@ RUN test "$HERMES_AGENT_REV" = "$(cat /opt/hermes/.release-source-revision)" \
         tests/test_stage364_opus_live_sse_event_id.py \
         tests/test_issue5141_terminal_failure_transcript_evaluator.py \
         tests/test_session_channel_option_x.py \
-    && WEBUI_VERSION="$(git describe --tags --always --dirty)" \
-    && printf "__version__ = '%s'\\n" "$WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
+    && test -n "$HERMES_WEBUI_VERSION" \
+    && printf "__version__ = '%s'\\n" "$HERMES_WEBUI_VERSION" > /opt/hermes-webui/api/_version.py \
     && uv pip install --python /opt/hermes/.venv/bin/python3 --no-cache-dir -e /opt/hermes \
     && rm -rf /opt/hermes-webui/.git \
     && chown -R 99:100 /opt/hermes-webui

@@ -26,10 +26,10 @@ base_id=sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 other_id=sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 image_id=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 candidate_ref=the-ai-crowd/roy:base-candidate-a2bdd
-expected_commit=a2bddaf9921c8b8b10f96e188bb61f0a33d9bfc5
-expected_tree=9f483dffbf04b33efb4e7bffd3a0a7247f82e223
-expected_hermes_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["protected_base"]["image_id"])' "$root/ops/manifests/protected-hermes-a2a-base.lock.json")
-expected_hermes_source=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["protected_base"]["source_revision"])' "$root/ops/manifests/protected-hermes-a2a-base.lock.json")
+expected_commit=$(git -C "$repo" rev-parse HEAD)
+expected_tree=$(git -C "$repo" rev-parse HEAD^{tree})
+expected_hermes_id=sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+expected_hermes_source=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 cat >"$bin/jq" <<'JQ'
 #!/usr/bin/env python3
 import json, sys
@@ -109,7 +109,7 @@ esac
 DOCKER
 chmod 700 "$bin/docker" "$bin/jq"
 helper="$repo/ops/scripts/build-roy-all-in-one-candidate.sh"
-common=(PATH="$bin:$PATH" DOCKER_LOG="$docker_log" FAKE_BUILT="$fx/built" FAKE_FINAL_PREBUILD_LABEL="$fx/final-prebuild-label" TARGET_TAG=fixture/roy:test BASE_ID="$base_id" OTHER_BASE_ID="$other_id" IMAGE_ID="$image_id" EXPECTED_COMMIT="$expected_commit" EXPECTED_TREE="$expected_tree" EXPECTED_HERMES_ID="$expected_hermes_id" EXPECTED_HERMES_SOURCE="$expected_hermes_source" ROY_BASE_IMAGE="$base_id" ROY_WEBUI_REPO=https://fixture.invalid/webui ROY_WEBUI_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ROY_WEBUI_ARCHIVE_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_ARCHIVE_SIZE=123)
+common=(PATH="$bin:$PATH" DOCKER_LOG="$docker_log" FAKE_BUILT="$fx/built" FAKE_FINAL_PREBUILD_LABEL="$fx/final-prebuild-label" TARGET_TAG=fixture/roy:test BASE_ID="$base_id" OTHER_BASE_ID="$other_id" IMAGE_ID="$image_id" EXPECTED_COMMIT="$expected_commit" EXPECTED_TREE="$expected_tree" EXPECTED_HERMES_ID="$expected_hermes_id" EXPECTED_HERMES_SOURCE="$expected_hermes_source" HERMES_AGENT_IMAGE_ID="$expected_hermes_id" HERMES_AGENT_SOURCE_REVISION="$expected_hermes_source" ROY_BASE_IMAGE="$base_id" ROY_WEBUI_REPO=https://fixture.invalid/webui ROY_WEBUI_REV=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_TREE=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ROY_WEBUI_ARCHIVE_SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ROY_WEBUI_ARCHIVE_SIZE=123)
 run(){ local receipts=$1; shift; local prebuild="$receipts/prebuild-$(printf '%s' fixture/roy:test | sha256sum | cut -d' ' -f1).json"; env "${common[@]}" ROY_BASE_CANDIDATE_REF="$candidate_ref" PREBUILD_RECEIPT_PATH="$prebuild" "$@" BUILD_RECEIPT_ROOT="$receipts" "$helper" fixture/roy:test; }
 assert_no_receipt(){ local receipts=$1 label=$2; [[ ! -d $receipts ]] || ! compgen -G "$receipts/*.json" >/dev/null || fail "$label published a receipt"; }
 receipts="$fx/receipts-happy"; : >"$docker_log"
