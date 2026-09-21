@@ -36,16 +36,9 @@ private_location_patterns = [
     (r'(?<![A-Za-z0-9_./-])/(?:mnt|media)/(?:user|disk\d+|cache|ssd|private|secrets)(?:/|$)', 'private storage path'),
 ]
 project_specific_patterns = [(r'(?i)\bun' + 'raid\b', 'specific private deployment platform')]
-# These host-custody executors intentionally bind canonical storage paths. Keep every
-# other public-release detector active for them; the exception is path-specific only.
+# This host smoke test intentionally binds a canonical storage path. Keep every
+# other public-release detector active for it; the exception is path-specific only.
 private_storage_contract_paths = {
-    'ops/cron/the-ai-crowd-hddt-retention.cron',
-    'ops/scripts/bootstrap-hddt-moss-root.sh',
-    'ops/scripts/hddt-moss-launcher.sh',
-    'ops/scripts/hddt-moss-status.sh',
-    'ops/scripts/hddt-moss.sh',
-    'ops/tests/test_hddt_lite_contract.sh',
-    'ops/tests/test_hddt_moss.sh',
     'tests/smoke-deploy.sh',
 }
 unsafe_mount_patterns = [

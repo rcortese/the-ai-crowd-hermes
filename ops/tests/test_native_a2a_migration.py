@@ -13,7 +13,6 @@ ACTIVE = [
     ROOT / "agents/public/jen/README.md",
     ROOT / "agents/public/jen/SOUL.md",
     ROOT / "agents/public/jen/lib/jen-envelope-emit.sh",
-    ROOT / "ops/scripts/hddt-moss.sh",
     ROOT / "tests/protocol/test_no_alternative_a2a.py",
 ]
 for path in ACTIVE:
