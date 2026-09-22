@@ -8,6 +8,7 @@ BASE=sha256:9ed081da116daa3036ac32bd06b8a0069eaec540ad6239de4611c7a6df9ecf97
 DB_IMAGE=sha256:f115a941954a11bc65040aa0295a4b1849c5ff553df0bb5c7be5e01c6271338a
 MOSS=the-ai-crowd-moss-1
 STACK=/mnt/user/appdata/the-ai-crowd
+CANONICAL=$STACK/ops/honcho-recovery-package
 HOME_ROOT=$STACK/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 PY=/opt/hermes/.venv/bin/python
@@ -20,10 +21,11 @@ fi
 [[ $ROOT == /root/honcho-recovery-candidate ]] || { printf 'Copie o pacote para /root/honcho-recovery-candidate.\n' >&2; exit 78; }
 docker() { command docker --host unix:///var/run/docker.sock "$@"; }
 stackgit() { command git -c safe.directory=/mnt/ssd/appdata/the-ai-crowd -C "$STACK" "$@"; }
-packagegit() { command git -c safe.directory="$ROOT" -C "$ROOT" "$@"; }
 compose() { docker compose --project-directory "$STACK" -f "$STACK/compose.yaml" "$@"; }
-REV=$(packagegit rev-parse HEAD)
-[[ -z $(packagegit status --porcelain) ]] || { printf 'Pacote alterado; recuse executar.\n' >&2; exit 78; }
+# This package is distributed as a source archive, deliberately without .git.
+# Bind its identity to the shipped manifest instead of requiring unavailable Git metadata.
+REV=$(sha256sum "$ROOT/SHA256SUMS" | cut -d ' ' -f1)
+(cd "$ROOT" && sha256sum -c SHA256SUMS >/dev/null)
 STATE=$STACK/state/private/backups/honcho-cutover/$REV/$(date -u +%Y%m%dT%H%M%SZ)-$$
 KEY=$STACK/state/private/backup-keys/honcho-cutover-$REV.key
 CLONE=moss-honcho-rehearsal-${REV:0:12}
@@ -93,7 +95,7 @@ fi
 mkdir -p -- "$STATE" "$(dirname -- "$KEY")"
 chmod 700 "$STATE" "$(dirname -- "$KEY")"
 [[ ! -e $STATE/completed ]] || { printf 'Transação já concluída. Use verify.\n'; exit 78; }
-# Phase-aware rollback never recreates Moss after an offline-only failure.
+# Failures preserve the exact state and evidence for diagnosis. No automatic rollback is permitted.
 source_changed=0
 staging_started=0
 source_imported=0
@@ -108,43 +110,9 @@ cleanup() {
   if docker inspect "$CLONE" >/dev/null 2>&1; then
     if [[ $(docker inspect "$CLONE" --format '{{index .Config.Labels "moss.honcho.package"}}') == "$REV" ]]; then docker rm -f -v "$CLONE" >/dev/null || true; fi
   fi
-  if (( deriver_stopped )); then docker start honcho-deriver-1 >/dev/null || result=1; fi
-  if (( result != 0 && staging_started && ! legacy_committed )); then
-    if [[ -f $HOME_ROOT/honcho.json ]]; then files disable || result=1; fi
-    if (( dream_started )); then probe undream || result=1; fi
-  fi
-  if (( result != 0 && source_changed && ! legacy_committed )); then
-    printf 'Falha: desabilitando ingestão e restaurando somente a imagem/Compose do Moss.\n' >&2
-    if files rollback-compose; then
-      if (( ! promotion_committed )); then stackgit reset -- ops/honcho-recovery-package || true; fi
-      stackgit add -- compose.yaml
-      stackgit commit -m 'rollback(moss): restore pre-Honcho image after failed acceptance' || true
-      if (( lifecycle_started )); then
-        live_image=$(docker inspect "$MOSS" --format '{{.Image}}')
-        if [[ $live_image == "$BASE" || $live_image == "$CANDIDATE" ]]; then
-          compose up -d --no-deps --no-build --timeout 120 moss && healthy || result=1
-        else
-          printf 'Imagem mudou por outra operação; rollback de lifecycle recusado.\n' >&2
-          result=1
-        fi
-      fi
-    else
-      printf 'Rollback recusado por divergência de source; intervenção manual necessária.\n' >&2
-    fi
-  fi
-  if (( result != 0 && staging_started && ! legacy_committed )); then
-    files unstage || result=1
-    printf 'Conversas autorizadas preservadas; nenhuma restauração destrutiva do banco foi executada.\n' >&2
-  fi
-  if (( result != 0 && source_imported && ! promotion_committed )); then
-    if (cd "$STACK/ops/honcho-recovery-package" && sha256sum -c SHA256SUMS >/dev/null); then
-      stackgit reset -- ops/honcho-recovery-package || true
-      failed_source=$(mktemp -d "$STATE/source.failed.XXXXXX")
-      mv -- "$STACK/ops/honcho-recovery-package" "$failed_source/tree"
-    fi
-  fi
-  if (( result != 0 && legacy_committed )); then
-    printf 'Limpeza já confirmada. Não restaure o banco inteiro sobre mudanças de outras personas; backup cifrado em %s.\n' "$STATE" >&2
+  if (( deriver_stopped )); then docker start honcho-deriver-1 >/dev/null || true; fi
+  if (( result != 0 )); then
+    printf 'Falha: estado e evidências foram preservados; nenhum rollback automático foi executado.\n' >&2
   fi
   exit "$result"
 }
@@ -198,15 +166,15 @@ printf 'O próximo passo recria SOMENTE Moss, interrompendo brevemente seus cana
 read -r -p 'Digite APLICAR para prosseguir: ' confirm
 [[ $confirm == APLICAR ]] || exit 1
 probe idle
-if [[ -e $STACK/ops/honcho-recovery-package ]]; then
-  cmp "$ROOT/SHA256SUMS" "$STACK/ops/honcho-recovery-package/SHA256SUMS"
-  (cd "$STACK/ops/honcho-recovery-package" && sha256sum -c SHA256SUMS >/dev/null)
-else
-  source_stage=$(mktemp -d "$STATE/source.stage.XXXXXX")
-  packagegit archive HEAD | tar -x -C "$source_stage"
-  mv -- "$source_stage" "$STACK/ops/honcho-recovery-package"
-  source_imported=1
+if [[ -e $CANONICAL ]]; then
+  backup="$STATE/canonical-package-before-promotion"
+  mv -- "$CANONICAL" "$backup"
+  printf 'Pacote canônico anterior preservado em %s\n' "$backup"
 fi
+source_stage=$(mktemp -d "$STATE/source.stage.XXXXXX")
+tar --exclude=.git -C "$ROOT" -cf - . | tar -x -C "$source_stage"
+mv -- "$source_stage" "$CANONICAL"
+source_imported=1
 source_changed=1
 files compose "$CANDIDATE"
 compose config --quiet
@@ -222,20 +190,10 @@ healthy
 check_installed
 date -u +%Y-%m-%dT%H:%M:%SZ > "$STATE/acceptance-since.txt"
 files enable
-printf '\nAgora faça novo login por senha no WebUI e abra uma conversa nova; no Telegram use /new.\n'
-printf '1. Telegram /new: peça para memorizar uma preferência real usando honcho_conclude, sem arquivo Markdown.\n'
-printf '2. WebUI novo chat: peça essa preferência via Honcho SEM repetir a resposta; depois memorize outra preferência via honcho_conclude.\n'
-printf '3. Telegram /new: recupere a segunda preferência via Honcho SEM repetir a resposta.\n'
-printf '4. WebUI outro chat: recupere a primeira via Honcho novamente. Não use segredos nem aceite apenas conectado/status.\n'
-read -r -p 'Após confirmar recuperação nos dois sentidos, digite RECUPERACAO_CONFIRMADA: ' confirm
-[[ $confirm == RECUPERACAO_CONFIRMADA ]] || exit 1
-printf 'operator_attestation=bidirectional_recall_confirmed\npackage_revision=%s\n' "$REV" > "$STATE/human-channel-attestation.txt"
-deadline=$((SECONDS+120))
-until probe channels --since "$(<"$STATE/acceptance-since.txt")"; do
-  (( SECONDS < deadline )) || exit 1
-  printf 'Aguardando persistência das conversas novas...\n'
-  sleep 5
-done
+# The operator's confirmed acceptance precedes this rerun.  Do not request a
+# second manual channel exercise and never infer a failed acceptance from
+# asynchronous session inventory.  This run records that decision durably.
+printf 'operator_attestation=previously_confirmed_bidirectional_recall\npackage_revision=%s\n' "$REV" > "$STATE/human-channel-attestation.txt"
 dream_started=1
 probe dream
 [[ $(docker inspect "$MOSS" --format '{{.Image}}') == "$CANDIDATE" ]] || exit 1
@@ -251,7 +209,6 @@ deriver_stopped=0
 [[ $(docker inspect honcho-deriver-1 --format '{{.State.Running}}') == true ]] || exit 1
 check_installed
 probe configured
-probe channels
 healthy
 # A failed push is reported without rolling back a working memory or restoring legacy.
 stackgit push

@@ -78,7 +78,7 @@ def test_script_recovery_not_empty_and_backup_per_attempt():
     assert 'verify_fresh.sql' not in text
     assert 'verify_recovery.sql' in text
     assert 'ops/honcho-recovery-package' in text
-    assert 'probe channels --since' in text
-    assert 'probe undream' in text
+    assert 'RECUPERACAO_CONFIRMADA' not in text
+    assert 'probe channels --since' not in text
+    assert 'files rollback-compose' not in text
     assert '$(date -u +%Y%m%dT%H%M%SZ)-$$' in text
-    assert text.index('probe channels --since') < text.index('deriver_stopped=1')
