@@ -1,0 +1,8 @@
+78185068bb67b07d769ad563e8d0b93dbb18ac2fa3c63b5e696be9fc4f3569f7  /opt/hermes/plugins/memory/honcho/cli.py
+2f7a0103c63ab60c1e1d37131cd8b874d7e9c10d9a196348925dd20afa962f9e  /opt/hermes/agent/agent_init.py
+426e2c3e9d7aeb69c4e580690a307c9aaf13998d1c02f64b2aca90fe9c840931  /opt/hermes/plugins/memory/honcho/__init__.py
+0a5044c941e6a0edff104f05c025e11c037c66541b6c3c5cbe2a1190e5fea519  /opt/hermes/plugins/memory/honcho/client.py
+7ec405dc2a59789582ad9f61a189a41079e621f14642d3c9dc754e312616a868  /opt/hermes/gateway/platforms/api_server.py
+dd7303663f8062ece1a08b03b2010a7737500162c9b1e7a7f5e802b4b80504c0  /opt/hermes/gateway/platforms/api_server_runs.py
+30289694d93c97136579e7dc972bd43479e2ffddee8bd6b698c0d7c654d0de44  /opt/hermes-webui/api/routes.py
+3452cab0fda196be57a3cd69a72b6c7a3b79920d0f3895253ece6345665dc4ae  /opt/hermes-webui/api/gateway_chat.py
