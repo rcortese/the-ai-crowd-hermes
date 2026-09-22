@@ -1,0 +1,222 @@
+--- /opt/hermes/agent/agent_init.py
++++ overlay/agent/agent_init.py
+@@ -50,7 +50,8 @@
+ _HUMAN_MEMORY_SURFACES = frozenset({"telegram", "webui"})
+ 
+ 
+-def _should_skip_memory_for_runtime(*, platform: object = None, explicit_skip_memory: bool = False) -> bool:
++def _should_skip_memory_for_runtime(*, platform: object = None, explicit_skip_memory: bool = False,
++                                    session_id=None, gateway_session_key=None) -> bool:
+     """Allow persistence only for explicit direct-human surfaces."""
+     if explicit_skip_memory or any(
+         is_truthy_value(os.environ.get(name))
+@@ -58,6 +59,10 @@
+     ):
+         return True
+     surface = str(platform or "").strip().lower().replace("-", "_")
++    if surface == "api_server":
++        from agent.moss_memory_gate import eligible
++        return not eligible({"platform": surface, "agent_context": "primary",
++                             "session_id": session_id, "gateway_session_key": gateway_session_key})
+     return surface not in _HUMAN_MEMORY_SURFACES
+ 
+ 
+@@ -2236,6 +2241,8 @@
+     skip_memory = _should_skip_memory_for_runtime(
+         platform=platform,
+         explicit_skip_memory=bool(skip_memory),
++        session_id=session_id,
++        gateway_session_key=gateway_session_key,
+     )
+ 
+     _params = locals()
+--- /opt/hermes/plugins/memory/honcho/__init__.py
++++ overlay/plugins/memory/honcho/__init__.py
+@@ -219,6 +219,13 @@
+ 
+     def initialize(self, session_id: str, **kwargs) -> None:
+         """Configure recall settings and start (or defer) Honcho session creation."""
++        from agent.moss_memory_gate import eligible, api_admission
++        if not eligible({**kwargs, "session_id": session_id}):
++            self._cron_skipped = True
++            return
++        admission = api_admission.get() if kwargs.get("platform") == "api_server" else None
++        kwargs["memory_conversation"] = admission["session_id"] if admission else session_id
++        kwargs["memory_surface"] = "webui" if admission else kwargs.get("platform", "unknown")
+         self._recall_generation = object()
+         try:
+             agent_context, platform = kwargs.get("agent_context", ""), kwargs.get("platform", "cli")
+@@ -275,6 +282,11 @@
+ 
+     def _resolve_session_key(self, cfg, session_id: str, **kwargs) -> str:
+         """Resolve the Honcho session key without touching the network."""
++        from agent.moss_memory_gate import policy
++        if policy():
++            ident = kwargs["memory_conversation"]
++            surface = kwargs["memory_surface"]
++            return "moss-" + surface + "-" + hashlib.sha256(ident.encode()).hexdigest()[:32]
+         return cfg.resolve_session_name(
+             session_title=kwargs.get("session_title"), session_id=session_id,
+             gateway_session_key=kwargs.get("gateway_session_key"),
+--- /opt/hermes/plugins/memory/honcho/client.py
++++ overlay/plugins/memory/honcho/client.py
+@@ -664,6 +664,11 @@
+         # strip a trailing version segment from any base_url to avoid "/v3/v3/...".
+         import re
+         kwargs["base_url"] = re.sub(r"/v\d+/*$", "", base_url).rstrip("/")
++    from agent.moss_memory_gate import policy, safe_http_client
++    approved = policy()
++    if not approved or config.workspace_id != "moss-rodolfo" or kwargs.get("base_url") != approved["base_url"] or api_key != "local":
++        raise ValueError("Moss Honcho workspace/destination mismatch")
++    kwargs["http_client"] = safe_http_client(kwargs["base_url"], timeout, api_key=api_key)
+     _register_exit_close()
+     return Honcho(**kwargs)
+ 
+--- /opt/hermes/gateway/platforms/api_server.py
++++ overlay/gateway/platforms/api_server.py
+@@ -1511,9 +1511,12 @@
+                         self._derive_browser_control_principal(resolved_profile))
+                     family_token = _api_request_browser_control_transport_family.set(
+                         self._browser_control_transport_family(request))
++                    from agent.moss_memory_gate import api_admission, request_admission
++                    memory_token = api_admission.set(await request_admission(request, resolved_profile))
+                     try:
+                         return await handler(request)
+                     finally:
++                        api_admission.reset(memory_token)
+                         _api_request_browser_control_transport_family.reset(family_token)
+                         _api_request_browser_control_principal.reset(principal_token)
+             finally:
+@@ -3687,10 +3690,12 @@
+         request_profile = _api_request_profile.get()
+         request_browser_control_principal = _api_request_browser_control_principal.get()
+         request_browser_control_transport_family = _api_request_browser_control_transport_family.get()
++        from agent.moss_memory_gate import api_admission, admission_scope
++        request_memory_admission = api_admission.get()
+ 
+         def _run():
+             from gateway.session_context import clear_session_vars
+-            with self._profile_scope(request_profile):
++            with self._profile_scope(request_profile), admission_scope(request_memory_admission):
+                 tokens = self._bind_api_server_session(
+                     chat_id=session_id or "", session_key=gateway_session_key or session_id or "",
+                     session_id=session_id or "", profile=request_profile or "",
+--- /opt/hermes/gateway/platforms/api_server_runs.py
++++ overlay/gateway/platforms/api_server_runs.py
+@@ -27,6 +27,7 @@
+ 
+ 
+ logger = logging.getLogger("gateway.platforms.api_server")
++from agent.moss_memory_gate import api_admission, admission_scope
+ _ROOM_RETENTION_REQUEST_KEY = (
+     RequestKey("hermes.room_run_retention_until", float) if RequestKey is not None
+     else "hermes.room_run_retention_until")
+@@ -332,6 +333,7 @@
+     browser_control_principal: Any
+     browser_control_transport_family: Any
+     turn_author: Optional[Dict[str, Any]] = None  # memory-attribution label only; grants nothing
++    memory_admission: Optional[Dict[str, Any]] = None  # server-verified, never request-body attribution
+ 
+     @property
+     def approval_session_key(self) -> str:
+@@ -498,7 +500,7 @@
+         request_profile=_api_server._api_request_profile.get(),
+         browser_control_principal=_api_server._api_request_browser_control_principal.get(),
+         browser_control_transport_family=_api_server._api_request_browser_control_transport_family.get(),
+-        turn_author=turn_author)
++        turn_author=turn_author, memory_admission=api_admission.get())
+     self._activate_admitted_request()
+     task = self._active_run_tasks[run_id] = asyncio.create_task(_execute_run(self, launch, _api_server=_api_server))
+     with suppress(TypeError):
+@@ -525,7 +527,7 @@
+     effective_task_id = session_id or run.run_id
+     # (token, reset) pairs unwound in the finally block; bound only once each step succeeds.
+     resets: list[tuple[Any, Callable]] = []
+-    with self._profile_scope(run.request_profile):
++    with self._profile_scope(run.request_profile), admission_scope(run.memory_admission):
+         try:
+             # Contextvars, not process env: concurrent runs must not share identity.
+             resets.append((set_current_session_key(run.approval_session_key), reset_current_session_key))
+@@ -623,7 +625,7 @@
+         if run_id in self._stopping_run_ids:
+             _finish("cancelled")
+             return
+-        with self._profile_scope(run.request_profile):
++        with self._profile_scope(run.request_profile), admission_scope(run.memory_admission):
+             agent = self._create_agent(
+                 stream_delta_callback=_text_cb, tool_progress_callback=self._make_run_event_callback(run_id, loop),
+                 **run.agent_kwargs)
+--- /opt/hermes-webui/api/routes.py
++++ webui/api/routes.py
+@@ -16353,7 +16353,7 @@
+             _record_login_attempt(client_ip)
+             return bad(handler, "Invalid password", 401)
+         _clear_login_attempts(client_ip)
+-        cookie_val = create_session()
++        cookie_val = create_session(auth_type="password")
+         body = json.dumps({"ok": True}).encode()
+         handler.send_response(200)
+         handler.send_header("Content-Type", "application/json")
+@@ -21196,6 +21196,9 @@
+     diag.stage("worker_thread_start") if diag else None
+     worker_target = _run_gateway_chat_streaming if backend_is_gateway else _run_agent_streaming
+     worker_kwargs = {"model_provider": model_provider, "goal_related": goal_related}
++    if backend_is_gateway and execution_target["execution_target"] == "local_gateway":
++        from agent.moss_memory_gate import web_admission
++        worker_kwargs["memory_admission"] = web_admission.get() if not goal_related and source == "webui" else None
+     if backend_is_gateway and execution_target.get("gateway_config") is not None:
+         worker_kwargs["gateway_config"] = execution_target["gateway_config"]
+     if moa_config and not backend_is_gateway:
+@@ -21952,6 +21955,10 @@
+     return j(handler, payload)
+ 
+ 
++from agent.moss_memory_gate import capture_browser as _capture_moss_memory_browser
++
++
++@_capture_moss_memory_browser
+ def _handle_chat_start(handler, body, diag=None):
+     try:
+         diag.stage("validate_session_id") if diag else None
+--- /opt/hermes-webui/api/gateway_chat.py
++++ webui/api/gateway_chat.py
+@@ -438,7 +438,7 @@
+     session_id, msg_text, model, workspace, stream_id,
+     base_url, api_key, prefill_messages, body_extras,
+     *, put_gateway_event, cancel_event,
+-    attachments=None, cfg=None, session=None,
++    attachments=None, cfg=None, session=None, memory_admission=None,
+ ):
+     """Submit via POST /v1/runs and relay SSE events including approval."""
+     url_runs = f"{base_url.rstrip('/')}/v1/runs"
+@@ -508,9 +508,13 @@
+         run_body["instructions"] = "\n\n".join(part for part in instructions_parts if part)
+     if conversation_history:
+         run_body["conversation_history"] = conversation_history
++    wire_body = json.dumps(run_body).encode("utf-8")
++    from agent.moss_memory_gate import sign_request
++    headers.update(sign_request(memory_admission, wire_body, session_id,
++                                memory_admission["profile"] if memory_admission else "default"))
+     req = urllib.request.Request(
+         url_runs,
+-        data=json.dumps(run_body).encode("utf-8"),
++        data=wire_body,
+         headers=headers,
+         method="POST",
+     )
+@@ -728,6 +732,7 @@
+     model_provider=None,
+     goal_related=False,
+     gateway_config=None,
++    memory_admission=None,
+ ):
+     """Bridge a WebUI chat turn through Hermes Gateway's API server.
+ 
+@@ -889,6 +894,7 @@
+                     attachments=attachments,
+                     cfg=cfg,
+                     session=s,
++                    memory_admission=memory_admission,
+                 )
+             except Exception as exc:
+                 error_payload = _settle_gateway_terminal_error(
