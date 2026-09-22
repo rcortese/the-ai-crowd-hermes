@@ -45,6 +45,16 @@ RUN cd /opt/hermes \
         gateway/run.py \
         plugins/kanban/dashboard/plugin_api.py
 
+# /etc/profile replaces PATH in login shells. Keep the absolute venv executable
+# authoritative and expose only its CLI entrypoint through the standard PATH.
+RUN if [ -L /usr/local/bin/hermes ]; then \
+        test "$(readlink /usr/local/bin/hermes)" = /opt/hermes/.venv/bin/hermes; \
+    else \
+        test ! -e /usr/local/bin/hermes \
+        && ln -s /opt/hermes/.venv/bin/hermes /usr/local/bin/hermes; \
+    fi \
+    && test "$(readlink /usr/local/bin/hermes)" = /opt/hermes/.venv/bin/hermes
+
 
 RUN git clone "${HERMES_WEBUI_REPO}" /opt/hermes-webui \
     && cd /opt/hermes-webui \
