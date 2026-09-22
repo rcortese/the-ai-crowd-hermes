@@ -1,0 +1,8 @@
+{
+  "service": "the-elders",
+  "image": "sha256:ab9964cabc23efe617f9402b0005d46b64bd09356a9367dd2c8238d35c90f495",
+  "tag": "the-ai-crowd/the-elders:candidate-20260922-02a73bdcf119",
+  "base": "sha256:5b94e5d6e9fbc934624b005a1b84457751b3b535aaf1b9755b559460685b0180",
+  "agent": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+  "webui": null
+}

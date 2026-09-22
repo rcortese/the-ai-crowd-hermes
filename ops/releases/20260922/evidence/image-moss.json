@@ -1,0 +1,8 @@
+{
+  "service": "moss",
+  "image": "sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95",
+  "tag": "the-ai-crowd/moss:candidate-20260922-177b3b2e3187",
+  "base": "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0",
+  "agent": "177b3b2e3187ef2270aba9851f4c19f9b6c020dc",
+  "webui": "6ac0275e7ce60a94bcc728a0ff0ee155893f9504"
+}

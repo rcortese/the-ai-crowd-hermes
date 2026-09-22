@@ -1,0 +1,11 @@
+{
+  "service": "the-elders",
+  "image": "sha256:ab9964cabc23efe617f9402b0005d46b64bd09356a9367dd2c8238d35c90f495",
+  "result": "PASS",
+  "probe": {
+    "python": "3.13.5",
+    "sqlite": "3.53.4",
+    "agent": "0.21.4",
+    "imports_and_session_db": "PASS"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "service": "jen",
+  "image": "sha256:c537bd149defa3c867dd0322ed3f619c9ac6aff9aec8e3883a23bc1a0e222eb2",
+  "tag": "the-ai-crowd/jen:candidate-20260922-02a73bdcf119",
+  "base": "sha256:46a767de5686a913ee1f4ff2e2ad2f39e8e622b0850b73fac51fc80704555cfa",
+  "agent": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+  "webui": null
+}

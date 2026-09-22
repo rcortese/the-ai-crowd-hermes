@@ -1,0 +1,11 @@
+{
+  "service": "moss",
+  "image": "sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95",
+  "result": "PASS",
+  "probe": {
+    "python": "3.13.5",
+    "sqlite": "3.53.4",
+    "agent": "0.21.4",
+    "imports_and_session_db": "PASS"
+  }
+}
