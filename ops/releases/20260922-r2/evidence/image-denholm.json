@@ -1,0 +1,8 @@
+{
+  "service": "denholm",
+  "image": "sha256:72715188286f6b7f19c62a621c17bb7c61936c2a4b251d6fa9b1449e5eeabd29",
+  "tag": "the-ai-crowd/denholm:candidate-20260922-02a73bdcf119",
+  "base": "sha256:5dfb1c2eb9da930e50e2b5f8d72a610c2d940320779c47fb1950d73ddd900ce1",
+  "agent": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+  "webui": null
+}

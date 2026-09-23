@@ -1,0 +1,8 @@
+{
+  "service": "richmond",
+  "image": "sha256:bbc7cb34ba2414138e95d1d0f15dfceb85d9823fecef38315c757e9f31b9fab6",
+  "tag": "the-ai-crowd/richmond:candidate-20260922-02a73bdcf119",
+  "base": "sha256:0936b491e6da252273520dbeafc532faaaedda8c2b20c5c5acff39caecf3de56",
+  "agent": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+  "webui": null
+}

@@ -1,0 +1,8 @@
+{
+  "service": "roy",
+  "image": "sha256:46a5bc1d06a9b3e76744caa8367b4d35ebcb34dceb74e54e576a0e1d4e1e8fc5",
+  "tag": "the-ai-crowd/roy:candidate-20260922-02a73bdcf119",
+  "base": "sha256:6aa783ac1a6e5cc578769be3f65a5df671b0be99ef304c732af4c94b273f2f87",
+  "agent": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+  "webui": "3601f501bf01a91228a1b67cf33e314c6c960440"
+}

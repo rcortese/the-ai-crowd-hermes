@@ -1,0 +1,393 @@
+name: the-ai-crowd
+# Hermes images enter through s6/supervisord as root; supervisors drop workloads
+# to the named `hermes` account baked downstream as UID:GID 99:100.
+# HERMES_UID/HERMES_GID mirror that identity; they do not perform the remap.
+# Do not change the Compose user: s6 needs root to set supplementary groups.
+x-hermes-runtime: &hermes-runtime
+  restart: always
+  user: "0:0"
+x-hermes-runtime-env: &hermes-runtime-env
+  TZ: ${TZ:-UTC}
+  HERMES_UID: 99
+  HERMES_GID: 100
+  HOME: /opt/data
+  PYTHONUNBUFFERED: ${PYTHONUNBUFFERED:-1}
+x-hermes-internal-networks: &hermes-internal-networks
+  - internal
+x-hermes-fleet-env-file: &hermes-fleet-env-file ./env/fleet.env
+services:
+  moss:
+    <<: *hermes-runtime
+    environment:
+      <<: *hermes-runtime-env
+      HERMES_KANBAN_DISPATCH_OWNER: "moss"
+      # Required by the all-in-one supervisor interpolation. Keep unowned
+      # boards fail-closed even though this Kanban root is now Moss-local.
+      HERMES_KANBAN_DISPATCH_UNOWNED_BOARDS: "false"
+      HERMES_KANBAN_HOME: /opt/data
+      HERMES_KANBAN_DISPATCH_IN_GATEWAY: 'true'
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/moss/private:/tmp
+      AGENT_NAME: moss
+      AGENT_ROOT: /agents/moss
+      AGENT_PUBLIC: /agents/moss/public
+      AGENT_PRIVATE: /agents/moss/private
+      AGENT_RUNTIME: /opt/data
+      AGENT_SHARED: /mnt/hermes-shared
+      TERMINAL_CWD: /agents/moss/private
+      WEBHOOK_ENABLED: 'true'
+      WEBHOOK_PORT: '8644'
+      API_SERVER_ENABLED: 'true'
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: '8648'
+      HERMES_WEBUI_AGENT_DIR: /opt/hermes
+      HERMES_WEBUI_HOST: 0.0.0.0
+      HERMES_WEBUI_PORT: '8787'
+      HERMES_WEBUI_STATE_DIR: /opt/data/webui
+      HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/moss/private
+      HERMES_WEBUI_CHAT_BACKEND: gateway
+      HERMES_WEBUI_GATEWAY_BASE_URL: http://moss:8648
+      HERMES_WEBUI_PROFILE_PROXY_JEN_BASE_URL: http://jen:8642
+      HERMES_WEBUI_PROFILE_PROXY_JEN_API_KEY_ENV: API_SERVER_KEY
+      HERMES_WEBUI_PROFILE_PROXY_JEN_LABEL: Jen
+      HERMES_WEBUI_PROFILE_PROXY_JEN_REMOTE_PROFILE: default
+      HERMES_WEBUI_PROFILE_PROXY_JEN_SESSION_KEY_PREFIX: webui:moss:jen
+      HERMES_WEBUI_PROFILE_PROXY_DENHOLM_BASE_URL: http://denholm:8643
+      HERMES_WEBUI_PROFILE_PROXY_DENHOLM_API_KEY_ENV: API_SERVER_KEY
+      HERMES_WEBUI_PROFILE_PROXY_DENHOLM_LABEL: Denholm
+      HERMES_WEBUI_PROFILE_PROXY_DENHOLM_REMOTE_PROFILE: default
+      HERMES_WEBUI_PROFILE_PROXY_DENHOLM_SESSION_KEY_PREFIX: webui:moss:denholm
+      HERMES_WEBUI_PROFILE_PROXY_ROY_BASE_URL: http://roy:8645
+      HERMES_WEBUI_PROFILE_PROXY_ROY_API_KEY_ENV: API_SERVER_KEY
+      HERMES_WEBUI_PROFILE_PROXY_ROY_LABEL: Roy
+      HERMES_WEBUI_PROFILE_PROXY_ROY_REMOTE_PROFILE: default
+      HERMES_WEBUI_PROFILE_PROXY_ROY_SESSION_KEY_PREFIX: webui:moss:roy
+      HERMES_WEBUI_PROFILE_PROXY_RICHMOND_BASE_URL: http://richmond:8646
+      HERMES_WEBUI_PROFILE_PROXY_RICHMOND_API_KEY_ENV: API_SERVER_KEY
+      HERMES_WEBUI_PROFILE_PROXY_RICHMOND_LABEL: Richmond
+      HERMES_WEBUI_PROFILE_PROXY_RICHMOND_REMOTE_PROFILE: default
+      HERMES_WEBUI_PROFILE_PROXY_RICHMOND_SESSION_KEY_PREFIX: webui:moss:richmond
+      HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_BASE_URL: http://the-elders:8647
+      HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_API_KEY_ENV: API_SERVER_KEY
+      HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_LABEL: The Elders
+      HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_REMOTE_PROFILE: default
+      HERMES_WEBUI_PROFILE_PROXY_THE_ELDERS_SESSION_KEY_PREFIX: webui:moss:the-elders
+      TELEGRAM_BOT_TOKEN: ${MOSS_TELEGRAM_BOT_TOKEN:-}
+      MOSS_TELEGRAM_OWNER_DELIVERY_BOT_TOKEN: ${MOSS_TELEGRAM_BOT_TOKEN:-}
+      MOSS_HERMES_PROTECTED_A2A: 1
+      MOSS_HERMES_PROTECTED_A2A_SHA256: 6fa9eb07d7c4c523ccb3e101edec8371f7eb19e7ada9c5cf19ba5a018c544b98
+      MOSS_A2A_PLUGIN_SEAL_SHA256: 524cd17e73cabca5142dc1ae27575557e98fdd29e3c5045e264047c995710a47
+      MOSS_HERMES_PLUGIN_LOADER_SHA256: 657076a930cd4e9f5ed9be79c1fe3cfd5e6b902a9025325486340bd4198ff98f
+      TELEGRAM_HOME_CHANNEL: ${MOSS_TELEGRAM_HOME_CHANNEL:-}
+      TELEGRAM_ALLOWED_USERS: ${MOSS_TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_HOME_CHANNEL_THREAD_ID: ${MOSS_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
+      ANTHROPIC_API_KEY: ${MOSS_ANTHROPIC_API_KEY:-}
+      ANTHROPIC_TOKEN: ${MOSS_ANTHROPIC_TOKEN:-}
+      # A2A phase 1: caller credential only; Moss has no A2A listener.
+      MOSS_TO_DENHOLM_A2A_TOKEN: ${MOSS_TO_DENHOLM_A2A_TOKEN:?set MOSS_TO_DENHOLM_A2A_TOKEN to the approved directional A2A credential}
+    networks:
+      internal: null
+      private_proxy:
+        aliases:
+        - hermes
+      local_llm: null
+    env_file:
+    - *hermes-fleet-env-file
+    - /mnt/user/appdata/the-ai-crowd/env/moss-webui.env
+    image: sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95
+    working_dir: /agents/moss/private
+    volumes:
+    - /mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/runtime/moss-public-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/public:ro
+    - /mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/private:ro
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
+    - ${THE_AI_CROWD_BACKUP_ROOT:-/mnt/user/appdata/the-ai-crowd/state/private/backups}:/backups/the-ai-crowd:rw
+    expose:
+    - '8787'
+    - '9119'
+    - '8644'
+    - '8648'
+    ports:
+    - 0.0.0.0:8644:8644
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS
+        http://127.0.0.1:8648/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+  jen:
+    <<: *hermes-runtime
+    environment:
+      <<: *hermes-runtime-env
+      AGENT_NAME: jen
+      AGENT_ROOT: /agents/jen
+      AGENT_PUBLIC: /agents/jen/public
+      AGENT_PRIVATE: /agents/jen/private
+      AGENT_RUNTIME: /opt/data
+      AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      TERMINAL_CWD: /agents/jen/private
+      API_SERVER_ENABLED: 'true'
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: '8642'
+      GOG_HOME: /opt/data/gog
+      GOG_KEYRING_BACKEND: file
+      JEN_DOCUMENT_TASK_ALLOWED_ROOTS: /opt/data/cache/documents
+      JEN_DOCUMENT_TASK_CANDIDATES_BACKEND: /agents/jen/private/bin/jen-document-task-candidates-backend
+      JEN_DOCUMENT_TASK_ANALYSIS_QUEUE: /mnt/hermes-shared/jen-document-task-candidates/content-analysis-queue
+      TELEGRAM_BOT_TOKEN: ${JEN_TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_USERS: ${JEN_TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_HOME_CHANNEL: ${JEN_TELEGRAM_HOME_CHANNEL:-}
+      TELEGRAM_HOME_CHANNEL_NAME: ${JEN_TELEGRAM_HOME_CHANNEL_NAME:-}
+      TELEGRAM_ALLOW_ALL_USERS: ${JEN_TELEGRAM_ALLOW_ALL_USERS:-}
+      TODOIST_API_TOKEN: ${JEN_TODOIST_API_TOKEN:-}
+      JEN_GOOGLE_ACCOUNT: ${JEN_GOOGLE_ACCOUNT:-}
+      JEN_GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
+      GOG_ACCOUNT: ${JEN_GOG_ACCOUNT:-}
+      GOG_KEYRING_PASSWORD: ${JEN_GOG_KEYRING_PASSWORD:-}
+      ANTHROPIC_API_KEY: ${JEN_ANTHROPIC_API_KEY:-}
+      ANTHROPIC_TOKEN: ${JEN_ANTHROPIC_TOKEN:-}
+    networks: *hermes-internal-networks
+    env_file:
+    - *hermes-fleet-env-file
+
+    image: sha256:c537bd149defa3c867dd0322ed3f619c9ac6aff9aec8e3883a23bc1a0e222eb2
+    working_dir: /agents/jen/private
+    volumes:
+    - /mnt/user/appdata/the-ai-crowd/runtime/jen-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/agents/public/jen:/agents/jen/public:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/jen:/agents/jen/private:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
+    expose:
+    - '9121'
+    - '8642'
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:9121/ >/dev/null || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+  denholm:
+    <<: *hermes-runtime
+    environment:
+      <<: *hermes-runtime-env
+      AGENT_NAME: denholm
+      AGENT_ROOT: /agents/denholm
+      AGENT_PUBLIC: /agents/denholm/public
+      AGENT_PRIVATE: /agents/denholm/private
+      AGENT_RUNTIME: /opt/data
+      AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      TERMINAL_CWD: /agents/denholm/private
+      API_SERVER_ENABLED: 'true'
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: '8643'
+      TELEGRAM_BOT_TOKEN: ${DENHOLM_TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_HOME_CHANNEL: ${DENHOLM_TELEGRAM_HOME_CHANNEL:-}
+      TELEGRAM_ALLOWED_USERS: ${DENHOLM_TELEGRAM_ALLOWED_USERS:-}
+      TELEGRAM_ALLOWED_CHATS: ${DENHOLM_TELEGRAM_ALLOWED_CHATS:-}
+      TELEGRAM_REQUIRE_MENTION: ${DENHOLM_TELEGRAM_REQUIRE_MENTION:-}
+      TELEGRAM_HOME_CHANNEL_NAME: ${DENHOLM_TELEGRAM_HOME_CHANNEL_NAME:-}
+      ANTHROPIC_API_KEY: ${DENHOLM_ANTHROPIC_API_KEY:-}
+      ANTHROPIC_TOKEN: ${DENHOLM_ANTHROPIC_TOKEN:-}
+      # A2A phase 1 receiver: internal-only listener, one directional identity.
+      A2A_HOST: 0.0.0.0
+      A2A_PORT: '9900'
+      A2A_AGENT_NAME: denholm
+      A2A_PEER_TOKENS: moss:${MOSS_TO_DENHOLM_A2A_TOKEN:?set MOSS_TO_DENHOLM_A2A_TOKEN to the approved directional A2A credential}
+      A2A_TRUSTED_PEERS: moss
+      A2A_ALLOW_ALL_USERS: 'false'
+    networks: *hermes-internal-networks
+    env_file:
+    - *hermes-fleet-env-file
+
+    image: sha256:72715188286f6b7f19c62a621c17bb7c61936c2a4b251d6fa9b1449e5eeabd29
+    working_dir: /agents/denholm/private
+    volumes:
+    - /mnt/user/appdata/the-ai-crowd/runtime/denholm-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/agents/public/denholm:/agents/denholm/public:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/denholm:/agents/denholm/private:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
+    expose:
+    - '9122'
+    - '8643'
+    - '9900'
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8643/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+  richmond:
+    <<: *hermes-runtime
+    environment:
+      <<: *hermes-runtime-env
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/richmond/private:/mnt/hermes-shared/richmond
+      AGENT_NAME: richmond
+      AGENT_ROOT: /agents/richmond
+      AGENT_PUBLIC: /agents/richmond/public
+      AGENT_PRIVATE: /agents/richmond/private
+      AGENT_RUNTIME: /opt/data
+      AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      TERMINAL_CWD: /agents/richmond/private
+      API_SERVER_ENABLED: 'true'
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: '8646'
+      RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
+      RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
+      RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
+    networks: *hermes-internal-networks
+    env_file:
+    - *hermes-fleet-env-file
+
+    image: sha256:bbc7cb34ba2414138e95d1d0f15dfceb85d9823fecef38315c757e9f31b9fab6
+    working_dir: /agents/richmond/private
+    volumes:
+    - /mnt/user/appdata/the-ai-crowd/runtime/richmond-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/agents/public/richmond:/agents/richmond/public:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond:/agents/richmond/private:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
+    expose:
+    - '9120'
+    - '8646'
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8646/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+  roy:
+    <<: *hermes-runtime
+    environment:
+      <<: *hermes-runtime-env
+      HERMES_HOME: /opt/data
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      HERMES_DISABLE_LAZY_INSTALLS: '1'
+      HERMES_WRITE_SAFE_ROOT: /opt/data:/agents/roy/private:/transfer
+      AGENT_NAME: roy
+      AGENT_ROOT: /agents/roy
+      AGENT_PRIVATE: /agents/roy/private
+      AGENT_RUNTIME: /opt/data
+      TERMINAL_CWD: /agents/roy/private
+      API_SERVER_ENABLED: 'true'
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: '8645'
+      WEBHOOK_ENABLED: 'true'
+      WEBHOOK_PORT: '8644'
+      HERMES_WEBUI_AGENT_DIR: /opt/hermes
+      HERMES_WEBUI_HOST: 0.0.0.0
+      HERMES_WEBUI_PORT: '8787'
+      HERMES_WEBUI_STATE_DIR: /opt/data/webui
+      HERMES_WEBUI_DEFAULT_WORKSPACE: /agents/roy/private
+      HERMES_WEBUI_CHAT_BACKEND: legacy-direct
+      HERMES_WEBUI_GATEWAY_BASE_URL: http://roy:8645
+      HERMES_WEBUI_ISOLATED_PROFILE: '1'
+      ROY_DELIVERY_TRANSFER_DIR: /transfer
+      ROY_DELIVERY_WORKSPACE_ROOT: /agents/roy/private
+      ROY_DELIVERY_WEBUI_BASE_URL: https://roy.rodolflix.com
+      TELEGRAM_BOT_TOKEN: ${ROY_TELEGRAM_BOT_TOKEN:?set ROY_TELEGRAM_BOT_TOKEN to the approved Roy bot token}
+      TELEGRAM_ALLOWED_USERS: ${ROY_TELEGRAM_ALLOWED_USERS:?set ROY_TELEGRAM_ALLOWED_USERS to Viviane's approved Roy chat}
+      TELEGRAM_HOME_CHANNEL: ${ROY_TELEGRAM_HOME_CHANNEL:?set ROY_TELEGRAM_HOME_CHANNEL to Viviane's approved Roy chat}
+      TELEGRAM_HOME_CHANNEL_THREAD_ID: ${ROY_TELEGRAM_HOME_CHANNEL_THREAD_ID:-}
+    networks:
+      internal: null
+      private_proxy:
+        aliases:
+        - roy
+    env_file:
+    - /mnt/user/appdata/the-ai-crowd/env/roy-v3.env
+    image: sha256:46a5bc1d06a9b3e76744caa8367b4d35ebcb34dceb74e54e576a0e1d4e1e8fc5
+    working_dir: /agents/roy/private
+    read_only: true
+    tmpfs:
+    - /tmp:exec,nosuid,size=1g
+    - /run:exec
+    volumes:
+    - /mnt/user/appdata/the-ai-crowd/agents/private/roy-v3:/opt/personal-assistant:ro
+    - /mnt/user/appdata/the-ai-crowd/runtime/roy-v3-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/state/private/roy-v3-workspace:/agents/roy/private:rw
+    - ${ROY_TRANSFER_ROOT:-/mnt/user/appdata/the-ai-crowd/state/private/roy-transfer}:/transfer:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    expose:
+    - '8787'
+    - '8644'
+    - '8645'
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8787/health >/dev/null && curl -fsS http://127.0.0.1:8644/health >/dev/null && curl -fsS http://127.0.0.1:8645/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+  the-elders:
+    <<: *hermes-runtime
+    environment:
+      <<: *hermes-runtime-env
+      AGENT_NAME: the-elders
+      AGENT_ROOT: /agents/the-elders
+      AGENT_PUBLIC: /agents/the-elders/public
+      AGENT_PRIVATE: /agents/the-elders/private
+      AGENT_RUNTIME: /opt/data
+      AGENT_SHARED: /mnt/hermes-shared
+      HERMES_AUTH_HOME: /mnt/hermes-auth-shared
+      TERMINAL_CWD: /agents/the-elders/private
+      API_SERVER_ENABLED: 'true'
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: '8647'
+      RICHMOND_ARCHIVEOPS_ROOT: /archiveops/richmond
+      RICHMOND_ARCHIVEOPS_CURRENT: /archiveops/richmond/registry/current.json
+      RICHMOND_ARCHIVEOPS_QUERY_ADAPTER: /archiveops/richmond/runbooks/richmond_archiveops_query_adapter.py
+    networks: *hermes-internal-networks
+    env_file:
+    - *hermes-fleet-env-file
+
+    image: sha256:ab9964cabc23efe617f9402b0005d46b64bd09356a9367dd2c8238d35c90f495
+    working_dir: /agents/the-elders/private
+    read_only: true
+    tmpfs:
+    - /tmp
+    - /run:exec
+    volumes:
+    - /mnt/user/appdata/the-ai-crowd/runtime/the-elders-home:/opt/data
+    - /mnt/user/appdata/the-ai-crowd/agents/public/the-elders:/agents/the-elders/public:ro
+    - /mnt/user/appdata/the-ai-crowd/agents/private/the-elders:/agents/the-elders/private:rw
+    - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared:ro
+    - /mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet:/mnt/hermes-auth-shared
+    - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
+    expose:
+    - '9130'
+    - '8647'
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl -fsS http://127.0.0.1:8647/health >/dev/null || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+networks:
+  internal:
+    name: the-ai-crowd_internal
+  private_proxy:
+    external: true
+    name: ${THE_AI_CROWD_PROXY_NETWORK:-network_default}
+  local_llm:
+    external: true
+    name: local-llm-net
