@@ -1,0 +1,334 @@
+{
+  "upstream_agent": "d337b736aa1e8ebecfab043842d13e4a2d2f48a3",
+  "upstream_webui": "c67fd2dd270a1128c2754200406bca58e9d9a25a",
+  "services": {
+    "moss": {
+      "base_image": "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0",
+      "agent_commit": "177b3b2e3187ef2270aba9851f4c19f9b6c020dc",
+      "webui_commit": "6ac0275e7ce60a94bcc728a0ff0ee155893f9504",
+      "container_id": "5510e2a759576d7dbe905c51b95795ac5afc20897ae06adc8896eb2211c10ffb",
+      "started_at": "2026-09-22T21:48:56.183399758Z",
+      "restarts": 0,
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-public-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+          "Destination": "/agents/moss/public",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+          "Destination": "/agents/moss/private",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+          "Destination": "/mnt/hermes-shared",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+          "Destination": "/archiveops/richmond",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/private/backups",
+          "Destination": "/backups/the-ai-crowd",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+          "Destination": "/opt/data",
+          "RW": true
+        }
+      ],
+      "networks": [
+        "local-llm-net",
+        "network_default",
+        "the-ai-crowd_internal"
+      ],
+      "ports": {
+        "8644/tcp": [
+          {
+            "HostIp": "0.0.0.0",
+            "HostPort": "8644"
+          }
+        ]
+      },
+      "home": "/mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31",
+      "working_dir": "/agents/moss/private",
+      "agent_tree": "3fc3f5a644795c0eba74713c0b6f6ed17873df34",
+      "webui_tree": "fdbe5ca2577c62b4077d2b0d92706fadce802474"
+    },
+    "roy": {
+      "base_image": "sha256:6aa783ac1a6e5cc578769be3f65a5df671b0be99ef304c732af4c94b273f2f87",
+      "agent_commit": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+      "webui_commit": "3601f501bf01a91228a1b67cf33e314c6c960440",
+      "container_id": "3e9780903f8f18ac6481d7253d6c7eaaa63113050e4d9b6a30b3dfebf391694e",
+      "started_at": "2026-09-21T01:51:16.272557836Z",
+      "restarts": 0,
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/runtime/roy-v3-home",
+          "Destination": "/opt/data",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/roy-v3",
+          "Destination": "/opt/personal-assistant",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/private/roy-v3-workspace",
+          "Destination": "/agents/roy/private",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/private/roy-transfer",
+          "Destination": "/transfer",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+          "Destination": "/mnt/hermes-auth-shared",
+          "RW": true
+        }
+      ],
+      "networks": [
+        "network_default",
+        "the-ai-crowd_internal"
+      ],
+      "ports": {},
+      "home": "/mnt/user/appdata/the-ai-crowd/runtime/roy-v3-home",
+      "working_dir": "/agents/roy/private",
+      "agent_tree": "bd243281905ea9573948f1b287f741389b47047d",
+      "webui_tree": "d5f2a817a52cebf6c6f193d085415f754c59b019"
+    },
+    "jen": {
+      "base_image": "sha256:46a767de5686a913ee1f4ff2e2ad2f39e8e622b0850b73fac51fc80704555cfa",
+      "agent_commit": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+      "webui_commit": null,
+      "container_id": "3109e53914e050f3d033b1a8869dafefd49704f783532a07ea45bb9ea6baf81c",
+      "started_at": "2026-09-21T01:51:16.232523301Z",
+      "restarts": 0,
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+          "Destination": "/mnt/hermes-auth-shared",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+          "Destination": "/archiveops/richmond",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/runtime/jen-home",
+          "Destination": "/opt/data",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/jen",
+          "Destination": "/agents/jen/public",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/jen",
+          "Destination": "/agents/jen/private",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+          "Destination": "/mnt/hermes-shared",
+          "RW": true
+        }
+      ],
+      "networks": [
+        "the-ai-crowd_internal"
+      ],
+      "ports": {},
+      "home": "/mnt/user/appdata/the-ai-crowd/runtime/jen-home",
+      "working_dir": "/agents/jen/private",
+      "agent_tree": "bd243281905ea9573948f1b287f741389b47047d",
+      "webui_tree": "none"
+    },
+    "denholm": {
+      "base_image": "sha256:5dfb1c2eb9da930e50e2b5f8d72a610c2d940320779c47fb1950d73ddd900ce1",
+      "agent_commit": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+      "webui_commit": null,
+      "container_id": "670ccdc101bd0080a39e4181690bf149b961e2929352a307c856ac00ba9b579e",
+      "started_at": "2026-09-21T01:51:16.257560579Z",
+      "restarts": 0,
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+          "Destination": "/archiveops/richmond",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/runtime/denholm-home",
+          "Destination": "/opt/data",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/denholm",
+          "Destination": "/agents/denholm/public",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/denholm",
+          "Destination": "/agents/denholm/private",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+          "Destination": "/mnt/hermes-shared",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+          "Destination": "/mnt/hermes-auth-shared",
+          "RW": true
+        }
+      ],
+      "networks": [
+        "the-ai-crowd_internal"
+      ],
+      "ports": {},
+      "home": "/mnt/user/appdata/the-ai-crowd/runtime/denholm-home",
+      "working_dir": "/agents/denholm/private",
+      "agent_tree": "bd243281905ea9573948f1b287f741389b47047d",
+      "webui_tree": "none"
+    },
+    "richmond": {
+      "base_image": "sha256:0936b491e6da252273520dbeafc532faaaedda8c2b20c5c5acff39caecf3de56",
+      "agent_commit": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+      "webui_commit": null,
+      "container_id": "8966317f22a4ae66177656cd4f260d0e116e593d71ea092da24af411ba442789",
+      "started_at": "2026-09-21T01:51:16.285560908Z",
+      "restarts": 0,
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/runtime/richmond-home",
+          "Destination": "/opt/data",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/richmond",
+          "Destination": "/agents/richmond/public",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond",
+          "Destination": "/agents/richmond/private",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+          "Destination": "/mnt/hermes-shared",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+          "Destination": "/mnt/hermes-auth-shared",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+          "Destination": "/archiveops/richmond",
+          "RW": false
+        }
+      ],
+      "networks": [
+        "the-ai-crowd_internal"
+      ],
+      "ports": {},
+      "home": "/mnt/user/appdata/the-ai-crowd/runtime/richmond-home",
+      "working_dir": "/agents/richmond/private",
+      "agent_tree": "bd243281905ea9573948f1b287f741389b47047d",
+      "webui_tree": "none"
+    },
+    "the-elders": {
+      "base_image": "sha256:5b94e5d6e9fbc934624b005a1b84457751b3b535aaf1b9755b559460685b0180",
+      "agent_commit": "02a73bdcf119c5aca86ae1ea6a62e519c0a9881e",
+      "webui_commit": null,
+      "container_id": "f2a31a4672624f11151c8eb7c005afcded1e71e1907fe9d6a3d3cc717519b219",
+      "started_at": "2026-09-21T01:51:16.293644235Z",
+      "restarts": 0,
+      "mounts": [
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/public/the-elders",
+          "Destination": "/agents/the-elders/public",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/the-elders",
+          "Destination": "/agents/the-elders/private",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared",
+          "Destination": "/mnt/hermes-shared",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/state/shared/openai-codex-auth-fleet",
+          "Destination": "/mnt/hermes-auth-shared",
+          "RW": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops",
+          "Destination": "/archiveops/richmond",
+          "RW": false
+        },
+        {
+          "Type": "bind",
+          "Source": "/mnt/user/appdata/the-ai-crowd/runtime/the-elders-home",
+          "Destination": "/opt/data",
+          "RW": true
+        }
+      ],
+      "networks": [
+        "the-ai-crowd_internal"
+      ],
+      "ports": {},
+      "home": "/mnt/user/appdata/the-ai-crowd/runtime/the-elders-home",
+      "working_dir": "/agents/the-elders/private",
+      "agent_tree": "bd243281905ea9573948f1b287f741389b47047d",
+      "webui_tree": "none"
+    }
+  }
+}

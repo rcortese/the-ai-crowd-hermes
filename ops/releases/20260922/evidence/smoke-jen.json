@@ -1,0 +1,11 @@
+{
+  "service": "jen",
+  "image": "sha256:c537bd149defa3c867dd0322ed3f619c9ac6aff9aec8e3883a23bc1a0e222eb2",
+  "result": "PASS",
+  "probe": {
+    "python": "3.13.5",
+    "sqlite": "3.53.4",
+    "agent": "0.21.4",
+    "imports_and_session_db": "PASS"
+  }
+}

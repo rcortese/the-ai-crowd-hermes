@@ -1,0 +1,192 @@
+REAL IMAGE REHEARSAL {"image": "sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95", "base_image": "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0"}
+DB MODE old-create IMAGE sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0
+{"mode": "old-create", "rows": 2, "runtime_fts_version": 2, "sqlite_integrity": "ok", "fts_integrity": "known-old-projection-mismatch", "post_upgrade_writes_preserved": false}
+
+PIPELINE [["docker", "--host", "unix:///var/run/docker.sock", "run", "--rm", "--network", "none", "--user", "99:100", "--read-only", "--tmpfs", "/tmp:rw,size=4g,mode=1777", "--tmpfs", "/opt/data:rw,uid=99,gid=100,mode=700", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/operator,dst=/package,readonly", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/fixture-o_85elfc/home,dst=/home", "-e", "HERMES_HOME=/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python", "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0", "/package/state_helper.py", "snapshot"], ["docker", "--host", "unix:///var/run/docker.sock", "run", "--rm", "-i", "--network", "none", "--read-only", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/operator,dst=/package,readonly", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/fixture-o_85elfc/backup/backup.key,dst=/key,readonly", "--entrypoint", "/opt/hermes/.venv/bin/python", "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0", "/package/backup_stream.py", "encrypt", "/key"]]
+PIPELINE all exit codes 0
+PIPELINE [["docker", "--host", "unix:///var/run/docker.sock", "run", "--rm", "-i", "--network", "none", "--read-only", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/operator,dst=/package,readonly", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/fixture-o_85elfc/backup/backup.key,dst=/key,readonly", "--entrypoint", "/opt/hermes/.venv/bin/python", "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0", "/package/backup_stream.py", "decrypt", "/key"], ["docker", "--host", "unix:///var/run/docker.sock", "run", "--rm", "-i", "--network", "none", "--user", "99:100", "--read-only", "--tmpfs", "/tmp:rw,size=4g,mode=1777", "--tmpfs", "/opt/data:rw,uid=99,gid=100,mode=700", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/operator,dst=/package,readonly", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/fixture-o_85elfc/home,dst=/home,readonly", "-e", "HERMES_HOME=/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python", "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0", "/package/state_helper.py", "verify-snapshot"]]
+PIPELINE all exit codes 0
+EXEC ["docker", "--host", "unix:///var/run/docker.sock", "run", "--rm", "--network", "none", "--user", "99:100", "--read-only", "--tmpfs", "/tmp:rw,size=4g,mode=1777", "--tmpfs", "/opt/data:rw,uid=99,gid=100,mode=700", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/operator,dst=/package,readonly", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/fixture-o_85elfc/home,dst=/home", "-e", "HERMES_HOME=/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python", "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0", "/package/state_helper.py", "configure", "6e0cc31ca4d8c1c93be68d59ae20b2a62d66807005a848c29dee840b22a5e52e"]
+EXIT 0 {"config_sha": "93e6c0e69a0e4ac9285ba8ba43518567e9bb1f0964b65ebe54276b2e8b00b47f"}
+
+{"config_sha": "93e6c0e69a0e4ac9285ba8ba43518567e9bb1f0964b65ebe54276b2e8b00b47f"}
+
+DB MODE new-write IMAGE sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95
+{"mode": "new-write", "rows": 3, "runtime_fts_version": 3, "sqlite_integrity": "ok", "fts_integrity": "ok", "post_upgrade_writes_preserved": true}
+
+CONFIG BOOT candidate sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95 BEFORE _config_version: 44
+model:
+  default: fixture
+  provider: openai
+platform_toolsets:
+  cli:
+  - file
+  - web
+  api_server:
+  - file
+memory:
+  provider: none
+known_builtin_toolsets:
+  cli:
+  - connections
+  api_server:
+  - connections
+
+candidate API_AND_WEBUI_HEALTH_PASS
+
+CONFIG AFTER candidate _config_version: 44
+model:
+  default: fixture
+  provider: openai
+platform_toolsets:
+  cli:
+  - file
+  - web
+  api_server:
+  - file
+memory:
+  provider: none
+known_builtin_toolsets:
+  cli:
+  - connections
+  api_server:
+  - connections
+
+2026-09-22 23:43:55,497 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2026-09-22 23:43:55,499 INFO RPC interface 'supervisor' initialized
+2026-09-22 23:43:55,499 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2026-09-22 23:43:55,499 INFO supervisord started with pid 1
+2026-09-22 23:43:56,501 INFO spawned: 'moss-gateway' with pid 13
+2026-09-22 23:43:56,503 INFO spawned: 'moss-dashboard' with pid 14
+2026-09-22 23:43:56,504 INFO spawned: 'moss-webui' with pid 15
+2026-09-22 23:43:57,504 INFO success: moss-gateway entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+→ Using web dist from HERMES_WEB_DIST: /opt/hermes/hermes_cli/web_dist
+┌─────────────────────────────────────────────────────────┐
+│           ☤ Hermes Gateway Starting...                 │
+├─────────────────────────────────────────────────────────┤
+│  Messaging platforms + cron scheduler                    │
+│  Press Ctrl+C to stop                                   │
+└─────────────────────────────────────────────────────────┘
+
+
+  Hermes Web UI -- startup config
+  --------------------------------
+  repo root   : /opt/hermes-webui
+  agent dir   : /opt/hermes  [32m[ok][0m
+  python      : /opt/hermes/.venv/bin/python
+  state dir   : /opt/data/webui
+  workspace   : /opt/data/workspace
+  host:port   : 0.0.0.0:8787
+  config file : /opt/data/config.yaml  (found)
+
+[ok] bg_task_complete drain thread started
+[ok] SessionChannel reaper thread started
+  Hermes Web UI listening on http://0.0.0.0:8787
+  Then open:     http://localhost:8787
+
+Refusing to bind dashboard to 0.0.0.0 — the auth gate engages on non-loopback binds (0.0.0.0), but no auth providers are registered.
+
+Configure an auth provider before exposing the dashboard:
+  • Password: set dashboard.basic_auth.username + password_hash in config.yaml
+    (hash with: python -c "from plugins.dashboard_auth.basic import hash_password; print(hash_password('your-password'))")
+  • OAuth: run `hermes dashboard register` (Nous Portal) or install a DashboardAuthProvider plugin.
+There is no unauthenticated public-dashboard option. For local-only use, bind 127.0.0.1 and leave dashboard.public_url unset; a configured external public URL requires auth even when a local reverse proxy reaches a loopback backend.
+2026-09-22 23:43:58,480 WARN exited: moss-dashboard (exit status 1; not expected)
+2026-09-22 23:43:59,483 INFO spawned: 'moss-dashboard' with pid 45
+[webui] {"ts": "2026-09-22T23:43:59Z", "remote": "127.0.0.1", "method": "GET", "path": "/health", "status": 200, "ms": 0.1}
+
+CONFIG BOOT rollback-base sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0 BEFORE _config_version: 44
+model:
+  default: fixture
+  provider: openai
+platform_toolsets:
+  cli:
+  - file
+  - web
+  api_server:
+  - file
+memory:
+  provider: none
+known_builtin_toolsets:
+  cli:
+  - connections
+  api_server:
+  - connections
+
+rollback-base API_AND_WEBUI_HEALTH_PASS
+
+CONFIG AFTER rollback-base _config_version: 44
+model:
+  default: fixture
+  provider: openai
+platform_toolsets:
+  cli:
+  - file
+  - web
+  api_server:
+  - file
+memory:
+  provider: none
+known_builtin_toolsets:
+  cli:
+  - connections
+  api_server:
+  - connections
+
+2026-09-22 23:44:00,123 CRIT Supervisor is running as root.  Privileges were not dropped because no user is specified in the config file.  If you intend to run as root, you can set user=root in the config file to avoid this message.
+2026-09-22 23:44:00,125 INFO RPC interface 'supervisor' initialized
+2026-09-22 23:44:00,125 CRIT Server 'unix_http_server' running without any HTTP authentication checking
+2026-09-22 23:44:00,125 INFO supervisord started with pid 1
+2026-09-22 23:44:01,127 INFO spawned: 'moss-gateway' with pid 13
+2026-09-22 23:44:01,128 INFO spawned: 'moss-dashboard' with pid 14
+2026-09-22 23:44:01,129 INFO spawned: 'moss-webui' with pid 15
+→ Using web dist from HERMES_WEB_DIST: /opt/hermes/hermes_cli/web_dist
+┌─────────────────────────────────────────────────────────┐
+│           ☤ Hermes Gateway Starting...                 │
+├─────────────────────────────────────────────────────────┤
+│  Messaging platforms + cron scheduler                    │
+│  Press Ctrl+C to stop                                   │
+└─────────────────────────────────────────────────────────┘
+
+2026-09-22 23:44:02,341 INFO success: moss-gateway entered RUNNING state, process has stayed up for > than 1 seconds (startsecs)
+
+  Hermes Web UI -- startup config
+  --------------------------------
+  repo root   : /opt/hermes-webui
+  agent dir   : /opt/hermes  [32m[ok][0m
+  python      : /opt/hermes/.venv/bin/python
+  state dir   : /opt/data/webui
+  workspace   : /opt/data/workspace
+  host:port   : 0.0.0.0:8787
+  config file : /opt/data/config.yaml  (found)
+
+[ok] bg_task_complete drain thread started
+[ok] SessionChannel reaper thread started
+  Hermes Web UI listening on http://0.0.0.0:8787
+  Then open:     http://localhost:8787
+
+Refusing to bind dashboard to 0.0.0.0 — the auth gate engages on non-loopback binds (0.0.0.0), but no auth providers are registered.
+
+Configure an auth provider before exposing the dashboard:
+  • Password: set dashboard.basic_auth.username + password_hash in config.yaml
+    (hash with: python -c "from plugins.dashboard_auth.basic import hash_password; print(hash_password('your-password'))")
+  • OAuth: run `hermes dashboard register` (Nous Portal) or install a DashboardAuthProvider plugin.
+There is no unauthenticated public-dashboard option. For local-only use, bind 127.0.0.1 and leave dashboard.public_url unset; a configured external public URL requires auth even when a local reverse proxy reaches a loopback backend.
+2026-09-22 23:44:02,958 WARN exited: moss-dashboard (exit status 1; not expected)
+2026-09-22 23:44:03,625 WARNING gateway.lifecycle_ledger: Previous gateway life (pid=13, started_at=2026-09-22T23:43:59.234388+00:00) exited UNCLEANLY (no exit path ran — SIGKILL / OOM / VM death). last_heartbeat_at=None last_mem=None suspected_oom=False
+2026-09-22 23:44:03,726 WARNING gateway.run: No env user allowlists configured. Messaging platforms default to pairing/allowlist policies and will deny unknown senders unless you configure platform allowlists (e.g., TELEGRAM_ALLOWED_USERS=your_id) or explicitly opt in with GATEWAY_ALLOW_ALL_USERS=true plus dm_policy/group_policy: open on the platform.
+[webui] {"ts": "2026-09-22T23:44:04Z", "remote": "127.0.0.1", "method": "GET", "path": "/health", "status": 200, "ms": 0.1}
+2026-09-22 23:44:04,314 INFO spawned: 'moss-dashboard' with pid 51
+
+DB MODE old-reopen IMAGE sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0
+{"mode": "old-reopen", "rows": 4, "runtime_fts_version": 2, "sqlite_integrity": "ok", "fts_integrity": "ok", "post_upgrade_writes_preserved": true}
+
+PIPELINE [["docker", "--host", "unix:///var/run/docker.sock", "run", "--rm", "--network", "none", "--user", "99:100", "--read-only", "--tmpfs", "/tmp:rw,size=4g,mode=1777", "--tmpfs", "/opt/data:rw,uid=99,gid=100,mode=700", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/operator,dst=/package,readonly", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/fixture-o_85elfc/home,dst=/home", "-e", "HERMES_HOME=/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python", "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0", "/package/state_helper.py", "snapshot"], ["docker", "--host", "unix:///var/run/docker.sock", "run", "--rm", "-i", "--network", "none", "--read-only", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/operator,dst=/package,readonly", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/fixture-o_85elfc/backup/backup.key,dst=/key,readonly", "--entrypoint", "/opt/hermes/.venv/bin/python", "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0", "/package/backup_stream.py", "encrypt", "/key"]]
+PIPELINE all exit codes 0
+PIPELINE [["docker", "--host", "unix:///var/run/docker.sock", "run", "--rm", "-i", "--network", "none", "--read-only", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/operator,dst=/package,readonly", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/fixture-o_85elfc/backup/backup.key,dst=/key,readonly", "--entrypoint", "/opt/hermes/.venv/bin/python", "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0", "/package/backup_stream.py", "decrypt", "/key"], ["docker", "--host", "unix:///var/run/docker.sock", "run", "--rm", "-i", "--network", "none", "--user", "99:100", "--read-only", "--tmpfs", "/tmp:rw,size=4g,mode=1777", "--tmpfs", "/opt/data:rw,uid=99,gid=100,mode=700", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/operator,dst=/package,readonly", "--mount", "type=bind,src=/mnt/ssd/appdata/the-ai-crowd-candidates/release-20260922/fixture-o_85elfc/home,dst=/home,readonly", "-e", "HERMES_HOME=/opt/data", "--entrypoint", "/opt/hermes/.venv/bin/python", "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0", "/package/state_helper.py", "verify-snapshot"]]
+PIPELINE all exit codes 0
+moss-before-verify.json {"verified_backup_members": 2}
+
+moss-rollback-verify.json {"verified_backup_members": 4}
+
+Authenticated backup, restored SQLite integrity, config preservation, old-new-old writes and tamper refusal: PASS

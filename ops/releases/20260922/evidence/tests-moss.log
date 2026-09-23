@@ -1,0 +1,18 @@
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 55%]
+........................................................................ [ 74%]
+........................................................................ [ 93%]
+..........................                                               [100%]
+=============================== warnings summary ===============================
+tests/gateway/test_api_server_runs.py: 58 warnings
+  /opt/hermes/tests/gateway/test_api_server_runs.py:84: NotAppKeyWarning: It is recommended to use web.AppKey instances for keys.
+  https://docs.aiohttp.org/en/stable/web_advanced.html#application-s-config
+    app["api_server_adapter"] = adapter
+
+tests/gateway/test_api_server_runs.py::TestHostedRoomRuns::test_invitation_returns_operator_selected_status_horizon
+  /opt/hermes/.venv/lib/python3.13/site-packages/mautrix/types/misc.py:108: DeprecationWarning: Creating NamedTuple classes using keyword arguments is deprecated and will be disallowed in Python 3.15. Use the class-based or functional syntax instead.
+    PaginatedMessages = NamedTuple(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+386 passed, 59 warnings in 14.04s

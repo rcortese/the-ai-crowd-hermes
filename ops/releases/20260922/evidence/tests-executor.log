@@ -1,0 +1,24 @@
+test_apply_health_failure_rolls_back (test_release.Contracts.test_apply_health_failure_rolls_back) ... ok
+test_apply_success_receipt (test_release.Contracts.test_apply_success_receipt) ... moss: verified
+ok
+test_atomic_refuses_existing_temp (test_release.Contracts.test_atomic_refuses_existing_temp) ... ok
+test_atomic_write (test_release.Contracts.test_atomic_write) ... ok
+test_config_cas (test_release.Contracts.test_config_cas) ... ok
+test_config_invalid (test_release.Contracts.test_config_invalid) ... ok
+test_config_only_known_metadata (test_release.Contracts.test_config_only_known_metadata) ... ok
+test_idle_fail_closed (test_release.Contracts.test_idle_fail_closed) ... ok
+test_image_only_topology (test_release.Contracts.test_image_only_topology) ... ok
+test_package_tamper_and_traversal (test_release.Contracts.test_package_tamper_and_traversal) ... ok
+test_preflight_failure_no_rollback (test_release.Contracts.test_preflight_failure_no_rollback) ... ok
+test_review_blocks_before_state_and_lifecycle (test_release.Contracts.test_review_blocks_before_state_and_lifecycle) ... ok
+test_rollback_external_compose_drift (test_release.Contracts.test_rollback_external_compose_drift) ... ok
+test_rollback_order_and_no_database_restore (test_release.Contracts.test_rollback_order_and_no_database_restore) ... ok
+test_rollback_refuses_third_image_before_source_change (test_release.Contracts.test_rollback_refuses_third_image_before_source_change) ... ok
+test_snapshot_selection_excludes_workspace (test_release.Contracts.test_snapshot_selection_excludes_workspace) ... ok
+test_unknown_service_rejected (test_release.Contracts.test_unknown_service_rejected) ... ok
+test_versioned_source_import (test_release.Contracts.test_versioned_source_import) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.107s
+
+OK
