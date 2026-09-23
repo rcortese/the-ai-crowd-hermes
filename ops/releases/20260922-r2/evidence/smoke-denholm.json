@@ -1,0 +1,11 @@
+{
+  "service": "denholm",
+  "image": "sha256:72715188286f6b7f19c62a621c17bb7c61936c2a4b251d6fa9b1449e5eeabd29",
+  "result": "PASS",
+  "probe": {
+    "python": "3.13.5",
+    "sqlite": "3.53.4",
+    "agent": "0.21.4",
+    "imports_and_session_db": "PASS"
+  }
+}

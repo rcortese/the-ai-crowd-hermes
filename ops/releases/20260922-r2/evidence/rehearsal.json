@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "image": "sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95",
+  "base_image": "sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0",
+  "synthetic_only": true,
+  "post_upgrade_messages_preserved": true,
+  "encrypted_backup_restore_verified": true,
+  "ciphertext_tampering_rejected": true
+}

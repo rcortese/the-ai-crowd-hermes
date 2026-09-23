@@ -1,0 +1,11 @@
+{
+  "service": "roy",
+  "image": "sha256:46a5bc1d06a9b3e76744caa8367b4d35ebcb34dceb74e54e576a0e1d4e1e8fc5",
+  "result": "PASS",
+  "probe": {
+    "python": "3.13.5",
+    "sqlite": "3.53.4",
+    "agent": "0.21.4",
+    "imports_and_session_db": "PASS"
+  }
+}
