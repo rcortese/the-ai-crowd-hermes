@@ -93,7 +93,7 @@ services:
     env_file:
     - *hermes-fleet-env-file
     - /mnt/user/appdata/the-ai-crowd/env/moss-webui.env
-    image: sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95
+    image: sha256:a035ae81d51cfd3adae7504f4d75716dea76bcec16cbb01024ea23a4161974e0
     working_dir: /agents/moss/private
     volumes:
     - /mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/opt/data
@@ -154,7 +154,7 @@ services:
     env_file:
     - *hermes-fleet-env-file
 
-    image: sha256:c537bd149defa3c867dd0322ed3f619c9ac6aff9aec8e3883a23bc1a0e222eb2
+    image: ${JEN_IMAGE_REF:?set JEN_IMAGE_REF to the approved immutable Jen image ID}
     working_dir: /agents/jen/private
     volumes:
     - /mnt/user/appdata/the-ai-crowd/runtime/jen-home:/opt/data
@@ -208,7 +208,7 @@ services:
     env_file:
     - *hermes-fleet-env-file
 
-    image: sha256:72715188286f6b7f19c62a621c17bb7c61936c2a4b251d6fa9b1449e5eeabd29
+    image: ${DENHOLM_IMAGE_REF:?set DENHOLM_IMAGE_REF to the approved immutable Denholm image ID}
     working_dir: /agents/denholm/private
     volumes:
     - /mnt/user/appdata/the-ai-crowd/runtime/denholm-home:/opt/data
@@ -252,7 +252,7 @@ services:
     env_file:
     - *hermes-fleet-env-file
 
-    image: sha256:bbc7cb34ba2414138e95d1d0f15dfceb85d9823fecef38315c757e9f31b9fab6
+    image: ${RICHMOND_IMAGE_REF:?set RICHMOND_IMAGE_REF to the approved immutable Richmond image ID}
     working_dir: /agents/richmond/private
     volumes:
     - /mnt/user/appdata/the-ai-crowd/runtime/richmond-home:/opt/data
@@ -312,7 +312,7 @@ services:
         - roy
     env_file:
     - /mnt/user/appdata/the-ai-crowd/env/roy-v3.env
-    image: sha256:46a5bc1d06a9b3e76744caa8367b4d35ebcb34dceb74e54e576a0e1d4e1e8fc5
+    image: ${ROY_IMAGE_REF:?set ROY_IMAGE_REF to the approved immutable Roy v3 image ID}
     working_dir: /agents/roy/private
     read_only: true
     tmpfs:
@@ -358,7 +358,7 @@ services:
     env_file:
     - *hermes-fleet-env-file
 
-    image: sha256:ab9964cabc23efe617f9402b0005d46b64bd09356a9367dd2c8238d35c90f495
+    image: ${THE_ELDERS_IMAGE_REF:?set THE_ELDERS_IMAGE_REF to the approved immutable The Elders image ID}
     working_dir: /agents/the-elders/private
     read_only: true
     tmpfs:
