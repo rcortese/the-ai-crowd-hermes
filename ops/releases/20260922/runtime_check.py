@@ -1,10 +1,28 @@
 """Credential-safe in-container gates. No model calls or external writes."""
 import json, os, sys, pathlib, urllib.request
 
+def api_settings():
+    # Gateway startup gives its own home .env precedence over stale container
+    # exports. Read only the two probe inputs; never hydrate/mutate runtime files.
+    from dotenv import dotenv_values
+    home=pathlib.Path(os.environ.get('HERMES_HOME','/opt/data'))
+    values=dotenv_values(home/'.env') if (home/'.env').exists() else {}
+    def setting(name):
+        value=values[name] if name in values else os.environ.get(name)
+        if not value: raise RuntimeError('Missing probe setting: '+name)
+        return value
+    return setting('API_SERVER_PORT'),setting('API_SERVER_KEY')
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*args,**kwargs):
+        raise RuntimeError('Health redirect refused')
+
 def get(path):
-    port=os.environ['API_SERVER_PORT']
-    req=urllib.request.Request('http://127.0.0.1:'+port+path,headers={'Authorization':'Bearer '+os.environ['API_SERVER_KEY']})
-    with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req,timeout=10) as r:
+    port,key=api_settings()
+    if not port.isdecimal() or not 1 <= int(port) <= 65535:
+        raise RuntimeError('Invalid API probe port')
+    req=urllib.request.Request('http://127.0.0.1:'+port+path,headers={'Authorization':'Bearer '+key})
+    with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open(req,timeout=10) as r:
         return json.load(r)
 
 def check_idle(d):
@@ -22,6 +40,9 @@ def main():
     mode=sys.argv[1]
     d=get('/health/detailed')
     if mode=='idle': check_idle(d)
+    elif mode=='health':
+        if d.get('readiness',{}).get('status') not in ('ready','ok'):
+            raise RuntimeError('Gateway readiness unknown or degraded')
     elif mode=='verify':
         import sqlite3,importlib.metadata
         assert sys.version_info[:2]==(3,13)

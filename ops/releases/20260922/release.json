@@ -375,7 +375,7 @@
     "evidence/tests-roy.log": "d5451e0369cbc5bf6224d3fc686df659fb989fceae64b8a8baf31d0e0e14f8eb",
     "evidence/tests-webui-moss.log": "2c5c861df0460d3e8ec4d9c3c622d862de241be833a9486c2148c7d92a8a74d3",
     "evidence/tests-webui-roy.log": "b260488d884d7eda0f9336f04a44cc88e8c3e9d4e325f340206afa2d6be86aa4",
-    "fleet_release.py": "04fb0a569f156bd8359a44378fe3ad41c96a9eba28b4e7f2fb2e7305e4315d8c",
+    "fleet_release.py": "9dded19edc6109feede821691098c64bf4ef4605094acfbf12df98b904c26659",
     "image-tests.py": "080f1dd3b297e46e07a3ba804fe70d87148e622f9e21bb8f459f4d844426402e",
     "install-source.py": "0ba181a3b11f36c32cf0f5178d4d3ddab53513a968b434dc3a93c2267dcc1b8b",
     "manifest.json": "c38574b9a9a312eeea33b850989fe1a1b4219f3673496d405d4e8263226423c7",
@@ -383,10 +383,13 @@
     "prepare-sources.py": "1c115f9f75d76ca5ba739c06f1a5f9a4d88d25f2d66c2a06bec7123db2c08abe",
     "rehearsal.py": "84449448d7f3ba8375689ad595a5a4b158db444bf56e828ffbd9975eb34aafa7",
     "run-host.sh": "af379e87db4cbe7784893487b22c92bbf1a8e5b7a8b66a3dd555e25401d62b82",
-    "runtime_check.py": "1d56cf165d842db9f0a83a3d81f808578736f36eb06727d1869788ec42917b0d",
+    "runtime_check.py": "117fa525bfb91d68b1c942ef6f146dd769f6b92ff5d374ce6be56c079313bae3",
     "smoke.py": "29556ac58ca56747bc8c8710357016185d4452a635027ca42a7b51defe4d8d62",
     "state_helper.py": "4e913e45842e9bbaaf3384ad7c86d891b4ab4db074311f38c390845c8362e962",
-    "test_release.py": "0433b65aa86f1e2b36b9a4ec6fda5e823beb4792e6e077527285e6871bdde943",
-    "webui-ports.bundle": "2e8397f029f8859ac02be34c6cc198bdf59e60a2d4094beda96483f3d6e4a895"
+    "test_release.py": "555f8cc2cb3b04698c91fb7e8c33c005cf61d3646f9c929644f3c909eab46545",
+    "webui-ports.bundle": "2e8397f029f8859ac02be34c6cc198bdf59e60a2d4094beda96483f3d6e4a895",
+    "run-visual.py": "a30a57c99568c7f468d067582c7acedd19d7b84cdc3f88907a37138aafa12a62",
+    "run-visual.sh": "d55c0b92bcbe44f3717352b30cd83e13f9bb576f6399d27b0621aadc138ae4a5",
+    "test_visual.py": "bdd989ca6279e5dabea03fbeaa6185440d124be20ffa3508b631f30def599022"
   }
 }

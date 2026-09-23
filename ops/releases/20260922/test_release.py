@@ -7,6 +7,24 @@ def load(name):
 f=load('fleet_release'); h=load('state_helper'); r=load('runtime_check')
 
 class Contracts(unittest.TestCase):
+ def test_probe_home_env_precedes_container_and_does_not_write(self):
+  import os
+  with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{'HERMES_HOME':td,'API_SERVER_PORT':'8642','API_SERVER_KEY':'stale'},clear=True):
+   p=pathlib.Path(td)/'.env'; raw='API_SERVER_KEY=correct\n'; p.write_text(raw)
+   self.assertEqual(r.api_settings(),('8642','correct'))
+   self.assertEqual(p.read_text(),raw)
+   self.assertEqual(os.environ['API_SERVER_KEY'],'stale')
+ def test_probe_fallback_missing_and_empty(self):
+  import os
+  with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{'HERMES_HOME':td,'API_SERVER_PORT':'8642','API_SERVER_KEY':'container'},clear=True):
+   self.assertEqual(r.api_settings(),('8642','container'))
+   (pathlib.Path(td)/'.env').write_text('API_SERVER_KEY=\n')
+   with self.assertRaises(RuntimeError): r.api_settings()
+ def test_probe_refuses_redirect(self):
+  with self.assertRaises(RuntimeError): r.NoRedirect().redirect_request(None,None,None,None,None,None)
+ def test_probe_invalid_port(self):
+  with patch.object(r,'api_settings',return_value=('8642/other','secret')):
+   with self.assertRaises(RuntimeError): r.get('/health/detailed')
  def test_image_only_topology(self):
   a={'services':{s:{'image':'old','environment':{'K':'v'},'volumes':['a:b']} for s in f.ORDER}}
   b=copy.deepcopy(a)

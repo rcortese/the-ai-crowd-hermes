@@ -1,39 +1,48 @@
 {
   "verdict": "APPROVED WITHOUT CHANGES",
-  "manifest_sha": "6d4c911607e842774d02dfdc702d091c04eac9de95d5425d33e3b3a150446d26",
+  "manifest_sha": "05c527681ee8fad71cb6a90b335e978cc1ca7aa82e15576cf71e1a34f7c4306f",
   "reviewer": "Claude via official the-ai-interns read-only wrapper",
-  "reviewer_session_id": "e707985d-4cae-4f10-af5d-10671b9701e8",
-  "review_round": 2,
-  "reviewed_diff_sha256": "a4810f2bc076d7f3436f089e5816d2ca6ff003a8318e636d6463892a104ca1b8",
-  "review_result_sha256": "b9c5b6670005dbda50df453c580e522f912ff9fee80232623f457f7a236c8acd",
-  "findings": [
-    {
-      "blocker": "raw real-image DB/encryption rehearsal transcript",
-      "status": "CLOSED",
-      "evidence": "operator/evidence/rehearsal-detailed.log:1-192 shows real (non-mocked) `docker run`/pipeline invocations against the actual candidate image sha256:2bdc1a79... and base image sha256:a035ae81... \u2014 not synthetic stubs. db-smoke.py (operator/db-smoke.py:1-33) performs genuine sqlite3 asserts (integrity_check, FTS integrity-check insert, search_messages) that would raise and abort the script on failure, not hardcoded success. Sequence old-create(rows=2)->new-write(rows=3)->old-reopen(rows=4) shows monotonically growing message counts consistent with a single continuous fixture DB, and fts_integrity flips from 'known-old-projection-mismatch' (old-create, rehearsal-detailed.log:3) to 'ok' after upgrade+reopen (rehearsal-detailed.log:182), matching the claimed FTS bug repair. backup_stream.py AES-GCM (operator/backup_stream.py) tamper test uses `data[100]^=1` then `assert bad.returncode!=0` (operator/rehearsal.py:62-65); had this failed the script would crash before writing rehearsal.json, and rehearsal.json's hash matches SHA256SUMS, corroborating a real completed run."
-    },
-    {
-      "blocker": "proof old image boots helper-migrated config (candidate THEN base entrypoint boots, API/WebUI health)",
-      "status": "CLOSED",
-      "evidence": "rehearsal-detailed.log:17-178 shows two full real entrypoint boots against the SAME state_helper-migrated config.yaml (with known_builtin_toolsets added by operator/state_helper.py:configure): first 'candidate' (new image, lines 17-96) then 'rollback-base' (old base image, lines 98-178), each polled via in-container urllib against both API (8648) and WebUI (8787) /health until 'API_AND_WEBUI_HEALTH_PASS' printed (lines 35, 116), with real supervisord/gateway/webui startup logs captured, not fabricated. CONFIG AFTER blocks (lines 37-54, 118-134) show the config is byte-identical after each boot, i.e. the old base image reads the migrated schema without choking on the added key and without rewriting it further."
-    }
-  ],
-  "nonblocking_suggestions": [
-    {
-      "file": "operator/fleet_release.py",
-      "line": "184-190",
-      "note": "In apply(), state['attempted'].append(s) and persist(state) happen after the per-service config helper run but before the compose image swap; a signal delivered in that narrow window leaves a service's on-disk config migrated while 'attempted' (and thus rollback) does not yet know about it. Consequences are bounded by this round's new evidence (old image tolerates the migrated config), so not blocking, but worth persisting the config receipt/attempted marker atomically together in a future round for tighter guarantees."
-    },
-    {
-      "file": "operator/rehearsal.py",
-      "line": "9-19",
-      "note": "traced_run/traced_pipeline print hardcoded 'EXIT 0' / 'all exit codes 0' rather than the actual return code(s); correctness is still enforced because f.run/f.pipeline raise on nonzero and would abort the script before those lines print, but the trace text itself is not literally derived from the subprocess result. Consider printing the real code(s) for a cleaner audit trail."
-    },
-    {
-      "file": "operator/rehearsal.py",
-      "line": "63-65",
-      "note": "The ciphertext-tamper decrypt call bypasses the traced_run wrapper (raw subprocess.run), so its stderr isn't captured in rehearsal-detailed.log \u2014 correctness is still enforced via the following assert, but a future transcript could log the rejection message for completeness."
-    }
-  ],
-  "authority": "Manual user application only. This receipt is not production execution."
+  "reviewer_session_id": "91a89f87-bc4d-4466-9a8e-cc72833cd0d9",
+  "review_result_sha256": "c68c85da0b8f751ad77c2f1018406989b3d1f43d71aa2f19ec5204c683e4d8a6",
+  "scope": "Authenticated preflight repair and visual executor; unchanged image/build/backup/rollback baseline reviewed previously.",
+  "previous_review": {
+    "verdict": "APPROVED WITHOUT CHANGES",
+    "manifest_sha": "6d4c911607e842774d02dfdc702d091c04eac9de95d5425d33e3b3a150446d26",
+    "reviewer": "Claude via official the-ai-interns read-only wrapper",
+    "reviewer_session_id": "e707985d-4cae-4f10-af5d-10671b9701e8",
+    "review_round": 2,
+    "reviewed_diff_sha256": "a4810f2bc076d7f3436f089e5816d2ca6ff003a8318e636d6463892a104ca1b8",
+    "review_result_sha256": "b9c5b6670005dbda50df453c580e522f912ff9fee80232623f457f7a236c8acd",
+    "findings": [
+      {
+        "blocker": "raw real-image DB/encryption rehearsal transcript",
+        "status": "CLOSED",
+        "evidence": "operator/evidence/rehearsal-detailed.log:1-192 shows real (non-mocked) `docker run`/pipeline invocations against the actual candidate image sha256:2bdc1a79... and base image sha256:a035ae81... \u2014 not synthetic stubs. db-smoke.py (operator/db-smoke.py:1-33) performs genuine sqlite3 asserts (integrity_check, FTS integrity-check insert, search_messages) that would raise and abort the script on failure, not hardcoded success. Sequence old-create(rows=2)->new-write(rows=3)->old-reopen(rows=4) shows monotonically growing message counts consistent with a single continuous fixture DB, and fts_integrity flips from 'known-old-projection-mismatch' (old-create, rehearsal-detailed.log:3) to 'ok' after upgrade+reopen (rehearsal-detailed.log:182), matching the claimed FTS bug repair. backup_stream.py AES-GCM (operator/backup_stream.py) tamper test uses `data[100]^=1` then `assert bad.returncode!=0` (operator/rehearsal.py:62-65); had this failed the script would crash before writing rehearsal.json, and rehearsal.json's hash matches SHA256SUMS, corroborating a real completed run."
+      },
+      {
+        "blocker": "proof old image boots helper-migrated config (candidate THEN base entrypoint boots, API/WebUI health)",
+        "status": "CLOSED",
+        "evidence": "rehearsal-detailed.log:17-178 shows two full real entrypoint boots against the SAME state_helper-migrated config.yaml (with known_builtin_toolsets added by operator/state_helper.py:configure): first 'candidate' (new image, lines 17-96) then 'rollback-base' (old base image, lines 98-178), each polled via in-container urllib against both API (8648) and WebUI (8787) /health until 'API_AND_WEBUI_HEALTH_PASS' printed (lines 35, 116), with real supervisord/gateway/webui startup logs captured, not fabricated. CONFIG AFTER blocks (lines 37-54, 118-134) show the config is byte-identical after each boot, i.e. the old base image reads the migrated schema without choking on the added key and without rewriting it further."
+      }
+    ],
+    "nonblocking_suggestions": [
+      {
+        "file": "operator/fleet_release.py",
+        "line": "184-190",
+        "note": "In apply(), state['attempted'].append(s) and persist(state) happen after the per-service config helper run but before the compose image swap; a signal delivered in that narrow window leaves a service's on-disk config migrated while 'attempted' (and thus rollback) does not yet know about it. Consequences are bounded by this round's new evidence (old image tolerates the migrated config), so not blocking, but worth persisting the config receipt/attempted marker atomically together in a future round for tighter guarantees."
+      },
+      {
+        "file": "operator/rehearsal.py",
+        "line": "9-19",
+        "note": "traced_run/traced_pipeline print hardcoded 'EXIT 0' / 'all exit codes 0' rather than the actual return code(s); correctness is still enforced because f.run/f.pipeline raise on nonzero and would abort the script before those lines print, but the trace text itself is not literally derived from the subprocess result. Consider printing the real code(s) for a cleaner audit trail."
+      },
+      {
+        "file": "operator/rehearsal.py",
+        "line": "63-65",
+        "note": "The ciphertext-tamper decrypt call bypasses the traced_run wrapper (raw subprocess.run), so its stderr isn't captured in rehearsal-detailed.log \u2014 correctness is still enforced via the following assert, but a future transcript could log the rejection message for completeness."
+      }
+    ],
+    "authority": "Manual user application only. This receipt is not production execution."
+  },
+  "authority": "Manual user application only; no production lifecycle executed."
 }

@@ -36,7 +36,10 @@ def atomic(p,data,mode=0o600):
         if tmp.exists(): tmp.unlink()
 def persist(state): atomic(STATE/'transaction.json',(json.dumps(state,indent=2)+'\n').encode())
 def probe(s,mode,commit=''):
-    return run(docker('exec','-i','the-ai-crowd-'+s+'-1',PY,'-',mode,commit),input=(ROOT/'runtime_check.py').read_bytes(),timeout=35)
+    try:
+        return run(docker('exec','-i','the-ai-crowd-'+s+'-1',PY,'-',mode,commit),input=(ROOT/'runtime_check.py').read_bytes(),timeout=35)
+    except subprocess.CalledProcessError:
+        raise RuntimeError(s+': falhou consulta '+mode+' (autenticação, saúde ou atividade); nenhuma credencial foi exibida') from None
 
 def verify_topology(old,new):
     a=json.loads(json.dumps(old)); b=json.loads(json.dumps(new))
@@ -77,7 +80,8 @@ def check(m,idle=False):
         if old['services'][s]['image']!=x['base_image'] or new['services'][s]['image']!=x['image']: raise RuntimeError('Compose/image mismatch')
         cfg=pathlib.Path(x['home'])/'config.yaml'
         if cfg.is_symlink() or sha(cfg.read_bytes())!=x['config_sha']: raise RuntimeError(s+': config drift')
-        if idle: probe(s,'idle')
+        probe(s,'idle' if idle else 'health')
+        print(s+': baseline e saúde autenticada OK'+(' | ocioso' if idle else ''),flush=True)
     return True
 
 def container(m,s,helper,op,rw=False):
@@ -174,7 +178,10 @@ def apply(m):
     STATE.mkdir(mode=0o700,parents=True)
     state={'phase':'SNAPSHOTTING','attempted':[],'services':ORDER,'manifest_sha':sha((ROOT/'release.json').read_bytes())}
     persist(state); atomic(STATE/'compose.before.yaml',COMPOSE.read_bytes())
-    for s in ORDER: snapshot(m,s,'before')
+    for s in ORDER:
+        print(s+': criando e verificando backup cifrado...',flush=True)
+        snapshot(m,s,'before')
+        print(s+': backup verificado',flush=True)
     check(m,idle=True)
     try:
         state['phase']='APPLYING'; persist(state)
@@ -186,7 +193,9 @@ def apply(m):
             cmd=container(m,s,'state_helper.py','configure',rw=True)+[m['services'][s]['config_sha']]
             out=run(cmd,timeout=40); state.setdefault('config_receipts',{})[s]=json.loads(out)
             state['attempted'].append(s); persist(state)
+            print(s+': atualizando imagem...',flush=True)
             run(compose(COMPOSE,'up','-d','--no-deps','--no-build','--pull','never','--force-recreate',s),timeout=240)
+            print(s+': aguardando saúde e verificando versão...',flush=True)
             healthy(s,m['services'][s]['image'])
             probe(s,'verify',m['services'][s]['agent_commit'])
             print(s+': verified',flush=True)
