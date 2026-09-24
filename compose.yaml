@@ -96,6 +96,10 @@ services:
     image: sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95
     working_dir: /agents/moss/private
     volumes:
+    - type: bind
+      source: /mnt/user/appdata/the-ai-crowd/ops/supervisor/moss-all-in-one-supervisord.conf
+      target: /etc/supervisor/conf.d/moss-all-in-one.conf
+      read_only: true
     - /mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/opt/data
     - /mnt/user/appdata/the-ai-crowd/runtime/moss-public-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/public:ro
     - /mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/private:ro
