@@ -93,7 +93,7 @@ services:
     env_file:
     - *hermes-fleet-env-file
     - /mnt/user/appdata/the-ai-crowd/env/moss-webui.env
-    image: sha256:2bdc1a79627e79930f4086f2ec6be1774f1e69e4da577179d3b29bddc3323a95
+    image: sha256:e91ba6a867de40132820fd5a6412177c8c86881b3f52d0355d825af6966bae2e
     working_dir: /agents/moss/private
     volumes:
     - type: bind
@@ -316,7 +316,7 @@ services:
         - roy
     env_file:
     - /mnt/user/appdata/the-ai-crowd/env/roy-v3.env
-    image: sha256:46a5bc1d06a9b3e76744caa8367b4d35ebcb34dceb74e54e576a0e1d4e1e8fc5
+    image: sha256:ed1120ef93891de3cf9891ad74e62df5c33424fae4e53597768a7de8ac7e8d1a
     working_dir: /agents/roy/private
     read_only: true
     tmpfs:
