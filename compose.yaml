@@ -105,6 +105,12 @@ services:
     - /mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/opt/data
     - /mnt/user/appdata/the-ai-crowd/runtime/moss-public-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/public:ro
     - /mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/private:ro
+    - type: bind
+      source: /mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31/projects
+      target: /agents/moss/private/projects
+      read_only: false
+      bind:
+        create_host_path: false
     - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
     - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
     - ${THE_AI_CROWD_BACKUP_ROOT:-/mnt/user/appdata/the-ai-crowd/state/private/backups}:/backups/the-ai-crowd:rw
