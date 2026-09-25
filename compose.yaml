@@ -17,6 +17,8 @@ x-hermes-internal-networks: &hermes-internal-networks
 x-hermes-fleet-env-file: &hermes-fleet-env-file ./env/fleet.env
 services:
   moss:
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/homarr-labs/dashboard-icons/cf87d9bbd47792b20893f090ff48763fe874b05d/png/hermes.png
     <<: *hermes-runtime
     environment:
       <<: *hermes-runtime-env
@@ -123,6 +125,8 @@ services:
       retries: 10
       start_period: 90s
   jen:
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/homarr-labs/dashboard-icons/cf87d9bbd47792b20893f090ff48763fe874b05d/png/hermes.png
     <<: *hermes-runtime
     environment:
       <<: *hermes-runtime-env
@@ -179,6 +183,8 @@ services:
       retries: 10
       start_period: 60s
   denholm:
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/homarr-labs/dashboard-icons/cf87d9bbd47792b20893f090ff48763fe874b05d/png/hermes.png
     <<: *hermes-runtime
     environment:
       <<: *hermes-runtime-env
@@ -234,6 +240,8 @@ services:
       retries: 10
       start_period: 60s
   richmond:
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/homarr-labs/dashboard-icons/cf87d9bbd47792b20893f090ff48763fe874b05d/png/hermes.png
     <<: *hermes-runtime
     environment:
       <<: *hermes-runtime-env
@@ -277,6 +285,8 @@ services:
       retries: 10
       start_period: 60s
   roy:
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/homarr-labs/dashboard-icons/cf87d9bbd47792b20893f090ff48763fe874b05d/png/hermes.png
     <<: *hermes-runtime
     environment:
       <<: *hermes-runtime-env
@@ -341,6 +351,8 @@ services:
       retries: 10
       start_period: 90s
   the-elders:
+    labels:
+      net.unraid.docker.icon: https://raw.githubusercontent.com/homarr-labs/dashboard-icons/cf87d9bbd47792b20893f090ff48763fe874b05d/png/hermes.png
     <<: *hermes-runtime
     environment:
       <<: *hermes-runtime-env
