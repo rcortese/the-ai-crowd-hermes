@@ -1,0 +1,3 @@
+services:
+  moss:
+    image: sha256:05838ef5c373b913f4a0652ca76f4f0ca827c6a18754b2616a39a6d02a9df005

@@ -1,4 +1,5 @@
-FROM sha256:05838ef5c373b913f4a0652ca76f4f0ca827c6a18754b2616a39a6d02a9df005
+# build.sh verifies this local tag resolves to the exact active image ID.
+FROM moss-terminal-aggregate:release-959381e4d17344398665f44b8e6407d7
 USER root
 COPY apply.py /usr/local/share/moss-inline-delegation/apply.py
 RUN /opt/hermes/.venv/bin/python3 /usr/local/share/moss-inline-delegation/apply.py \

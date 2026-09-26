@@ -1,0 +1,15 @@
+# Use with -f /mnt/ssd/appdata/the-ai-crowd/compose.yaml.
+# !override preserves precisely the seven mounts of the running Moss container;
+# the current host Compose has an additional projects bind not present in that
+# container. Do not silently introduce it in this narrow release.
+services:
+  moss:
+    image: sha256:14a0a1930c386a9342efae4db712d3dcd39a9c4298709dcc3e0b39863a612f30
+    volumes: !override
+      - /mnt/user/appdata/the-ai-crowd/runtime/moss-home-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/opt/data
+      - /mnt/user/appdata/the-ai-crowd/runtime/moss-public-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/public:ro
+      - /mnt/user/appdata/the-ai-crowd/runtime/moss-source-moss-t0-callsite-fix-20260912T215802Z-86984ab85c31:/agents/moss/private:ro
+      - /mnt/user/appdata/the-ai-crowd/state/shared:/mnt/hermes-shared
+      - /mnt/user/appdata/the-ai-crowd/agents/private/richmond-archiveops:/archiveops/richmond:ro
+      - /mnt/user/appdata/the-ai-crowd/state/private/backups:/backups/the-ai-crowd:rw
+      - /mnt/user/appdata/the-ai-crowd/ops/supervisor/moss-all-in-one-supervisord.conf:/etc/supervisor/conf.d/moss-all-in-one.conf:ro
