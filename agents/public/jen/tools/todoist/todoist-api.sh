@@ -356,12 +356,28 @@ case "$cmd" in
       jq -nc --arg error "recurring_due_overwrite_blocked" --arg task_id "$task_id" --arg due_string "$due_string" '{error:$error,task_id:$task_id,due_string:$due_string,allow_override_env:"JEN_TODOIST_ALLOW_RECURRING_DUE_OVERWRITE=1"}' >&2
       exit 6
     fi
+    iso_date=false
+    if [[ "$due_string" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+      require_bin python3
+      if ! python3 -c 'import datetime,sys; datetime.date.fromisoformat(sys.argv[1])' "$due_string" 2>/dev/null; then
+        error_json invalid_due_date
+        exit 2
+      fi
+      iso_date=true
+    fi
     payload=$(jq -nc --arg due_string "$due_string" '{due_string:$due_string}')
     api_post "$BASE_URL/tasks/$task_id" "$payload" >/dev/null
     expected_due="$(jq -nc --arg due "$due_string" '$due')"
     actual_task="$(api_get "$BASE_URL/tasks/$task_id")"
-    actual_due="$(jq -c '.due.string // empty' <<<"$actual_task")"
-    if [[ "$actual_due" != "$expected_due" ]]; then
+    if [[ "$iso_date" == true ]]; then
+      actual_due="$(jq -c '.due.date // empty' <<<"$actual_task")"
+    else
+      actual_due="$(jq -c '.due.string // empty' <<<"$actual_task")"
+    fi
+    # A date match cannot certify recurrence or deadline preservation.
+    if [[ "$actual_due" != "$expected_due" ]] || ! jq -e \
+      --argjson before "$current_task" --argjson iso_date "$iso_date" \
+      '.deadline == $before.deadline and (if $iso_date then .due.is_recurring == false else true end)' <<<"$actual_task" >/dev/null; then
       jq -nc --arg error "verification_failed" --arg task_id "$task_id" --arg actual "$actual_due" --arg expected "$expected_due" '{error:$error,task_id:$task_id,actual:$actual,expected:$expected}' >&2
       exit 5
     fi
