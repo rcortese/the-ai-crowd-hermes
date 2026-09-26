@@ -64,7 +64,19 @@ def strip_volatile(value: Any) -> Any:
 
 
 def semantic_material(plan: dict[str, Any]) -> dict[str, Any]:
-    return {k: strip_volatile(plan.get(k)) for k in sorted(SEMANTIC_TOP_LEVEL) if plan.get(k) is not None}
+    material = {k: strip_volatile(plan.get(k)) for k in sorted(SEMANTIC_TOP_LEVEL) if plan.get(k) is not None}
+    payload = plan.get("mutation_payload")
+    is_parent_move = (
+        plan.get("canonical_object_type") == "task"
+        and isinstance(payload, dict)
+        and set(payload) == {"parent_id"}
+    )
+    if is_parent_move:
+        # A parent-move intent is stable across the resulting parent_id change.
+        # Keep the real pre_state in the gateway plan/audit record, but exclude it
+        # from collision detection so a verified retry resolves as a duplicate.
+        material.pop("pre_state", None)
+    return material
 
 
 def normalized_hash(plan: dict[str, Any]) -> str:
