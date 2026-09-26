@@ -20,16 +20,22 @@ Compose service currently differs from the running container: it adds a
 `projects` bind. `compose.override.yaml` uses Compose `!override` to preserve
 exactly the seven current mounts. Do not use plain `docker compose up moss`.
 
-After Rodolfo's explicit OK only: launch `activate.sh approved-activate` on the
-Docker host, detached from the Moss container. Use host `setsid` + `nohup`
-with stdout/stderr redirected to `activation.log` beside the package, and
-record/check the host PID. Do not run this script via `docker exec`; it
-recreates Moss. The script takes a host flock, repeats preflight immediately
-before Compose, runs a service-only no-build up, waits for Docker health and
-three endpoints, and attempts a service-only rollback to the old image on
-failure. Read `activation.state`, host process exit, new container ID/image,
-and actual health before claiming completion. A failed or interrupted
-launcher is not a success; reconcile Docker and receipts first.
+After Rodolfo's explicit OK only: via SSH on the Docker host, execute
+`bash <host package>/launch.sh approved-launch`. Never run it through
+`docker exec`: the replacement terminates the initiating Moss process.
+The host launcher checks the preflight, starts a `setsid`/`nohup` supervisor
+outside the container, and writes `launcher.pid` and `launcher.state` to
+persistent host storage. Inspect the host PID and receipt after the request
+ends. The supervisor runs the worker with a timeout and reconciles its exit;
+the worker takes a host flock, repeats preflight before Compose, runs a
+service-only no-build up, waits for Docker health and three endpoints, and
+attempts service-only rollback on failure. The supervisor retries rollback
+when an interrupted worker left the candidate present. A killed host or
+missing/unknown container needs operator reconciliation; no automatic host
+reboot recovery is claimed. Read both states, supervisor process exit, new
+container ID/image, and actual health before claiming activation. An
+`ACTIVE_HEALTHY` receipt proves service health, NOT functional delegation:
+Rodolfo's practical WebUI turn will validate that separately.
 
 Manual reversal after a healthy cutover: on the Docker host run
 `bash <host package>/rollback.sh approved-rollback`. It requires the expected
