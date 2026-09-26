@@ -43,6 +43,9 @@ def sha(data):
 
 def receipt(state, **extra):
     payload = dict(state=state, old=OLD, new=NEW, **extra)
+    if RECEIPT.exists():
+        previous = json.loads(RECEIPT.read_text())
+        payload.setdefault('index_sha', previous['index_sha'])
     tmp = RECEIPT.with_suffix('.json.next')
     tmp.write_text(json.dumps(payload, sort_keys=True) + '\n')
     os.replace(tmp, RECEIPT)
@@ -143,18 +146,28 @@ def rollback():
         raise RuntimeError('source HEAD changed; manual reconciliation required')
     original = BACKUP_COMPOSE.read_bytes()
     intended = original.replace(BASE_IMAGE.encode(), NEXT_IMAGE.encode())
-    if COMPOSE.read_bytes() not in (original, intended):
+    if sha(original) != COMPOSE_SHA or COMPOSE.read_bytes() not in (original, intended):
         raise RuntimeError('compose bytes changed; manual reconciliation required')
-    if head == NEW:
-        git('update-ref', 'refs/heads/main', OLD, NEW)
-    # Restore only bytes belonging to this transaction. Do not clean unrelated staging.
+    if sha(BACKUP_INDEX.read_bytes()) != current['index_sha']:
+        raise RuntimeError('index backup changed')
+    if git('write-tree') not in (git('rev-parse', f'{OLD}^{{tree}}'), git('rev-parse', f'{NEW}^{{tree}}')):
+        raise RuntimeError('index changed; manual reconciliation required')
+    # Validate the COMPLETE removal set before moving the ref or unlinking anything.
+    removal = []
     for name in new_files():
         path = ROOT / name
         expected = git('show', f'{NEW}:{name}', text=False)
         if path.exists():
             if path.read_bytes() != expected:
                 raise RuntimeError(f'source path changed: {name}')
-            path.unlink()
+            removal.append((path, expected))
+    if head == NEW:
+        git('update-ref', 'refs/heads/main', OLD, NEW)
+    # Restore only bytes belonging to this transaction. Do not clean unrelated staging.
+    for path, expected in removal:
+        if path.read_bytes() != expected:
+            raise RuntimeError(f'source changed during rollback: {path.name}')
+        path.unlink()
     atomic_write(COMPOSE, original)
     atomic_write(INDEX, BACKUP_INDEX.read_bytes(), 0o644)
     receipt('SOURCE_ROLLED_BACK')
@@ -167,6 +180,16 @@ def publish():
     current = json.loads(RECEIPT.read_text())
     if current['state'] != 'SOURCE_LOCAL' or git('rev-parse', 'HEAD') != NEW:
         raise RuntimeError('source publication CAS failed')
+    original = BACKUP_COMPOSE.read_bytes()
+    intended = original.replace(BASE_IMAGE.encode(), NEXT_IMAGE.encode())
+    if (sha(original) != COMPOSE_SHA or sha(COMPOSE.read_bytes()) != sha(intended) or
+            git('write-tree') != git('rev-parse', f'{NEW}^{{tree}}') or
+            git('status', '--porcelain', '--untracked-files=no') != ' M compose.yaml'):
+        raise RuntimeError('local source drift before publication')
+    for name in new_files():
+        if (ROOT / name).read_bytes() != git('show', f'{NEW}:{name}', text=False):
+            raise RuntimeError(f'local source file drift: {name}')
+    verify_runtime()
     if git('ls-remote', 'origin', 'refs/heads/main').split()[0] != OLD:
         raise RuntimeError('remote main moved before publication')
     git('push', 'origin', f'{NEW}:refs/heads/main')

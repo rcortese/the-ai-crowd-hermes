@@ -16,11 +16,11 @@ INPUTS = {
     'build.sh': (HERE / 'build.sh', '472b8fbc8840e79cfdae2761fa898fd77d51dacd82fb869dae8045d1c12190dd'),
     'compose.override.yaml': (HERE / 'compose.override.yaml', 'c2f60199778ac07956827b453bf402d1d7c4c8df62114ed1ebea138b8cd530d1'),
     'rollback.override.yaml': (HERE / 'rollback.override.yaml', 'ef8336cd19d4033e4e38bc476c867d151db2f8ea786ab54a209e9140637fd7ec'),
-    'activate.sh': (HERE / 'activate.sh', 'dae1f8309d3a5550b1b162b880a60e000e108f9b12206c8a2178bb03054a4c0f'),
+    'activate.sh': (HERE / 'activate.sh', '29341e17a2cc8893073ea1876683a091074447ed8901f95d59ef52d408e590c2'),
     'rollback.sh': (HERE / 'rollback.sh', '4cbf9c63f915e61d65e415959dd5d6af6a02ab70b012b76c3487654eca16cffa'),
     'launch.sh': (HERE / 'launch.sh', 'a26f8a396e0029fcd0adaef2cefc660bc5a3eac1692672227d243b81cb424bf4'),
     'supervise.sh': (HERE / 'supervise.sh', '22adc380fce030a6d8d4c8b3ea25424f02a2423b28e49939d76df8a83b942be1'),
-    'source_transition.py': (HERE / 'source_transition.py', 'a9abb3f68ee328929911f9a119e38d3383c0c75fc6da6fe87f01c7f27974a2ce'),
+    'source_transition.py': (HERE / 'source_transition.py', '385034ed21ea1f4314fe0b3ea541226183133c85fe02f389be37675d28568db6'),
 }
 
 def run(*args):
@@ -45,6 +45,8 @@ if run('docker', 'image', 'inspect', 'moss-terminal-aggregate:release-959381e4d1
     raise SystemExit('BASE_TAG_DRIFT')
 args = ('docker', 'compose', '-f', str(STACK / 'compose.yaml'), '-f', str(HERE / 'compose.override.yaml'))
 model = json.loads(run(*args, 'config', '--format', 'json'))['services']['moss']
+canonical = json.loads(run('docker', 'compose', '-f', str(STACK / 'compose.yaml'),
+                           'config', '--format', 'json'))['services']['moss']
 # A file hash alone does not pin env-file interpolation or other effective
 # Compose settings. Freeze the complete rendered non-image/non-mount model;
 # only the intended image and mount override may vary in this cutover.
@@ -71,6 +73,9 @@ if expected_ports != actual_ports:
     raise SystemExit('ACTIVE_PORT_DRIFT')
 mounts = {m['Destination']: (m['Source'], m['RW']) for m in active['Mounts']}
 expected_mounts = {m['target']: (m['source'], not m.get('read_only', False)) for m in model['volumes']}
-if mounts != expected_mounts or model['image'] != NEXT:
+canonical_mounts = {m['target']: (m['source'], not m.get('read_only', False)) for m in canonical['volumes']}
+canonical_projection = {key: value for key, value in canonical.items() if key not in ('image', 'volumes')}
+if (mounts != expected_mounts or mounts != canonical_mounts or
+        projection != canonical_projection or canonical['image'] != BASE or model['image'] != NEXT):
     raise SystemExit('COMPOSE_DRIFT')
 print(json.dumps({'status': 'READY', 'active_id': active['Id'], 'active_started': active['State']['StartedAt'], 'base': BASE, 'candidate': NEXT, 'mounts_equal': True}))

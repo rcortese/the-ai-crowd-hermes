@@ -18,6 +18,10 @@ restore=0
 rollback() {
   rc=$?
   if [[ "$restore" == 1 ]]; then
+    if [[ ! -f "$HERE/source-receipt.json" ]]; then
+      printf 'PREFLIGHT_FAILED_NO_SOURCE_EFFECT\n' > "$state"
+      exit "$rc"
+    fi
     # Publication may have succeeded even if its acknowledgement was lost.
     # Never rewind published source or roll runtime behind it blindly.
     remote="$(git -c safe.directory="$STACK" -C "$STACK" ls-remote origin refs/heads/main 2>/dev/null || true)"
@@ -25,8 +29,8 @@ rollback() {
       printf 'RECOVERY_REQUIRED_REMOTE_UNKNOWN\n' > "$state"
       exit "$rc"
     fi
-    if [[ "$remote" == "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["commit"])' "$HERE/release.json")"* ]]; then
-      printf 'RECOVERY_REQUIRED_PUBLISHED\n' > "$state"
+    if [[ "${remote%%[[:space:]]*}" != de1afd1e65541ef7b358f86ef5ce488399b86937 ]]; then
+      printf 'RECOVERY_REQUIRED_REMOTE_NOT_OLD\n' > "$state"
       exit "$rc"
     fi
     printf 'ROLLBACK_ATTEMPT\n' > "$state"
