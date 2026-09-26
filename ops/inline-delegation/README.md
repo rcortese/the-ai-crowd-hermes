@@ -7,9 +7,8 @@ clients keep their existing behavior. The built candidate image is
 `sha256:14a0a1930c386a9342efae4db712d3dcd39a9c4298709dcc3e0b39863a612f30`.
 
 Canonical release: the source branch pins this image in `compose.yaml`.
-The existing `projects` writable bind in source remains; deployment will
-converge to EIGHT mounts, not silently remove that source contract. The old
-running container has seven mounts. No other persona image selection is
+The existing `projects` writable bind in source remains; deployment preserves
+the EIGHT mounts already active on the host. No other persona image selection is
 changed in the source commit.
 
 The private host package lives at
@@ -34,7 +33,7 @@ reads it back. The host checkout keeps the other service's local image edit.
 delegation; Rodolfo will verify an actual WebUI turn afterward.
 
 Before remote publication, failures attempt recovery of Moss to the previous
-image with seven mounts, then restore the exact prior host Compose/index and
+image with eight mounts, then restore the exact prior host Compose/index and
 Git ref. A missing container, unknown image, lost remote visibility, or
 interruption after remote publication is RECOVERY_REQUIRED, not permission
 for a blind ref rewind. `rollback.sh approved-rollback` is ONLY for recovery

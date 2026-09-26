@@ -30,7 +30,7 @@ INDEX = ROOT / '.git/index'
 
 
 def call(*argv, text=True):
-    return subprocess.check_output(argv, text=text, cwd=ROOT).strip() if text else subprocess.check_output(argv, cwd=ROOT)
+    return subprocess.check_output(argv, text=text, cwd=ROOT).rstrip('\n') if text else subprocess.check_output(argv, cwd=ROOT)
 
 
 def git(*argv, text=True):
