@@ -41,6 +41,10 @@ emit_failed() {
     --arg checked_at "$checked_at" \
     --arg today "${today:-}" \
     --arg soft_action "${soft_action:-today}" \
+    --argjson verified_write_count "${verified_write_count:-0}" \
+    --argjson attempted_write_count "${attempted_write_count:-0}" \
+    --arg runtime_failure_class "${runtime_failure_class:-}" \
+    --arg audit_log_path "${audit_log_path:-}" \
     --argjson classified "$classified_json" '
     def safe_tasks: if ($classified|type) == "object" and (($classified.tasks|type)=="array") then $classified.tasks else [] end;
     def deadline_date: if ((.deadline | type) == "object") then (.deadline.date // ((.deadline.datetime // "") | split("T")[0]) // null) else null end;
@@ -55,7 +59,11 @@ emit_failed() {
         failure_class:$failure_class,
         mode:$mode,
         checked_at:$checked_at,
-        summary:{total_classified:($tasks|length),candidate_count:($candidates|length),blocked_count:(($tasks|length)-($candidates|length)),write_count:0},
+        summary:{total_classified:($tasks|length),candidate_count:($candidates|length),blocked_count:(($tasks|length)-($candidates|length)),write_count:(if $attempted_write_count > $verified_write_count then null else $verified_write_count end),verified_write_count:$verified_write_count,attempted_write_count:$attempted_write_count},
+        effect_state:(if $attempted_write_count > $verified_write_count then "unknown" elif $verified_write_count > 0 then "applied_verified" else "not_attempted" end),
+        runtime_failure_class:$runtime_failure_class,
+        audit_log_path:$audit_log_path,
+        downstream_reanchor:{status:"blocked_by_upstream",current_run:true},
         complete:false
       }'
   exit 1
@@ -161,6 +169,20 @@ write_audit_snapshot() {
     '{contract_version:$contract_version,mode:$mode,status:$status,run_id:$run_id,checked_at:$checked_at,today:$today,from:$from,to:$to,classified:$classified,candidates:$candidates,blocked:$blocked,writes:$writes}' > "$audit_log_path"
 }
 
+runtime_failed() {
+  # Preserve only a bounded class, never raw stderr or user task contents.
+  runtime_failure_class="$(jq -r '(.partial.failure_class // .failure_class // "runtime_failed") | select(type == "string") | select(test("^[a-z_]{1,80}$"))' <<<"$runtime_result" 2>/dev/null || true)"
+  runtime_failure_class="${runtime_failure_class:-unparseable_runtime_failure}"
+  tmp="$(mktemp)"
+  jq --arg failure_class "$runtime_failure_class" \
+    'map(if .status == "planned" then . + {status:"failed",effect_state:"unknown",runtime_failure_class:$failure_class} else . end)' "$writes_file" > "$tmp"
+  mv "$tmp" "$writes_file"
+  write_audit_snapshot failed
+  rm -f "$writes_file"
+  emit_failed runtime_failed "$mode" "$checked_at" "$classified_json"
+}
+verified_write_count=0
+attempted_write_count=0
 write_audit_snapshot in_progress
 idx=0
 while [[ "$idx" -lt "$candidate_count" ]]; do
@@ -199,12 +221,14 @@ while [[ "$idx" -lt "$candidate_count" ]]; do
       . + [{id:$id,operation:$operation,status:"planned",runtime_command:$runtime_command,due:(if $due == "" then null else $due end),project_id:(if $project_id == "" then null else $project_id end),idempotency_key:$key,deadline:$task.deadline}]' "$writes_file" > "$tmp"
   mv "$tmp" "$writes_file"
   write_audit_snapshot in_progress
+  attempted_write_count=$((attempted_write_count + 1))
   if [[ "$soft_action" == "today" || "$soft_action" == "clear" ]]; then
-    runtime_result="$("$TASK_RUNTIME" update-due --task-id "$task_id" --due "$due_arg")" || { write_audit_snapshot failed; emit_failed runtime_failed "$mode" "$checked_at" "$classified_json"; }
+    runtime_result="$("$TASK_RUNTIME" update-due --task-id "$task_id" --due "$due_arg")" || runtime_failed
   else
-    runtime_result="$("$TASK_RUNTIME" move-task --task-id "$task_id" --project-id "$project_id")" || { write_audit_snapshot failed; emit_failed runtime_failed "$mode" "$checked_at" "$classified_json"; }
+    runtime_result="$("$TASK_RUNTIME" move-task --task-id "$task_id" --project-id "$project_id")" || runtime_failed
   fi
-  jq -e '.status == "ok"' <<<"$runtime_result" >/dev/null || { write_audit_snapshot failed; emit_failed runtime_failed "$mode" "$checked_at" "$classified_json"; }
+  jq -e '.status == "ok"' <<<"$runtime_result" >/dev/null || runtime_failed
+  verified_write_count=$((verified_write_count + 1))
   tmp="$(mktemp)"
   jq \
     --arg id "$task_id" --argjson runtime_result "$runtime_result" '
