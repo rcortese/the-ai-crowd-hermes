@@ -95,7 +95,7 @@ services:
     env_file:
     - *hermes-fleet-env-file
     - /mnt/user/appdata/the-ai-crowd/env/moss-webui.env
-    image: sha256:e91ba6a867de40132820fd5a6412177c8c86881b3f52d0355d825af6966bae2e
+    image: sha256:14a0a1930c386a9342efae4db712d3dcd39a9c4298709dcc3e0b39863a612f30
     working_dir: /agents/moss/private
     volumes:
     - type: bind
