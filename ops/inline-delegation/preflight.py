@@ -16,10 +16,11 @@ INPUTS = {
     'build.sh': (HERE / 'build.sh', '472b8fbc8840e79cfdae2761fa898fd77d51dacd82fb869dae8045d1c12190dd'),
     'compose.override.yaml': (HERE / 'compose.override.yaml', '684070e3e2b74bbd766aed388a4f70642fd880bb231b5564025ecca235ce88ad'),
     'rollback.override.yaml': (HERE / 'rollback.override.yaml', 'ef8336cd19d4033e4e38bc476c867d151db2f8ea786ab54a209e9140637fd7ec'),
-    'activate.sh': (HERE / 'activate.sh', '34a7e4ecfa9bfdf6fafb9ed87c641a8bf9c44ee80908891cb5122a6318e1e0f2'),
-    'rollback.sh': (HERE / 'rollback.sh', '70060d59d57f44ef7a726cca5925c978ea7a07f76f22d471c560889234234494'),
+    'activate.sh': (HERE / 'activate.sh', 'dae1f8309d3a5550b1b162b880a60e000e108f9b12206c8a2178bb03054a4c0f'),
+    'rollback.sh': (HERE / 'rollback.sh', '4cbf9c63f915e61d65e415959dd5d6af6a02ab70b012b76c3487654eca16cffa'),
     'launch.sh': (HERE / 'launch.sh', 'a26f8a396e0029fcd0adaef2cefc660bc5a3eac1692672227d243b81cb424bf4'),
-    'supervise.sh': (HERE / 'supervise.sh', 'e1902a943cacb165dfcb0dd2f9205cd84dc3dd8a02a774b97cee1439c87834ec'),
+    'supervise.sh': (HERE / 'supervise.sh', '22adc380fce030a6d8d4c8b3ea25424f02a2423b28e49939d76df8a83b942be1'),
+    'source_transition.py': (HERE / 'source_transition.py', '4e03feef1c8ff66a64a6033b0cbe1fa260aed79f0f374835724b5d932005fdb9'),
 }
 
 def run(*args):
@@ -28,6 +29,13 @@ def run(*args):
 for name, (path, expected) in INPUTS.items():
     if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
         raise SystemExit(f'INPUT_DRIFT {name}')
+manifest = json.loads((HERE / 'release.json').read_text())
+if (set(manifest) != {'commit', 'bundle_sha256'} or len(manifest['commit']) != 40 or
+        hashlib.sha256((HERE / 'release.bundle').read_bytes()).hexdigest() != manifest['bundle_sha256']):
+    raise SystemExit('RELEASE_BUNDLE_DRIFT')
+if run('git', 'ls-remote', 'git@github.com:rcortese/the-ai-crowd-hermes.git',
+       'refs/heads/release/moss-inline-http-delegation').split()[0] != manifest['commit']:
+    raise SystemExit('RELEASE_BRANCH_DRIFT')
 active = json.loads(run('docker', 'inspect', 'the-ai-crowd-moss-1'))[0]
 if active['Image'] != BASE or active['State']['Status'] != 'running' or active['State']['Health']['Status'] != 'healthy':
     raise SystemExit('ACTIVE_DRIFT')

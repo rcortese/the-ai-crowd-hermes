@@ -18,16 +18,40 @@ restore=0
 rollback() {
   rc=$?
   if [[ "$restore" == 1 ]]; then
+    # Publication may have succeeded even if its acknowledgement was lost.
+    # Never rewind published source or roll runtime behind it blindly.
+    remote="$(git -c safe.directory="$STACK" -C "$STACK" ls-remote origin refs/heads/main 2>/dev/null || true)"
+    if [[ -z "$remote" ]]; then
+      printf 'RECOVERY_REQUIRED_REMOTE_UNKNOWN\n' > "$state"
+      exit "$rc"
+    fi
+    if [[ "$remote" == "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["commit"])' "$HERE/release.json")"* ]]; then
+      printf 'RECOVERY_REQUIRED_PUBLISHED\n' > "$state"
+      exit "$rc"
+    fi
     printf 'ROLLBACK_ATTEMPT\n' > "$state"
-    if "${compose[@]}" -f "$HERE/rollback.override.yaml" up -d --no-deps --no-build moss; then
-      printf 'ROLLBACK_STARTED\n' > "$state"
-      # Do not call a started rollback healthy before checking it.
-      for i in $(seq 1 45); do
-        [[ "$(docker inspect "$CONTAINER" --format '{{.Image}} {{.State.Health.Status}}' 2>/dev/null || true)" == "$BASE healthy" ]] && { printf 'ROLLED_BACK_HEALTHY\n' > "$state"; break; }
-        sleep 2
-      done
-    else
-      printf 'ROLLBACK_FAILED\n' > "$state"
+    current="$(docker inspect "$CONTAINER" --format '{{.Image}} {{.State.Health.Status}}' 2>/dev/null || true)"
+    if [[ "$current" != "$BASE healthy" ]]; then
+      if [[ "$current" != "$NEXT "* ]]; then
+        printf 'RECOVERY_REQUIRED_UNKNOWN_CONTAINER\n' > "$state"
+        exit "$rc"
+      fi
+      if "${compose[@]}" -f "$HERE/rollback.override.yaml" up -d --no-deps --no-build moss; then
+        printf 'ROLLBACK_STARTED\n' > "$state"
+        for i in $(seq 1 45); do
+          [[ "$(docker inspect "$CONTAINER" --format '{{.Image}} {{.State.Health.Status}}' 2>/dev/null || true)" == "$BASE healthy" ]] && break
+          sleep 2
+        done
+      else
+        printf 'ROLLBACK_FAILED\n' > "$state"
+      fi
+    fi
+    if [[ "$(docker inspect "$CONTAINER" --format '{{.Image}} {{.State.Health.Status}}' 2>/dev/null || true)" == "$BASE healthy" ]]; then
+      if python3 "$HERE/source_transition.py" rollback; then
+        printf 'ROLLED_BACK_HEALTHY\n' > "$state"
+      else
+        printf 'SOURCE_ROLLBACK_FAILED\n' > "$state"
+      fi
     fi
   fi
   exit "$rc"
@@ -35,12 +59,15 @@ rollback() {
 trap rollback EXIT
 printf 'ACTIVATING\n' > "$state"
 restore=1
-"${compose[@]}" up -d --no-deps --no-build moss
+python3 "$HERE/source_transition.py" prepare
+docker compose -f "$STACK/compose.yaml" up -d --no-deps --no-build moss
 for i in $(seq 1 45); do
   if [[ "$(docker inspect "$CONTAINER" --format '{{.Image}} {{.State.Health.Status}}' 2>/dev/null || true)" == "$NEXT healthy" ]]; then
     docker exec "$CONTAINER" curl -fsS http://127.0.0.1:8787/health >/dev/null
     docker exec "$CONTAINER" curl -fsS http://127.0.0.1:8648/health >/dev/null
     curl -fsS http://127.0.0.1:8644/health >/dev/null
+    python3 "$HERE/source_transition.py" verify-runtime
+    python3 "$HERE/source_transition.py" publish
     restore=0
     printf 'ACTIVE_HEALTHY %s\n' "$(docker inspect "$CONTAINER" --format '{{.Id}}')" > "$state"
     trap - EXIT

@@ -10,14 +10,17 @@ printf 'SUPERVISING pid=%s\n' "$$" > "$HERE/launcher.state"
 # Fixed maximum bounds the host-side worker; abrupt worker death is reconciled.
 timeout --signal=TERM --kill-after=5s 240s bash "$HERE/activate.sh" approved-activate
 rc=$?
-if [[ "$rc" == 0 && "$(docker inspect the-ai-crowd-moss-1 --format '{{.Image}} {{.State.Health.Status}}' 2>/dev/null || true)" == "$NEXT healthy" ]]; then
+if [[ "$rc" == 0 && "$(docker inspect the-ai-crowd-moss-1 --format '{{.Image}} {{.State.Health.Status}}' 2>/dev/null || true)" == "$NEXT healthy" &&
+      "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["state"])' "$HERE/source-receipt.json" 2>/dev/null || true)" == SOURCE_PUBLISHED ]]; then
   printf 'ACTIVE_HEALTHY pid=%s\n' "$$" > "$HERE/launcher.state"
   exit 0
 fi
 current="$(docker inspect the-ai-crowd-moss-1 --format '{{.Image}} {{.State.Health.Status}}' 2>/dev/null || true)"
 if [[ "$current" == "$BASE healthy" ]]; then
-  printf 'ROLLED_BACK_HEALTHY worker_rc=%s\n' "$rc" > "$HERE/launcher.state"
-  exit 1
+  if bash "$HERE/rollback.sh" approved-rollback; then
+    printf 'ROLLED_BACK_HEALTHY worker_rc=%s\n' "$rc" > "$HERE/launcher.state"
+    exit 1
+  fi
 fi
 # Guard against unrelated concurrent changes. If the worker died after the
 # replacement, roll back only a recognized candidate state, not an unknown image.

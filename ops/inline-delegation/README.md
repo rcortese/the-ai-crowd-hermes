@@ -1,52 +1,48 @@
-# Moss WebUI HTTP delegation: prepared host-only cutover
+# Moss inline HTTP delegation: canonical-source release candidate
 
-Scope: Moss all-in-one container only. Chat Completions and Runs API accept the
-per-request `X-Hermes-Delegate-Mode: inline` header; the Moss WebUI sends it on
-both paths. Other HTTP clients retain existing detached delegation semantics.
-No session store, credential, Telegram, or other persona changes.
+Moss-only source lineage: agent `7cfcce43d80e`, WebUI `f40a6a8674d2`.
+The older running image is extended with three preimage-hash-bound edits. WebUI
+requests inline delegation over Chat Completions and Runs API; non-WebUI
+clients keep their existing behavior. The built candidate image is
+`sha256:14a0a1930c386a9342efae4db712d3dcd39a9c4298709dcc3e0b39863a612f30`.
 
-Source lineage: agent `7cfcce43d80ee913c0c007a86ef3c9383c0b90b0`, WebUI
-`f40a6a8674d2842a0be7bdb7b65e963d2af71bc4`. These full candidate
-files are NOT copied into the older running image. `apply.py` applies only the
-three semantic edits to SHA-bound installed files. `build.sh` guards the local
-base image ID, builds `local/moss-inline-delegation:prepared-v1`, then tests
-hashes and imports in a disposable container with networking disabled.
+Canonical release: the source branch pins this image in `compose.yaml`.
+The existing `projects` writable bind in source remains; deployment will
+converge to EIGHT mounts, not silently remove that source contract. The old
+running container has seven mounts. No other persona image selection is
+changed in the source commit.
 
-Host package: `/mnt/ssd/appdata/the-ai-crowd/staging/inline-delegation-f842332`.
-Preflight: `python3 <host package>/preflight.py`. It must report READY against
-the currently active image, healthy container, Compose input hash, matching
-mount projection, and prepared candidate. Stop on ANY drift. The host's
-Compose service currently differs from the running container: it adds a
-`projects` bind. `compose.override.yaml` uses Compose `!override` to preserve
-exactly the seven current mounts. Do not use plain `docker compose up moss`.
+The private host package lives at
+`/mnt/ssd/appdata/the-ai-crowd/staging/inline-delegation-f842332`.
+`release.json` binds the final source commit and `release.bundle` SHA-256.
+The host source checkout is at `de1afd1` with a dirty Compose file: one line
+pins Moss to the active old image, another unrelated service image is locally
+updated. `source_transition.py` checks exact preimages, stages new source
+files from the bundle, preserves that unrelated image line, advances the
+host branch by CAS, and retains a private Compose/index backup and receipt.
+No reset, clean, stash, or ordinary merge over the dirty host checkout.
 
-After Rodolfo's explicit OK only: via SSH on the Docker host, execute
-`bash <host package>/launch.sh approved-launch`. Never run it through
-`docker exec`: the replacement terminates the initiating Moss process.
-The host launcher checks the preflight, starts a `setsid`/`nohup` supervisor
-outside the container, and writes `launcher.pid` and `launcher.state` to
-persistent host storage. Inspect the host PID and receipt after the request
-ends. The supervisor runs the worker with a timeout and reconciles its exit;
-the worker takes a host flock, repeats preflight before Compose, runs a
-service-only no-build up, waits for Docker health and three endpoints, and
-attempts service-only rollback on failure. The supervisor retries rollback
-when an interrupted worker left the candidate present. A killed host or
-missing/unknown container needs operator reconciliation; no automatic host
-reboot recovery is claimed. Read both states, supervisor process exit, new
-container ID/image, and actual health before claiming activation. An
-`ACTIVE_HEALTHY` receipt proves service health, NOT functional delegation:
-Rodolfo's practical WebUI turn will validate that separately.
+After Rodolfo's explicit OK only: from SSH on the Docker HOST run
+`bash <host package>/launch.sh approved-launch`; never use `docker exec`.
+The host `setsid`/`nohup` supervisor records its PID before the initiating
+Moss container is replaced. The worker prepares the source transaction,
+renders the canonical Compose, runs `docker compose -f compose.yaml up -d
+--no-deps --no-build moss` (NO image/mount overlay for activation), checks
+health, all eight mounts and endpoints, then fast-forwards remote `main` and
+reads it back. The host checkout keeps the other service's local image edit.
+`ACTIVE_HEALTHY` is infrastructure health, not proof of functional
+delegation; Rodolfo will verify an actual WebUI turn afterward.
 
-Manual reversal after a healthy cutover: on the Docker host run
-`bash <host package>/rollback.sh approved-rollback`. It requires the expected
-Compose hash and the candidate image currently active. Wait for
-`ROLLED_BACK_HEALTHY` in `activation.state` and confirm old image and health.
-This is a narrowly scoped runtime exception; the host Compose's main image
-field remains on the old image. Before a later unrelated Compose rollout,
-merge the approved image into the versioned deployment source or roll back:
-otherwise a plain Compose up can undo this fix. A successful host cutover is
-not a full fleet-source promotion.
+Before remote publication, failures attempt recovery of Moss to the previous
+image with seven mounts, then restore the exact prior host Compose/index and
+Git ref. A missing container, unknown image, lost remote visibility, or
+interruption after remote publication is RECOVERY_REQUIRED, not permission
+for a blind ref rewind. `rollback.sh approved-rollback` is ONLY for recovery
+of an interrupted, unpublished cutover. Do not use it after success:
+post-publication reversal requires a NEW, versioned revert commit and a
+separately reconciled runtime change, never force-push/rewrite main.
 
-Current status: image built, offline import and hash checks green, host
-preflight green; activation and real human turn NOT run. No automation
-should infer deployment from the presence of these files or the image tag.
+The package alone is not activation. At each stage inspect `launcher.state`,
+`activation.state`, `source-receipt.json`, host Git HEAD/dirty status,
+remote main, container image/mounts/health, and the service endpoints. A
+host power loss still needs manual reconciliation against these receipts.
