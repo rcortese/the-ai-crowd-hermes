@@ -25,10 +25,10 @@ valid_rfc3339_tz() {
 
 map_error() {
   local raw="$1"
-  if grep -Eqi 'keyring.password|no OAuth tokens|invalid_grant|\b401\b|unauth|forbidden|expired|revoked|credentials.*missing|no token|auth' <<<"$raw"; then
-    echo auth_failure
-  elif grep -Eqi 'insufficient.*scope|insufficientPermissions|insufficient authentication scopes' <<<"$raw"; then
+  if grep -Eqi 'insufficient.*scope|insufficientPermissions|insufficient authentication scopes' <<<"$raw"; then
     echo insufficient_scope
+  elif grep -Eqi 'keyring.password|no OAuth tokens|invalid_grant|\b401\b|unauth|forbidden|expired|revoked|credentials.*missing|no token|auth' <<<"$raw"; then
+    echo auth_failure
   elif grep -Eqi '\b429\b|rate limit' <<<"$raw"; then
     echo rate_limited
   elif grep -Eqi 'not[ -]?found|404' <<<"$raw"; then
@@ -131,7 +131,7 @@ cmd_get_event() {
 }
 cmd_capture_event() {
   require_jq capture-event; need_adapter capture-event
-  local calendar_id="" summary="" from="" to="" description="" location=""
+  local calendar_id="" summary="" from="" to="" description="" location="" all_day=0
   while (($#)); do
     case "$1" in
       --calendar) calendar_id="${2:-}"; shift 2;;
@@ -140,15 +140,21 @@ cmd_capture_event() {
       --to) to="${2:-}"; shift 2;;
       --description) description="${2:-}"; shift 2;;
       --location) location="${2:-}"; shift 2;;
+      --all-day) all_day=1; shift;;
       *) fail_json capture-event invalid_argument;;
     esac
   done
   [[ -n "$calendar_id" && -n "$summary" && -n "$from" && -n "$to" ]] || fail_json capture-event invalid_argument
-  valid_rfc3339_tz "$from" && valid_rfc3339_tz "$to" || fail_json capture-event invalid_argument
+  if [[ "$all_day" -eq 1 ]]; then
+    [[ "$from" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$to" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$from" < "$to" ]] || fail_json capture-event invalid_argument
+  else
+    valid_rfc3339_tz "$from" && valid_rfc3339_tz "$to" || fail_json capture-event invalid_argument
+  fi
   read_nul_args gog_args
   local out err rc cls checked
   out="$(mktemp)"; err="$(mktemp)"; trap 'rm -f "$out" "$err"' RETURN
   local args=(calendar create "$calendar_id" --summary "$summary" --from "$from" --to "$to" --send-updates none "${gog_args[@]}")
+  [[ "$all_day" -eq 1 ]] && args+=(--all-day)
   [[ -n "$description" ]] && args+=(--description "$description")
   [[ -n "$location" ]] && args+=(--location "$location")
   set +e; "$GOG_BIN" "${args[@]}" >"$out" 2>"$err"; rc=$?; set -e
