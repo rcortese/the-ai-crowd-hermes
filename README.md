@@ -40,7 +40,7 @@ agents/public/          Contratos públicos de cada assistente
 agents/private/         Espaços privados ignorados pelo git
 runtime/                Homes locais de runtime ignoradas pelo git
 schemas/                Schemas JSON para contratos públicos remanescentes
-examples/               Exemplos públicos de kanban e review gates
+examples/               Exemplos públicos de cartões kanban
 ops/images/             Dockerfiles dos assistentes
 ops/manifests/          Inventários de ferramentas e exemplos de capacidade
 ops/policies/           Políticas de mounts, capacidades e overlays privados
@@ -90,7 +90,7 @@ Fluxo básico esperado em um checkout de implantação:
 
 ```bash
 docker compose config
-docker compose up -d --build moss
+docker compose up -d --no-build moss
 docker compose ps
 ```
 

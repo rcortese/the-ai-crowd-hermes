@@ -38,8 +38,7 @@ This index is the public reader path for the Hermes scaffold.
 - Public sample objects live in [`../examples/`](../examples/).
 - Kanban lifecycle and resumption rules live in [`architecture/kanban-workflow.md`](architecture/kanban-workflow.md).
 - Example kanban cards live in [`../examples/kanban/`](../examples/kanban/).
-- Example handoffs live in [`../examples/handoffs/`](../examples/handoffs/).
-- Example review gates live in [`../examples/review-gates/`](../examples/review-gates/).
+- Design proposals that are not yet decisions live in [`proposals/`](proposals/).
 - Capability examples and tool inventories live in [`../ops/manifests/`](../ops/manifests/).
 
 ## Validation

@@ -1,6 +1,8 @@
 name: honcho-local
 
-x-honcho-common: &honcho-common
+# Settings shared by the Honcho API and deriver. YAML merge is shallow, so a
+# service that sets `depends_on` or `networks` replaces the whole value.
+x-honcho-app: &honcho-app
   build:
     context: ./honcho-src
     dockerfile: Dockerfile
@@ -38,7 +40,7 @@ x-honcho-common: &honcho-common
 
 services:
   honcho-api:
-    <<: *honcho-common
+    <<: *honcho-app
     entrypoint: ["sh", "docker/entrypoint.sh"]
     ports:
       - "127.0.0.1:18000:8000"
@@ -53,7 +55,7 @@ services:
         aliases: [honcho-api]
 
   honcho-deriver:
-    <<: *honcho-common
+    <<: *honcho-app
     command: ["python", "-m", "src.deriver"]
     depends_on:
       honcho-api:
