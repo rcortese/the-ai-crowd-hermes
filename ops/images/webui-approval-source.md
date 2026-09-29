@@ -22,6 +22,6 @@ interactive confirmation. It does not establish that the WebUI button works:
 a human must exercise an actual approval. Do not re-run it on an already
 patched service. Its private receipts and production Compose are not committed.
 
-The sealed `ops/releases/20260922*` image manifests describe earlier immutable
+Earlier sealed release manifests (kept in private custody) describe immutable
 candidates; do not rewrite them to imply they contain this correction. Any
 future release packet must bind and test newly built images before rollout.
