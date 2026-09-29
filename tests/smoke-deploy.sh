@@ -79,7 +79,7 @@ services:
       - ${MOSS_SMOKE_ROOT}/private:/agents/moss/private:rw
       - ${MOSS_SMOKE_ROOT}/shared:/mnt/hermes-shared
       - ${MOSS_SMOKE_ROOT}/archive:/archiveops/richmond:ro
-      - ${MOSS_SMOKE_ROOT}/backups:/mnt/user/backups/the-ai-crowd:rw
+      - ${MOSS_SMOKE_ROOT}/backups:/backups/the-ai-crowd:rw
 networks:
   smoke: {}
 YAML
