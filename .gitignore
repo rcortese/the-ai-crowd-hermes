@@ -41,6 +41,15 @@ venv/
 # Local operational evidence and candidate artifacts
 /logs/
 /ops/candidates/
+/ops/deploy-runs/
+/ops/releases/
+/ops/honcho-*-package/
+/DEPLOY-*.md
+/deploy-receipts/
+/artifacts/
+/.staging/
+/.worktrees/
+/worktrees/
 /build-contexts/
 /compose.yaml.bak-*
 /operation-control/
