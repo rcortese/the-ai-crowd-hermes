@@ -23,16 +23,28 @@ Inside an agent container, those planes are consumed as:
 
 Mount the public contract and private workspace separately. Do not mount the repository root or the whole `agents/` tree into a normal agent container.
 
-Accepted pattern for Moss:
+Accepted pattern for a regular agent (Jen, Denholm, Richmond, The Elders):
 
 ```text
-./runtime/moss-home:/opt/data
-./agents/public/moss:/agents/moss/public:ro
-./agents/private/moss:/agents/moss/private:rw
+./runtime/<agent>-home:/opt/data
+./agents/public/<agent>:/agents/<agent>/public:ro
+./agents/private/<agent>:/agents/<agent>/private:rw
 ./state/shared:/mnt/hermes-shared
 ```
 
-Repeat the same pattern for other agents by replacing the slug.
+Moss runs from an immutable runtime snapshot instead. The public contract and the
+private source are both mounted read-only from `runtime/moss-*-<release>`; only
+`projects/` is writable:
+
+```text
+./runtime/moss-home-<release>:/opt/data
+./runtime/moss-public-<release>:/agents/moss/public:ro
+./runtime/moss-source-<release>:/agents/moss/private:ro
+./runtime/moss-source-<release>/projects:/agents/moss/private/projects   # rw
+./state/shared:/mnt/hermes-shared
+```
+
+`<release>` is `MOSS_RUNTIME_RELEASE` in `compose.yaml`.
 
 ## Retired risk patterns
 
