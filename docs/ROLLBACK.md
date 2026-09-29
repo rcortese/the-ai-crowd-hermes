@@ -43,7 +43,7 @@ git status --short
 git diff > <private-secrets-or-backups-dir>/pre-reset-$(date +%Y%m%d%H%M%S).patch
 ```
 
-Then restore the captured source reference only when source rollback is required. Restore the ignored pre-cutover `*_IMAGE_REF` selector values from the rollback tuple and recreate from those already-present immutable images:
+Then restore the captured source reference only when source rollback is required. Restore the pre-cutover `services.<name>.image` values in `compose.yaml` from the rollback tuple and recreate from those already-present immutable images:
 
 ```bash
 git fetch origin

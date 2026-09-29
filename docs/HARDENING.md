@@ -1,10 +1,10 @@
 # Hardening backlog
 
-This is the minimum hardening backlog before expanding Hermes beyond the Moss MVP.
+This is the minimum hardening backlog for the public scaffold.
 
 ## Access control
 
-- Keep `moss` without host `ports:` bindings.
+- Keep host `ports:` bindings to the single approved Moss webhook port (`8644`); every other service stays internal-only.
 - Keep dashboard hostnames, credentials, and access rules in private deployment config, not in this public repository.
 - Keep the public Compose file on a single canonical deploy path.
 - Use private-network DNS and authenticated reverse-proxy rules for access.
@@ -14,7 +14,6 @@ This is the minimum hardening backlog before expanding Hermes beyond the Moss MV
 ## Runtime containment
 
 - Do not mount Docker socket or private-host SSH keys into Moss until separately reviewed.
-- Keep Richmond and the-elders profile-gated until their first dedicated validation.
 - Preserve Richmond as archive/document tooling, not host-control tooling.
 - Preserve the-elders as packet/read-only tooling.
 

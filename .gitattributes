@@ -1,1 +1,3 @@
 # Unified-diff payloads retain upstream whitespace verbatim so their context applies exactly.
+*.diff -whitespace
+*.patch -whitespace
