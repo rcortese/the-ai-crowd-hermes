@@ -6,7 +6,7 @@ This repository is public by design. It should make The AI Crowd Hermes runtime 
 
 Commit these when useful:
 
-- Dockerfiles, base Compose files, example overrides, and tool manifests.
+- Deployment-agnostic Compose examples, example overrides, and capability manifests. Environment-specific Dockerfiles and fleet image/build closures are private deployment source, not part of this scaffold.
 - Agent public identity and operating contracts under `agents/public/<agent>/`.
 - Architecture docs, ADRs, schemas, and tests.
 - Public-safe runbooks and validation scripts.
@@ -63,11 +63,16 @@ Do not use real private names, addresses, or paths in examples.
 
 ## Publication rule
 
-Before committing or pushing public files, run:
+Before committing public files, run the offline suite against the working tree:
 
 ```bash
-./tests/release-scan.sh
-./tests/validate-schemas.sh
+./tests/run-all.sh
 ```
 
-The scan is a guardrail, not a guarantee. If a file is private by nature, keep it ignored or move it into a private repo.
+Before pushing, also run the committed archive and all-heads/tags history gate:
+
+```bash
+python3 tests/privacy_guard.py --mode all
+```
+
+The offline suite alone does not certify committed history. The scanner is a guardrail, not a guarantee; if a file is private by nature, move its source into the appropriate private repository. Ignored local slots do not establish durable versioning. Public source publication does not install, build, activate or authorize a deployment. Hosting-service PR refs/caches and external copies are outside this local gate.
