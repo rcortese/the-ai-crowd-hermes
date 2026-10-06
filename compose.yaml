@@ -1,0 +1,66 @@
+{
+  "name": "the-ai-crowd-example",
+  "services": {
+    "moss": {
+      "image": "${MOSS_IMAGE:?set MOSS_IMAGE to your reviewed image}",
+      "environment": {"AGENT_NAME": "moss", "HERMES_HOME": "/runtime", "TERMINAL_CWD": "/workspace"},
+      "volumes": [
+        {"type": "bind", "source": "${MOSS_RUNTIME_ROOT:?set MOSS_RUNTIME_ROOT}", "target": "/runtime", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "${MOSS_WORKSPACE_ROOT:?set MOSS_WORKSPACE_ROOT}", "target": "/workspace", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "./agents/public/moss", "target": "/contracts", "read_only": true}
+      ],
+      "networks": ["internal"]
+    },
+    "jen": {
+      "image": "${JEN_IMAGE:?set JEN_IMAGE to your reviewed image}",
+      "environment": {"AGENT_NAME": "jen", "HERMES_HOME": "/runtime", "TERMINAL_CWD": "/workspace"},
+      "volumes": [
+        {"type": "bind", "source": "${JEN_RUNTIME_ROOT:?set JEN_RUNTIME_ROOT}", "target": "/runtime", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "${JEN_WORKSPACE_ROOT:?set JEN_WORKSPACE_ROOT}", "target": "/workspace", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "./agents/public/jen", "target": "/contracts", "read_only": true}
+      ],
+      "networks": ["internal"]
+    },
+    "denholm": {
+      "image": "${DENHOLM_IMAGE:?set DENHOLM_IMAGE to your reviewed image}",
+      "environment": {"AGENT_NAME": "denholm", "HERMES_HOME": "/runtime", "TERMINAL_CWD": "/workspace"},
+      "volumes": [
+        {"type": "bind", "source": "${DENHOLM_RUNTIME_ROOT:?set DENHOLM_RUNTIME_ROOT}", "target": "/runtime", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "${DENHOLM_WORKSPACE_ROOT:?set DENHOLM_WORKSPACE_ROOT}", "target": "/workspace", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "./agents/public/denholm", "target": "/contracts", "read_only": true}
+      ],
+      "networks": ["internal"]
+    },
+    "roy": {
+      "image": "${ROY_IMAGE:?set ROY_IMAGE to your reviewed image}",
+      "environment": {"AGENT_NAME": "roy", "HERMES_HOME": "/runtime", "TERMINAL_CWD": "/workspace"},
+      "volumes": [
+        {"type": "bind", "source": "${ROY_RUNTIME_ROOT:?set ROY_RUNTIME_ROOT}", "target": "/runtime", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "${ROY_WORKSPACE_ROOT:?set ROY_WORKSPACE_ROOT}", "target": "/workspace", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "./agents/public/roy", "target": "/contracts", "read_only": true}
+      ],
+      "networks": ["internal"]
+    },
+    "richmond": {
+      "image": "${RICHMOND_IMAGE:?set RICHMOND_IMAGE to your reviewed image}",
+      "environment": {"AGENT_NAME": "richmond", "HERMES_HOME": "/runtime", "TERMINAL_CWD": "/workspace"},
+      "volumes": [
+        {"type": "bind", "source": "${RICHMOND_RUNTIME_ROOT:?set RICHMOND_RUNTIME_ROOT}", "target": "/runtime", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "${RICHMOND_WORKSPACE_ROOT:?set RICHMOND_WORKSPACE_ROOT}", "target": "/workspace", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "./agents/public/richmond", "target": "/contracts", "read_only": true}
+      ],
+      "networks": ["internal"]
+    },
+    "the-elders": {
+      "image": "${THE_ELDERS_IMAGE:?set THE_ELDERS_IMAGE to your reviewed image}",
+      "environment": {"AGENT_NAME": "the-elders", "HERMES_HOME": "/runtime", "TERMINAL_CWD": "/workspace"},
+      "volumes": [
+        {"type": "bind", "source": "${THE_ELDERS_RUNTIME_ROOT:?set THE_ELDERS_RUNTIME_ROOT}", "target": "/runtime", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "${THE_ELDERS_WORKSPACE_ROOT:?set THE_ELDERS_WORKSPACE_ROOT}", "target": "/workspace", "bind": {"create_host_path": false}},
+        {"type": "bind", "source": "./agents/public/the-elders", "target": "/contracts", "read_only": true}
+      ],
+      "networks": ["internal"]
+    }
+  },
+  "networks": {"internal": {"internal": true}}
+}

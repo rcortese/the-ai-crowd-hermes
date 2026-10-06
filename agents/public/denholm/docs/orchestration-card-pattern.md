@@ -16,7 +16,7 @@ It is deliberately lightweight: one card per phase, one concise completion respo
 
 Use this pattern when all of these are true:
 
-- Configured Operator approved or requested Denholm to coordinate work across specialists.
+- the configured operator approved or requested Denholm to coordinate work across specialists.
 - The work benefits from phase-by-phase control.
 - The receiving specialist needs enough context to act without re-deciding the product direction.
 - Ownership boundaries matter.
@@ -43,7 +43,7 @@ Do not use an Orchestration Card for:
 
 An Orchestration Card is a bounded request record. The only active remote transport is native Hermes A2A from Moss to Denholm; local Moss specialist consultations use the local dispatcher. Denholm does not select a reverse remote transport to Moss.
 
-Do not route the card through sessions, dashboards, direct chat, groups, Kanban, shared files, a broker, a retired RPC transport, or any active Configured Operator conversation. The request is self-contained and a target's private session history is not an input.
+Do not route the card through sessions, dashboards, direct chat, groups, Kanban, shared files, a broker, a retired RPC transport, or any active the configured operator conversation. The request is self-contained and a target's private session history is not an input.
 
 When continuity matters, state it explicitly in the card without selecting or reusing a session:
 
@@ -88,10 +88,10 @@ COMMITS: <commit ids, push state, or none>
 VALIDATION: <checks/reviews/proof>
 RISKS: <residual risks or none>
 LEARNINGS: <what should adjust the next phase>
-NEXT_RECOMMENDATION: <continue / pause / change plan / ask Configured Operator>
+NEXT_RECOMMENDATION: <continue / pause / change plan / ask the configured operator>
 ```
 
-Denholm then decides the next phase, records the learning if useful, and only escalates to Configured Operator when the stop condition requires it.
+Denholm then decides the next phase, records the learning if useful, and only escalates to the configured operator when the stop condition requires it.
 
 ## Ownership rules
 
@@ -105,7 +105,7 @@ Denholm then decides the next phase, records the learning if useful, and only es
 
 If another session or agent sends a panic/containment message during a card-driven run:
 
-1. If Configured Operator directly instructs stop/pause, stop.
+1. If the configured operator directly instructs stop/pause, stop.
 2. If the message is from another agent/session, classify whether it identifies a real safety risk or is incident noise.
 3. Continue only work that is still within the current card and its stop conditions.
 4. Pause before operational side effects that the card did not clearly authorize.
@@ -129,9 +129,9 @@ Resposta esperada: STATUS/PHASE/CHANGES/COMMITS/VALIDATION/RISKS/LEARNINGS/NEXT_
 
 - Sending a multi-page project brief when a short phase card would work.
 - Sending a new task into a dirty old specialist session, especially one carrying incident/debug/product context from a different run.
-- Sending A2A work into `main`, `dashboard`, direct-chat, group, or any active Configured Operator conversation.
+- Sending A2A work into `main`, `dashboard`, direct-chat, group, or any active the configured operator conversation.
 - Reusing a session without naming what context should be preserved and what should be ignored.
-- Asking Configured Operator to create/open a clean Moss execution session instead of using Denholm's session-spawn capability.
+- Asking the configured operator to create/open a clean Moss execution session instead of using Denholm's session-spawn capability.
 - Letting Moss infer product decisions from implementation details.
 - Treating Denholm as a generic dispatcher instead of product owner.
 - Bouncing a request between agents without a clear owner.

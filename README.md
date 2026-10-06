@@ -1,121 +1,51 @@
 # The AI Crowd Hermes
 
-The AI Crowd Hermes é um laboratório público para rodar um pequeno grupo de assistentes especializados sobre Hermes Agent.
+Public distribution scaffold for specialized assistants on Hermes Agent. It is not an installed fleet, a private source authority, or a ready-to-deploy image release.
 
-A ideia é simples: cada assistente tem uma função clara, um espaço próprio de execução, limites explícitos de autoridade e uma forma padronizada de pedir ajuda, transferir trabalho e devolver resultado para outro assistente ou para o operador.
-
-Este repositório guarda a parte pública e reproduzível desse sistema: contratos, imagens, Compose, exemplos, schemas, políticas e testes. A parte privada — credenciais, memória, histórico, tokens, rotas reais, chaves e detalhes de infraestrutura — fica fora do git público.
-
-## O que este projeto faz
-
-- Define assistentes com responsabilidades diferentes, em vez de um único agente genérico.
-- Roda esses assistentes como serviços separados, com homes, workspaces e contratos próprios.
-- Usa A2A nativo do Hermes para o edge remoto aprovado Moss→Denholm; consultas entre perfis locais de Moss usam o dispatcher local.
-- Usa storage compartilhado apenas para artefatos passivos referenciados.
-- Usa testes para validar rotas, permissões, mounts e limites de segurança.
-- Separa claramente o que pode ser público do que pertence a uma implantação privada.
-- Oferece um ponto de partida prático para evoluir um sistema de assistência pessoal com especialistas colaborando entre si.
-
-## Assistentes modelados aqui
-
-| Assistente | Papel |
+| Assistant | Role |
 |---|---|
-| Moss | Operações técnicas, infraestrutura, runtime, incidentes e execução técnica. |
-| Jen | Produtividade, tarefas, agenda e fluxos pessoais. |
-| Denholm | Produto, coerência entre agentes, decisões e direcionamento. |
-| Roy | Assistência pessoal direta para um usuário configurado, com recebimento, organização e encaminhamento prático de pedidos do dia a dia. |
-| Richmond | Stewardship de arquivo e organização de materiais. |
-| The Elders | Respostas preparadas a partir de pacotes aprovados e escopo restrito. |
+| Moss | Technical operations, infrastructure, runtime and incidents |
+| Jen | Productivity, tasks and calendar |
+| Denholm | Product stewardship and cross-agent coherence |
+| Roy | Direct personal assistance for the configured operator |
+| Richmond | Archive stewardship |
+| The Elders | Answers from approved, restricted packets |
 
-Os papéis são intencionais. Quando um assunto pertence a outro assistente, o sistema deve encaminhar com contexto suficiente, em vez de misturar responsabilidades.
+## Contents and boundaries
 
-## Como a colaboração funciona
+- `agents/public/`: persona contracts, portable tools and examples.
+- `schemas/` and `examples/`: public data contracts and synthetic examples.
+- `ops/manifests/` and `ops/policies/`: capability and access examples.
+- `ops/runtime-backup-retention.py`: portable manifest-based retention engine; no installer, host target or automatic activation.
+- `compose.yaml`: deployment-agnostic example with explicit image and mount variables.
+- `tests/`: offline source tests and publication gates.
 
-O transporte remoto ativo é A2A nativo do Hermes, inicialmente somente Moss→Denholm, com alias e credencial direcionais definidos no runtime. Consultas entre perfis locais de Moss (por exemplo, Moss→reviewer) usam o dispatcher local e não criam uma rota remota. Outros edges remotos permanecem sem transporte até uma decisão e ativação próprias; não há fallback para arquivo, Kanban ou broker. Artefatos grandes podem permanecer no storage compartilhado apenas como dados passivos referenciados.
+Private deployment runners, provider configuration, build closures, fleet image locks and operational incident records are not distributed here. Credentials, memories, logs, sessions and runtime state must stay outside public Git. Public contracts grant no access to another persona's private sources.
 
-## Estrutura do repositório
+## Offline validation
 
-```text
-agents/public/          Contratos públicos de cada assistente
-agents/private/         Espaços privados ignorados pelo git
-runtime/                Homes locais de runtime ignoradas pelo git
-schemas/                Schemas JSON para contratos públicos remanescentes
-examples/               Exemplos públicos de cartões kanban
-ops/images/             Dockerfiles dos assistentes
-ops/manifests/          Inventários de ferramentas e exemplos de capacidade
-ops/policies/           Políticas de mounts, capacidades e overlays privados
-docs/                   Arquitetura, validação, produção e runbooks
-tests/                  Testes públicos e verificações de segurança
-compose.yaml            Stack local/base dos serviços
-```
-
-## Runtime atual
-
-O `compose.yaml` descreve uma stack com:
-
-- serviços Hermes separados para Moss, Jen, Denholm, Roy, Richmond e The Elders;
-- homes de runtime por assistente em `runtime/<assistente>-home`;
-- contratos públicos montados como somente leitura;
-- workspaces privados montados como leitura/escrita;
-- storage compartilhado para artefatos passivos;
-- healthchecks por serviço;
-- Persona RPC ask-only entre API Servers;
-- redes separadas para tráfego interno, proxy privado e LLM local.
-
-Moss também possui uma imagem all-in-one para o runtime operacional, com dashboard, gateway, WebUI e webhook no mesmo serviço. Os outros assistentes rodam com contratos e gateways próprios conforme sua função.
-
-## Comece por aqui
-
-Para entender o projeto:
-
-1. Leia o índice de documentação: `docs/README.md`.
-2. Leia a visão de arquitetura: `docs/architecture/system-overview.md`.
-3. Leia o modelo de containers: `docs/architecture/agent-container-model.md`.
-4. Leia a fronteira público/privado: `docs/architecture/public-private-boundary.md`.
-5. Leia os contratos dos assistentes em `agents/public/<assistente>/`.
-
-Para validar a parte pública:
+Requirements: Python 3 standard library, Git and Bash. No Docker, provider credentials, image pulls or network access.
 
 ```bash
 ./tests/run-all.sh
 ```
 
-Esse comando executa validações de contratos, schemas, exemplos, políticas de mounts, scans contra vazamento de estado privado e renderização básica do Compose. Ele é pensado para ser seguro em um checkout público e não deve exigir credenciais privadas.
-
-## Rodando localmente
-
-Uma implantação real precisa de arquivos privados fora do git público, especialmente em `state/secrets/`, `agents/private/` e `runtime/`.
-
-Fluxo básico esperado em um checkout de implantação:
+This checks the candidate working tree and runs synthetic Git/history/archive tests, portable engine tests and source contracts. It does **not** certify existing committed history or a deployment. The separate mandatory publication gate inspects the committed archive and every object reachable from all local heads and tags:
 
 ```bash
-docker compose config
-docker compose up -d --no-build moss
-docker compose ps
+python3 tests/privacy_guard.py --mode all
 ```
 
-Para subir outros assistentes, revise antes os arquivos privados, secrets, variáveis de ambiente, redes externas e políticas de acesso exigidas pela sua instalação.
+Use `--mode tree`, `--mode archive --revision HEAD`, or `--mode history` for diagnostics. Findings contain rule labels and hashed locators, never matching source text. An uncommitted repair can pass tree tests while archive/history still fail; publication remains blocked until the authorized history repair is verified. Export attributes cannot hide tracked files from the archive parity check. Gitlinks and protected runtime roots are rejected.
 
-## Limites importantes
+## Compose example
 
-Este repositório não contém e não deve conter:
+The public Compose example uses the JSON subset of YAML so its syntax and source policy can be validated with the Python standard library, without a YAML package or Docker. `.env.example` lists every required image and mount variable. Its image names are intentionally non-runnable placeholders. Supply reviewed, compatible images and existing private directories locally; the scaffold neither builds nor downloads them. Each service receives `/runtime`, `/workspace` and read-only `/contracts`. Image entrypoints, user identity, secrets, channel configuration, healthchecks and access routing belong to your reviewed private deployment configuration.
 
-- credenciais;
-- tokens de provedores;
-- estado OAuth;
-- histórico de sessões;
-- memória privada;
-- chaves SSH;
-- hostnames reais;
-- detalhes de rede privada;
-- rotas de proxy reais;
-- mounts amplos do host;
-- Docker socket liberado por padrão.
+The example has one internal network, no published ports, no external network, no Docker socket and no broad host mounts. Configure authorized egress explicitly if your runtime needs it. `compose.project-mount.example.yaml` adds only a read-only synthetic project mount. A Compose render requires all base variables even when validating this overlay. No command in the offline suite contacts a Docker daemon.
 
-Ferramenta instalada não é permissão concedida. Uma capacidade só deve ser considerada ativa quando houver configuração privada, credencial, mount, wrapper, política e evidência de validação compatíveis.
+## Documentation
 
-## Para quem este repositório é útil
+Start with [the documentation index](docs/README.md) and persona contracts under `agents/public/`. Architecture and operational guides are examples, not assertions of live access or current production state. Native A2A is a product transport option; no remote edge or credential is activated by this repository.
 
-Este projeto é útil para quem quer experimentar uma arquitetura de assistentes pessoais especializados, com coordenação prática entre agentes, limites verificáveis e um caminho limpo entre protótipo público e implantação privada.
-
-Ele não tenta ser um produto fechado. É um scaffold vivo: pequeno o bastante para auditar, explícito o bastante para evoluir e cuidadoso o bastante para não confundir demonstração pública com acesso real a dados privados.
+Publication is source-only and distinct from deployment. History verification covers local heads/tags, not hosting-service pull-request caches, forks, backups or other copies; passing does not imply universal erasure.

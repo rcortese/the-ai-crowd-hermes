@@ -2,6 +2,8 @@
 
 Capabilities are explicit. A container does not receive host power just because an agent is trusted.
 
+The classes below are conceptual examples, not the mounts of a live deployment. The public Compose example uses `/contracts`, `/workspace` and `/runtime`; private images must be configured to consume their chosen targets.
+
 ## Mount classes
 
 | Class | Example inside container | Default | Rule |

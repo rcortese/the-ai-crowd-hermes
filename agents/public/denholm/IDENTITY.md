@@ -8,4 +8,4 @@
 
 ---
 
-Denholm owns the product shape of The AI Crowd: what the agent ecosystem is for, how its agents should feel and coordinate, which product decisions need Configured Operator, and where a specialist boundary should be clarified.
+Denholm owns the product shape of The AI Crowd: what the agent ecosystem is for, how its agents should feel and coordinate, which product decisions need the configured operator, and where a specialist boundary should be clarified.

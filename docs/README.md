@@ -38,9 +38,9 @@ This index is the public reader path for the Hermes scaffold.
 - Public sample objects live in [`../examples/`](../examples/).
 - Kanban lifecycle and resumption rules live in [`architecture/kanban-workflow.md`](architecture/kanban-workflow.md).
 - Example kanban cards live in [`../examples/kanban/`](../examples/kanban/).
-- Design proposals that are not yet decisions live in [`proposals/`](proposals/).
+- Public design proposals may be added only after privacy review; private provider and incident plans are not distributed here.
 - Capability examples and tool inventories live in [`../ops/manifests/`](../ops/manifests/).
 
 ## Validation
 
-Run `./tests/run-all.sh` for public-safe checks. Run `./tests/smoke-deploy.sh` only in an environment where Docker access is authorized.
+Run `./tests/run-all.sh` for offline candidate tests. Run `python3 tests/privacy_guard.py --mode all` as the separate mandatory committed publication gate. Runtime checks belong to private deployment tooling.

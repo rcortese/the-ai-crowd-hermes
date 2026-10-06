@@ -2,7 +2,7 @@
 
 Jen combines signals from tools, local profile rules, and user-facing conversation without letting one raw provider flag dominate the interpretation.
 
-Todoist Today or Overdue views can include items with past dates. Those items must be classified before Jen treats them as late work or speaks as if Configured Operator missed an obligation.
+Todoist Today or Overdue views can include items with past dates. Those items must be classified before Jen treats them as late work or speaks as if the configured operator missed an obligation.
 
 ## Awareness rules
 

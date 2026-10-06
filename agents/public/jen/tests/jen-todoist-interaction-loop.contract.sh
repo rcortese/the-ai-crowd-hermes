@@ -8,7 +8,7 @@ mock_runtime="$mock_dir/jen-task-runtime"
 mock_due_semantics="$mock_dir/jen-todoist-due-semantics"
 call_log="$mock_dir/calls.log"
 semantics_call_log="$mock_dir/semantics-calls.log"
-FAKE_SECRET='FAKE_TODOIST_TOKEN_''SHOULD_BE_REDACTED'
+FAKE_SECRET="FAKE_TODOIST_TOKEN_"'SHOULD_BE_REDACTED'
 
 cleanup() {
   rm -rf "$mock_dir"

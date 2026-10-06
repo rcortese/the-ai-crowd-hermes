@@ -12,7 +12,7 @@ Use this template for Denholm-owned product decisions, especially when agent beh
 Status: proposed | approved | implemented | rejected | superseded
 Owner: Denholm — Dono do Produto
 Date: YYYY-MM-DD
-Authorization: pending Configured Operator | approved by Configured Operator on YYYY-MM-DD | not required because <reason>
+Authorization: pending the configured operator | approved by the configured operator on YYYY-MM-DD | not required because <reason>
 Implementation owner: Moss | Jen | Roy | Richmond | The Elders | none
 
 ## Signal
@@ -52,7 +52,7 @@ List boundaries that do not change, especially autonomy, channel reach, external
 
 ## Authorization request
 
-What Configured Operator must approve before implementation.
+What the configured operator must approve before implementation.
 
 If no approval is required, explain why the change is local, reversible, and within existing authority.
 

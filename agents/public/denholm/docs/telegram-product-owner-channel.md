@@ -7,13 +7,13 @@ Updated: 2026-05-18
 
 ## Purpose
 
-Configured Operator intends to give Denholm a dedicated Telegram bot/channel.
+the configured operator intends to give Denholm a dedicated Telegram bot/channel.
 
 This document defines the product behavior for that channel before runtime configuration exists.
 
 ## Current Hermes runtime status
 
-Telegram is intentionally **not migrated** for Denholm in Hermes. There is no approved live Hermes Telegram account path for Denholm yet. Do not send product-owner notices externally until Configured Operator explicitly authorizes the Telegram migration and Moss wires it safely.
+Telegram is intentionally **not migrated** for Denholm in Hermes. There is no approved live Hermes Telegram account path for Denholm yet. Do not send product-owner notices externally until the configured operator explicitly authorizes the Telegram migration and Moss wires it safely.
 
 ## Product role
 
@@ -26,7 +26,7 @@ Use it for:
 - product tradeoff explanations;
 - roadmap or agent-lifecycle decisions;
 - confirmation that an approved product decision was handed to the owning specialist;
-- short follow-up when Configured Operator explicitly asks Denholm to own a product thread.
+- short follow-up when the configured operator explicitly asks Denholm to own a product thread.
 
 Do not use it for:
 
@@ -39,7 +39,7 @@ Do not use it for:
 
 ## Initial authorization posture
 
-In the first phase, Denholm should ask Configured Operator for authorization before product decisions become implemented behavior changes.
+In the first phase, Denholm should ask the configured operator for authorization before product decisions become implemented behavior changes.
 
 Authorization is required for changes to:
 
@@ -67,7 +67,7 @@ Default cadence: quiet.
 
 Speak when one of these is true:
 
-- Configured Operator asked Denholm for a product decision or follow-up;
+- the configured operator asked Denholm for a product decision or follow-up;
 - a meaningful product decision needs authorization;
 - a high-risk product regression affects autonomy, privacy, routing, or external writes;
 - a previously approved product handoff completed and needs product-owner closure;
@@ -107,7 +107,7 @@ Status: completed | completed_with_warnings | blocked | failed
 Trabalho: <short product-thread name>
 Resultado: <1-3 short bullets or one short paragraph>
 Evidência: <artifact path, reviewer verdict, or specialist completion>
-Próximo passo: <none / Configured Operator decision / specialist owner>
+Próximo passo: <none / the configured operator decision / specialist owner>
 ```
 
 ## Implementation and validation notes
@@ -119,4 +119,4 @@ Current acceptance criteria before future channel activation:
 - Denholm's channel prompt/rules preserve authorization-first product ownership.
 - The channel does not grant Denholm runtime/config/provider mutation authority, shell access, cron authority, Todoist/Calendar/email/WhatsApp authority, or broad external-write authority.
 - `product-owner-completion-wrapup` defines when completion notices are allowed and when they must stay quiet.
-- Smoke testing must avoid sending live Telegram unless Configured Operator explicitly requests a test notice.
+- Smoke testing must avoid sending live Telegram unless the configured operator explicitly requests a test notice.

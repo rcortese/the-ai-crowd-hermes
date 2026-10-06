@@ -19,7 +19,6 @@
 /secrets/
 /backups/
 ops/secrets/*
-!ops/secrets/.gitkeep
 .private-backups/
 
 # Python/node local noise
@@ -54,7 +53,8 @@ venv/
 /compose.yaml.bak-*
 /operation-control/
 
-# Operational materialization only; unique historical sources were preserved
-# and remotely verified before this exclusion. See docs/operations/staging-reconciliation.md.
-# Keep new durable source in its owning repository, never only under staging/.
+# Local staging is transient, never durable source authority.
+# Keep durable source in its owning repository.
 /staging/
+/local-runtime/
+/local-workspaces/

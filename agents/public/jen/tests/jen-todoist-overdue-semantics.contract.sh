@@ -21,7 +21,7 @@ forbid_fixed() {
 }
 
 # Raw provider/date state is not semantic lateness.
-require_fixed docs/architecture/todoist-model.md '`past_due_raw` is a date signal, not yet a behavioral conclusion that Configured Operator is late'
+require_fixed docs/architecture/todoist-model.md '`past_due_raw` is a date signal, not yet a behavioral conclusion that the configured operator is late'
 require_fixed docs/architecture/todoist-model.md 'Before Jen mentions Todoist due, overdue, or past-date items in user-facing guidance, classify each surfaced item as one of the following categories. Use `bin/jen-todoist-due-semantics` as the executable classification surface when live due-window or task-like JSON evidence is available:'
 require_fixed docs/architecture/todoist-model.md 'bin/jen-todoist-due-semantics'
 require_fixed docs/architecture/signal-reconciliation.md 'raw Todoist due date, overdue flag, or past-date window'

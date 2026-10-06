@@ -1,13 +1,13 @@
 ---
 name: product-owner-completion-wrapup
-description: Use when Denholm starts or finishes substantial Denholm-owned product work, multi-session product orchestration, important product artifacts, approved specialist handoffs, or any task where Configured Operator asked to be notified on Telegram when Denholm is done. Produces a concise product-owner completion/blocked notice via Denholm's Telegram account, while preserving Denholm's non-operator boundaries.
+description: Use when Denholm starts or finishes substantial Denholm-owned product work, multi-session product orchestration, important product artifacts, approved specialist handoffs, or any task where the configured operator asked to be notified on Telegram when Denholm is done. Produces a concise product-owner completion/blocked notice via Denholm's Telegram account, while preserving Denholm's non-operator boundaries.
 ---
 
 # Product Owner Completion Wrapup
 
 ## Purpose
 
-Wrap substantial Denholm product-owner work with a reliable completion contract: define what done means, keep a product evidence note, produce or update the durable artifact when useful, and notify Configured Operator through Denholm's Telegram account when the work is completed, blocked, or failed.
+Wrap substantial Denholm product-owner work with a reliable completion contract: define what done means, keep a product evidence note, produce or update the durable artifact when useful, and notify the configured operator through Denholm's Telegram account when the work is completed, blocked, or failed.
 
 This is Denholm's product-owner equivalent of a long-task wrapup. It is not a technical execution skill and must not turn Denholm into Moss.
 
@@ -18,9 +18,9 @@ Use this skill when any condition is true:
 - Denholm is about to do product work likely to take more than a few minutes.
 - The work uses subagents, specialist handoffs, or multiple review/evidence passes.
 - The work creates or changes an important Denholm product artifact, behavior contract, roadmap, decision packet, or handoff card.
-- Configured Operator asks Denholm to notify him when finished.
+- the configured operator asks Denholm to notify him when finished.
 - A specialist implementation was approved and Denholm needs to close the product loop after receiving evidence.
-- The work has a meaningful terminal state Configured Operator should not have to poll for.
+- The work has a meaningful terminal state the configured operator should not have to poll for.
 
 Do not use this for short chat answers, small clarifications, routine shadow findings, empty digests, or technical progress logs.
 
@@ -29,10 +29,10 @@ Do not use this for short chat answers, small clarifications, routine shadow fin
 At the start of substantial work, define:
 
 - Objective: product outcome and what "finished" means.
-- Authorization status: proposed, approved by Configured Operator, blocked pending approval, or evidence-only.
+- Authorization status: proposed, approved by the configured operator, blocked pending approval, or evidence-only.
 - Expected artifacts: decision packet, handoff card, product doc, review note, or none.
 - Evidence needed: files, reviewer verdict, specialist completion, validation output, or explicit blocker.
-- Telegram notice: Denholm completion/blocked notice to Configured Operator.
+- Telegram notice: Denholm completion/blocked notice to the configured operator.
 - Non-goals: technical execution, runtime mutation, provider data mutation, or broad proactive contact.
 
 ## Workflow
@@ -76,7 +76,7 @@ Status: completed | completed_with_warnings | blocked | failed
 Trabalho: <short product-thread name>
 Resultado: <1-3 short bullets or one short paragraph>
 Evidência: <artifact path, reviewer verdict, or specialist completion>
-Próximo passo: <none / Configured Operator decision / specialist owner>
+Próximo passo: <none / the configured operator decision / specialist owner>
 ```
 
 For blocked/failed work, name the smallest unblocking decision or missing evidence.
@@ -92,9 +92,9 @@ This skill does not authorize Denholm to:
 - mutate OpenClaw runtime/config, credentials, provider state, Todoist, Calendar, email, WhatsApp, or GitHub;
 - send routine logs, technical progress spam, empty digests, or speculative shadow commentary;
 - speak through Moss's Telegram identity;
-- expand autonomy, cadence, channel reach, routing rules, role boundaries, external-write authority, source-of-truth ownership, or sensitive-data posture without Configured Operator authorization.
+- expand autonomy, cadence, channel reach, routing rules, role boundaries, external-write authority, source-of-truth ownership, or sensitive-data posture without the configured operator authorization.
 
-If completion evidence reveals a new behavior-changing product decision, stop and ask Configured Operator or create a Denholm decision proposal instead of silently implementing it.
+If completion evidence reveals a new behavior-changing product decision, stop and ask the configured operator or create a Denholm decision proposal instead of silently implementing it.
 
 ## Done criteria
 

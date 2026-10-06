@@ -1,39 +1,11 @@
-# Hardening backlog
+# Public scaffold hardening
 
-This is the minimum hardening backlog for the public scaffold.
+- Keep the Compose example internal-only, with no published ports, Docker socket, broad host binds or site-specific networks.
+- Keep endpoint authentication, egress, private identities, image admission and credentials in reviewed private deployment configuration.
+- Tool availability is not permission. Preserve persona ownership and packet-only/read-only boundaries.
+- Require explicit image and existing-directory mount variables; do not distribute live image IDs or private build closures.
+- Run `./tests/run-all.sh` offline and `python3 tests/privacy_guard.py --mode all` before publication.
+- Check all heads/tags and tracked archive parity, not just the visible current tree. Rotate exposed credentials separately; history repair does not invalidate secrets or erase external copies.
+- Store private state and backups outside public Git. Rehearse restore and rollback privately before runtime activation.
 
-## Access control
-
-- Keep host `ports:` bindings to the single approved Moss webhook port (`8644`); every other service stays internal-only.
-- Keep dashboard hostnames, credentials, and access rules in private deployment config, not in this public repository.
-- Keep the public Compose file on a single canonical deploy path.
-- Use private-network DNS and authenticated reverse-proxy rules for access.
-- Do not add public DNS or public tunnel exposure without a separate security review.
-- Rotate any deployment credentials if they are exposed outside the private deployment environment.
-
-## Runtime containment
-
-- Do not mount Docker socket or private-host SSH keys into Moss until separately reviewed.
-- Preserve Richmond as archive/document tooling, not host-control tooling.
-- Preserve the-elders as packet/read-only tooling.
-
-## Reproducibility
-
-- `nousresearch/hermes-agent` is pinned by digest through `ops/manifests/base-images.lock.json` and Dockerfile `ARG HERMES_AGENT_IMAGE` defaults.
-- Record the digest used for each production build in private deployment notes.
-- Keep `tests/image-pin.sh`, `tests/health-check.sh`, and `tests/drift-detection.sh` in the release gate.
-- Run `tests/smoke-deploy.sh` only where Docker access is authorized before any production declaration.
-
-## Data protection
-
-- Do not commit `.env`, agent provider credentials, OAuth state, session state, generated dashboard tokens, production hostnames, LAN details, external provider names, or operator contact details.
-- Add the private deployment state directory to the operator's backup procedure after the first credential/provider configuration.
-- Treat `agents/*` in the private deployment as stateful application data, not cache.
-
-## Migration sequencing
-
-1. Stabilize Moss dashboard and provider auth.
-2. Validate Richmond in profile-gated mode.
-3. Validate the-elders in read-only mode.
-4. Port one cron/job/channel at a time with rollback evidence.
-5. Consider any host-control mounts only after endpoint auth and backup are proven.
+These are scaffold controls, not a statement that any production service has been hardened or migrated.

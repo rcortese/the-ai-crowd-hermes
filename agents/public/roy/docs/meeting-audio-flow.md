@@ -1,6 +1,6 @@
 # Roy meeting-audio intake flow
 
-When Configured Operator places a new meeting recording in `transfer`, Roy should resolve the source, open a restricted case, check source/content caches, and dispatch heavy audio processing to the Interns `audio-analyst` service.
+When the configured operator places a new meeting recording in `transfer`, Roy should resolve the source, open a restricted case, check source/content caches, and dispatch heavy audio processing to the Interns `audio-analyst` service.
 
 Roy does not run `ffmpeg`, WhisperX, pyannote, or diarization locally. The versioned Intern tools are supplied by the deployment as configured wrapper paths, for example:
 

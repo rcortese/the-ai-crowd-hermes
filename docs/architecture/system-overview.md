@@ -6,13 +6,16 @@ The AI Crowd Hermes scaffold is the public, reproducible shell for running The A
 
 The public repository describes the runtime shape, contracts, validation, and safe extension points. Private production checkouts add credentials, state, provider configuration, local topology, and nested private repos without committing them to public git.
 
-## Agents
+## Agents represented as examples
 
-- **Moss**: technical operations and Hermes/OpenClaw migration execution. Production-enabled first.
-- **Richmond**: ArchiveOps stewardship. Profile-gated until separately validated.
-- **The Elders**: packet-only archive knowledge. Profile-gated and intentionally constrained.
+- **Moss**: technical operations, infrastructure, runtime and incidents.
+- **Jen**: productivity, tasks and Calendar.
+- **Denholm**: product stewardship and cross-agent coherence.
+- **Roy**: personal assistance for the configured operator.
+- **Richmond**: archive stewardship.
+- **The Elders**: approved packet-only answers.
 
-Other agents may be represented later only after their ownership and runtime boundaries are explicit.
+No enabled service, active credential or deployment status is implied. The Compose example uses explicit image/mount variables and separates read-only `/contracts` from private `/workspace` and `/runtime`.
 
 ## Glossary
 

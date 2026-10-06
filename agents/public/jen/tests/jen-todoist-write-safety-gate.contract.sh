@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/bin/jen-todoist-write-safety-gate"
-FAKE_SECRET='FAKE_TODOIST_TOKEN_''SHOULD_BE_REDACTED'
+FAKE_SECRET="FAKE_TODOIST_TOKEN_"'SHOULD_BE_REDACTED'
 
 run_gate() {
   local payload="$1"

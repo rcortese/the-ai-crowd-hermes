@@ -7,15 +7,15 @@ Scope: product policy for delegated subagent/session work in The AI Crowd
 
 ## Product problem
 
-Delegated work currently has a failure mode where the parent session waits, a child/subagent/reviewer is still running or has timed out, and Configured Operator has to alt-tab between sessions and ask "eai" to discover the real state.
+Delegated work currently has a failure mode where the parent session waits, a child/subagent/reviewer is still running or has timed out, and the configured operator has to alt-tab between sessions and ask "eai" to discover the real state.
 
-That is a product failure, not merely a runtime inconvenience. The user-facing experience must not depend on Configured Operator tracking hidden child lifecycles or interpreting raw completion events.
+That is a product failure, not merely a runtime inconvenience. The user-facing experience must not depend on the configured operator tracking hidden child lifecycles or interpreting raw completion events.
 
 ## Product principle
 
 Every delegated work item must have:
 
-1. **Owner** — exactly one parent/session owner remains accountable to Configured Operator.
+1. **Owner** — exactly one parent/session owner remains accountable to the configured operator.
 2. **Explicit lifecycle state** — the work is `active`, `waiting`, `blocked`, `completed`, `closed`, or explicitly `async`.
 3. **SLA/status cadence** — silence has a limit; interactive work gets visible status before it becomes confusing.
 4. **Terminal outcome** — every delegation ends as completed, blocked, closed, or deliberately async with a named follow-up path.
@@ -45,14 +45,14 @@ A task may be marked `async` only when the parent names:
 
 - who owns the follow-up;
 - what output is expected;
-- when Configured Operator should expect another update or what event will trigger it;
+- when the configured operator should expect another update or what event will trigger it;
 - what counts as terminal closure.
 
 `Async` is not permission to disappear. It is a named lifecycle state with a follow-up contract.
 
 ### Completion rewriting
 
-When a subagent/reviewer completes, the parent rewrites the result for Configured Operator:
+When a subagent/reviewer completes, the parent rewrites the result for the configured operator:
 
 - what changed or was found;
 - whether acceptance criteria were met;
@@ -60,7 +60,7 @@ When a subagent/reviewer completes, the parent rewrites the result for Configure
 - what the next action is;
 - whether the delegated work is now closed.
 
-The parent should not make Configured Operator inspect child sessions to understand the answer.
+The parent should not make the configured operator inspect child sessions to understand the answer.
 
 ## Product policy vs runtime implementation
 
@@ -83,7 +83,7 @@ Runtime implementation belongs to Moss and may include, after approval and revie
 
 Owner: Denholm.
 
-Objective: establish the product rule that delegated work cannot become an invisible waiting state for Configured Operator.
+Objective: establish the product rule that delegated work cannot become an invisible waiting state for the configured operator.
 
 Allowed work:
 
@@ -103,7 +103,7 @@ Gate 1 checks whether the contract is clear, bounded, and product-owned. It shou
 
 ### Phase 2 — Operational/runtime-safety design and implementation handoff
 
-Owner: Moss for operational/runtime design and execution after Configured Operator/Denholm approval; Denholm remains product owner for behavior and acceptance.
+Owner: Moss for operational/runtime design and execution after the configured operator/Denholm approval; Denholm remains product owner for behavior and acceptance.
 
 Objective: turn the product contract into safe operational behavior without breaking session routing, reviewer boundaries, or user-facing trust.
 
@@ -118,7 +118,7 @@ Non-goals:
 
 - do not expand agent autonomy, channel reach, or external-write authority as a side effect;
 - do not blur ownership agents with reviewer/subagent utility identities;
-- do not make Configured Operator responsible for monitoring hidden runtime state.
+- do not make the configured operator responsible for monitoring hidden runtime state.
 
 Review gate: **Gate 2 — operational/runtime-safety review**
 
@@ -130,7 +130,7 @@ After each phase, the phase owner records a short reflection before proceeding:
 
 1. **What did we learn?** Evidence, surprises, and contradictions.
 2. **Did ownership stay clean?** Parent owner, child/reviewer role, and specialist boundaries.
-3. **Did the user experience improve?** Specifically: would Configured Operator still need to alt-tab and ask "eai"?
+3. **Did the user experience improve?** Specifically: would the configured operator still need to alt-tab and ask "eai"?
 4. **Did risk change?** New autonomy, cadence, routing, privacy, runtime, or external-write implications.
 5. **Proceed, revise, or stop?** Name the next action and the owner.
 
@@ -140,7 +140,7 @@ Reflection is required even when the phase succeeds. A clean success should stil
 
 - Delegated work has owner, lifecycle state, status cadence, terminal outcome, and escalation.
 - Interactive work has no indefinite waiting: status around 5 minutes, escalate/close/block around 15 minutes unless explicitly async.
-- Parent sessions retain responsibility and rewrite child/reviewer results for Configured Operator.
+- Parent sessions retain responsibility and rewrite child/reviewer results for the configured operator.
 - Product policy is separate from Moss-owned runtime implementation.
 - The plan has exactly two review gates: Gate 1 product/stewardship, Gate 2 operational/runtime-safety.
 - Gate 2 is explicitly treated as more critical and review-intensive.

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/bin/jen-todoist-capture"
 FIXTURE_DIR="$ROOT/tests/fixtures/canonical-capture"
-FAKE_SECRET='FAKE_TODOIST_TOKEN_''SHOULD_BE_REDACTED'
+FAKE_SECRET="FAKE_TODOIST_TOKEN_"'SHOULD_BE_REDACTED'
 
 assert_jq() {
   local json="$1"
