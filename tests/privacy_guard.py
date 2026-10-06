@@ -31,6 +31,10 @@ RULES = [
     ('bearer-credential', r'(?i)Authorization["\x27]?\s*:\s*["\x27]?Bearer\s+[A-Za-z0-9_./+=-]{20,}'),
     ('provider-key', r'\bsk-[A-Za-z0-9_-]{20,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bAKIA[A-Z0-9]{16}\b'),
 ]
+# A digest is not a credential value. This exact-deny regression protects the
+# unverified historical literal even outside assignment syntax; never allow it
+# merely because it is in a test, a printf argument, or split shell quotes.
+BLOCKED_LITERAL_SHA256 = frozenset({'ccf017d39475a4bf58a8f290c75b8d07fb9783ca05f3fb98ccc5a95aa9f026d6'})
 PROTECTED = {'private', 'runtime', 'state', 'env', 'auth', 'logs', 'cache', 'sessions', 'checkpoints', 'memories', 'secrets'}
 FORBIDDEN_NAMES = {'.env', 'auth.json', 'auth.lock', 'config.yaml', '.anthropic_oauth.json'}
 WITHDRAWN_PREFIXES = ('ops/moss-', 'ops/delegation-categories/', 'ops/providers/',
@@ -59,6 +63,10 @@ class Gate:
         self.findings.add((surface, hashlib.sha256(locator.encode()).hexdigest()[:16], rule))
 
     def scan(self, surface: str, locator: str, data: bytes):
+        folded = re.sub(rb"'\s*'", b'', data)
+        for value in re.findall(rb'(?<![a-fA-F0-9])[a-fA-F0-9]{36}(?![a-fA-F0-9])', folded):
+            if hashlib.sha256(value).hexdigest() in BLOCKED_LITERAL_SHA256:
+                self.fail(surface, locator, 'blocked-literal-digest')
         text = data.decode('utf-8', errors='replace')
         for rule, pattern in RULES:
             if re.search(pattern, text):

@@ -183,6 +183,22 @@ class PrivacyTests(unittest.TestCase):
         gate.scan('fixture', 'synthetic', b'api_key: os.environ/EXAMPLE_API_KEY')
         self.assertFalse(gate.findings)
 
+    def test_digest_denial_outside_assignment_and_split_shell_quotes(self):
+        import hashlib
+        from unittest.mock import patch
+        fixture = ('ab' * 18).encode()
+        digest = hashlib.sha256(fixture).hexdigest()
+        with patch.object(module, 'BLOCKED_LITERAL_SHA256', frozenset({digest})):
+            for data in (b'printf "' + fixture + b'"',
+                         b"value='" + fixture[:18] + b"''" + fixture[18:] + b"'"):
+                gate = module.Gate()
+                gate.scan('fixture', 'synthetic', data)
+                self.assertIn('blocked-literal-digest', {x[2] for x in gate.findings})
+                self.assertNotIn(fixture.decode(), json.dumps(gate.report()))
+            gate = module.Gate()
+            gate.scan('fixture', 'synthetic', b'cd' * 18)
+            self.assertFalse(gate.findings)
+
     def test_json_credential_values_are_not_missed(self):
         for key in ('api_key', 'access_token', 'refresh_token', 'id_token', 'password'):
             gate = module.Gate()

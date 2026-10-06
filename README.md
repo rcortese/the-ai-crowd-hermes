@@ -24,7 +24,7 @@ Private deployment runners, provider configuration, build closures, fleet image 
 
 ## Offline validation
 
-Requirements: Python 3 standard library, Git and Bash. No Docker, provider credentials, image pulls or network access.
+Requirements: Python 3 standard library, Git, Bash and jq. Jen's redaction contracts use synthetic mock runtimes only. No Docker, provider credentials, image pulls or network access.
 
 ```bash
 ./tests/run-all.sh
