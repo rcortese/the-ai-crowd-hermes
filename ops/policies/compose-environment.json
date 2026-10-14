@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "services": ["moss", "jen", "denholm", "roy", "richmond", "the-elders"],
+  "environment": {
+    "AGENT_NAME": {
+      "binding": "{service}",
+      "consumer": "Image/entrypoint integration contract; memory gates and WebUI integrations may read this identifier. Preserve it; the selected deployment image must verify its own consumers.",
+      "status": "keep-image-contract"
+    },
+    "HERMES_HOME": {
+      "binding": "/runtime",
+      "consumer": "Hermes hermes_constants.py:get_hermes_home and get_hermes_home_override; scaffold mount services.<service>.volumes[target=/runtime].",
+      "status": "source-consumer-observed-image-unverified"
+    },
+    "TERMINAL_CWD": {
+      "binding": "/workspace",
+      "consumer": "Hermes tools/terminal_tool.py:_safe_getcwd and terminal environment setup; cli.py terminal config bridge can override it; scaffold mount services.<service>.volumes[target=/workspace].",
+      "status": "source-consumer-observed-image-unverified"
+    }
+  },
+  "interpolation": {
+    "IMAGE": "services.<service>.image",
+    "RUNTIME_ROOT": "services.<service>.volumes[target=/runtime].source",
+    "WORKSPACE_ROOT": "services.<service>.volumes[target=/workspace].source"
+  }
+}

@@ -1,6 +1,6 @@
 # Offline validation and publication
 
-From the repository root, run `./tests/run-all.sh`. Requirements are Python 3 standard library, Git and Bash. The final success marker is `offline_suite_ok`.
+From the repository root, run `./tests/run-all.sh`. Requirements are Python 3, Git, Bash and jq. The default suite uses only Python's standard library. To include operational YAML lint fixtures, explicitly set `COMPOSE_ENV_PYTHON` to an isolated interpreter with PyYAML (tested with 6.0.3). Without that option the suite reports `operational_yaml_tests_not_requested`; it makes no operational lint acceptance claim. The final success marker is `offline_suite_ok`. See [Compose environment architecture and lint](architecture/compose-environment.md) for separate public/private validation scopes and the source-only normalization workflow.
 
 The suite exercises synthetic Git repositories (including branch-only and tag-only histories), archive parity, redacted privacy diagnostics, portable retention engine behavior, public scaffold structure and Moss contract smoke checks. Fixture repositories are disposable and never modify this repository's refs. No Docker, network or provider calls are made.
 

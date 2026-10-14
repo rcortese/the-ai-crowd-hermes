@@ -2,6 +2,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONDONTWRITEBYTECODE=1
+python3 tests/lint_compose_env.py
+python3 -m unittest discover -s tests -p 'test_compose_env_lint.py' -v
+# Keep the public suite stdlib-only. Opt in with a validation interpreter.
+if [[ -n "${COMPOSE_ENV_PYTHON:-}" ]]; then
+  "$COMPOSE_ENV_PYTHON" -m unittest discover -s tests -p 'test_compose_env_operational.py' -v
+else
+  printf '%s\n' 'operational_yaml_tests_not_requested: set COMPOSE_ENV_PYTHON to run'
+fi
 python3 -m unittest discover -s tests -p 'test_privacy_guard.py' -v
 python3 -m unittest discover -s tests -p 'test_public_scaffold.py' -v
 python3 -m unittest discover -s ops/tests -p 'test_runtime_backup_retention.py' -v
