@@ -1,0 +1,10 @@
+# Exact one-file source overlay. No server rebuild or DB migration.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+RUN printf '%s  %s\n' '0cde3b39f42a1663668be1f76597f930af6b41e7e481ab5e18ab452d4afecaef' '/app/packages/adapters/hermes/src/gateway/server/execute.ts' | sha256sum -c -
+COPY --chown=node:node execute.ts /app/packages/adapters/hermes/src/gateway/server/execute.ts
+RUN printf '%s  %s\n' '80b1dc1b157f72fd45bec0476c6438935823ed9f89aa95f5b77cb777063d5f35' '/app/packages/adapters/hermes/src/gateway/server/execute.ts' | sha256sum -c -
+USER node
+RUN cd /app/server && node --import tsx --input-type=module -e 'await import("/app/packages/adapters/hermes/src/gateway/server/execute.ts"); console.log("native-adapter-import-ok")'
+LABEL ing.paperclip.hermes-adapter.source="b04f1240a56caf118641aff3c119ef825a562dc6"

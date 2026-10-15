@@ -1,0 +1,10 @@
+# Image construction only. No Compose, config changes or runtime activation.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+COPY paperclip-mcp/ /opt/paperclip-mcp/
+RUN node -e 'const [a,b]=process.versions.node.split(".").map(Number); if(a<24||(a===24&&b<11))process.exit(1)' \
+ && cd /opt/paperclip-mcp \
+ && node --input-type=module -e 'await import("@paperclipai/shared"); await import("@paperclipai/mcp-server")' \
+ && test -x node_modules/.bin/paperclip-mcp-server
+LABEL ing.paperclip.official-mcp.source="b04f1240a56caf118641aff3c119ef825a562dc6"

@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/paperclipai/paperclip",
+  "commit": "b04f1240a56caf118641aff3c119ef825a562dc6",
+  "tree": "94ddca91d12f86f8c2248e9c7e671ce67d1e3542",
+  "upstreamBase": "1be36de0a00b77dd229ee924238e693f5db7b114",
+  "status": "local candidate; not claimed shipped upstream",
+  "mcpSourceVersion": "0.1.0",
+  "sharedVersion": "0.3.1",
+  "adapterTarget": "/app/packages/adapters/hermes/src/gateway/server/execute.ts",
+  "adapterPreimageSha256": "0cde3b39f42a1663668be1f76597f930af6b41e7e481ab5e18ab452d4afecaef",
+  "adapterPostimageSha256": "80b1dc1b157f72fd45bec0476c6438935823ed9f89aa95f5b77cb777063d5f35",
+  "serverBaseImage": "sha256:88a18e8591cb1e1a427c906bbd23e4e9dad74fa8c20bb43d28f9229b8d54b568",
+  "runtimeBaseImages": {
+    "moss": "sha256:e5dc456e2eca82a2f955506abba9f90d19c9280cdbfa56d4fff163c2439cccad",
+    "denholm": "sha256:086663f2933eab8bc2be8db22547de169b4a0010243da6ee91dea6daa73110c4",
+    "jen": "sha256:4886b01021437dd3a8409ee90b624684345cf0dc6f5aae2f2846486bed90ee4b",
+    "richmond": "sha256:a926ba1ea8da6ce010a6ebfbe28c209dd9d5dc8e6ff6356cc3a3082ea54921ab"
+  }
+}

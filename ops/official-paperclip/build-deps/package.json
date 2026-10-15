@@ -1,0 +1,1 @@
+{"name":"tac244-isolated-verification-deps","private":true,"type":"module","dependencies":{"@modelcontextprotocol/sdk":"^1.30.0","zod":"^4.4.3","vitest":"^4.1.11","typescript":"^7.0.2","@types/node":"^24.0.0","picocolors":"^1.1.1","three":"0.185.1","@types/three":"0.185.4","acpx":"0.12.0"}}
