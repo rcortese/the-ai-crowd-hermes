@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "status": "SOURCE_CANDIDATE_NOT_ACTIVATED",
+  "scope": "tac246-moss-only",
+  "baseCommit": "353b8029225fc2c8cb5490a24cf2b6e3b480f600",
+  "baseTree": "7a2e802ad084cac834a1e6d7b034f6d08ac717dd",
+  "preimage": "sha256:e5dc456e2eca82a2f955506abba9f90d19c9280cdbfa56d4fff163c2439cccad",
+  "image": "sha256:4e5d39b682ff055b847ca16f9658f9b34415b708c0d38ab500930c1c3c83f51c",
+  "adapterProducerImage": "sha256:b9ad3a9483657cf25cc345310e1ad0801d926f6e43564c7aba06b5e8bdd416aa",
+  "catalogCount": 44,
+  "installed": {
+    "gateway/platforms/api_server.py": "9a54fdefde00aa420da2fd268491431a9e20626a432ff99eac643d0aaf43e81a",
+    "gateway/platforms/api_server_mcp_metadata.py": "525f9d6e923c95d8fac9bd6c84082d6cabffff989126ca5cbdca096621dc76df",
+    "gateway/platforms/api_server_openai_routes.py": "1a98b0d1973f1a5e2d14daaca1b4f7e167f072c7ca6ec379523246187796e4a8",
+    "gateway/platforms/api_server_runs.py": "bb4558267c2748fa00134ce4576f2e38d0efb20314adf450ffea412c7e1323fb",
+    "gateway/session_context.py": "7c614a61fdec89ae8757a5734a136a50f35f45a4e69cae220bdd68dbff25dd73",
+    "tools/mcp_tool_handlers.py": "401592985558c7bb79f024a4559ccc05f7c657c4025296fc7e455939e67060a8"
+  },
+  "externalInputsNotProvided": [
+    "fresh operator-bound complete plan with source, files, rendered compose and container/sibling CAS",
+    "reviewed pure configure.py bytes under inputs, with pre/post equal hash",
+    "Paperclip official adapter producer already reloaded and request-context verified",
+    "existing correct API session and authenticated capabilities GET",
+    "candidate-bound externally verified api_server memory-off policy",
+    "official complete sorted catalog names SHA-256",
+    "WebUI admission/accounting native interface: not available in inspected installed version"
+  ],
+  "notIncluded": ["other personas activation", "Paperclip server lifecycle", "adapter instructions PATCH", "TAC236 binds or ACL", "TAC262 source changes", "installation or scheduling", "automatic rollback"]
+}
