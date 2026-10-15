@@ -1,0 +1,597 @@
+From 00804cc8eb12e9bae6807c5da4a7ea7d0080c553 Mon Sep 17 00:00:00 2001
+From: Moss <moss@rodolflix.com>
+Date: Thu, 15 Oct 2026 16:26:53 -0300
+Subject: [PATCH] feat(api): forward request-local MCP metadata on split Moss
+ baseline
+
+Port authenticated finite metadata.mcp via copied ContextVar scopes across API workers and the native MCP loop. Preserve the installed split API run/session behavior and SDK 2 result handling. Source candidate only; no runtime activation.
+
+Co-Authored-By: Paperclip <noreply@paperclip.ing>
+---
+ gateway/platforms/api_server.py               |  20 +-
+ gateway/platforms/api_server_mcp_metadata.py  |  29 ++
+ gateway/platforms/api_server_runs.py          |   7 +-
+ gateway/session_context.py                    |  19 +
+ tests/gateway/test_api_mcp_metadata.py        | 325 ++++++++++++++++++
+ tools/mcp_tool_handlers.py                    |  10 +-
+ .../docs/user-guide/features/api-server.md    |  38 ++
+ 7 files changed, 440 insertions(+), 8 deletions(-)
+ create mode 100644 gateway/platforms/api_server_mcp_metadata.py
+ create mode 100644 tests/gateway/test_api_mcp_metadata.py
+
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index 087d966bd80d0822a0a7541b828dd7289ea61dce..f77bf1575a2e044ec52b0b66b663ee65b167591d 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -945,7 +945,19 @@ def _admit_api_agent_request(handler):
+         token = _api_agent_request_reservation.set(reservation)
+         self._pending_agent_requests += 1
+         try:
+-            return await handler(self, request, *args, **kwargs)
++            # Authentication above precedes even parsing transient MCP authority.
++            from gateway.platforms.api_server_mcp_metadata import request_mcp_metadata
++            from gateway.session_context import mcp_metadata_scope
++            try:
++                body = await request.json()  # aiohttp caches this for the handler
++            except Exception:
++                return _invalid_request("Invalid JSON in request body")
++            try:
++                metadata = request_mcp_metadata(body, authenticated=bool(self._expected_api_key()))
++            except ValueError as exc:
++                return _invalid_request(str(exc))
++            with mcp_metadata_scope(metadata):
++                return await handler(self, request, *args, **kwargs)
+         finally:
+             _release_pending_api_work(self, reservation)
+             _api_agent_request_reservation.reset(token)
+@@ -4219,13 +4231,15 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+         # ContextVars do not follow run_in_executor threads: capture here, re-enter in _run().
+         request_profile = _api_request_profile.get()
+         from agent.moss_memory_gate import api_admission, admission_scope
++        from gateway.session_context import get_mcp_metadata
++        request_mcp_metadata = get_mcp_metadata()
+         request_memory_admission = api_admission.get()
+         request_browser_control_principal = _api_request_browser_control_principal.get()
+         request_browser_control_transport_family = _api_request_browser_control_transport_family.get()
+ 
+         def _run():
+-            from gateway.session_context import clear_session_vars
+-            with self._profile_scope(request_profile), admission_scope(request_memory_admission):
++            from gateway.session_context import clear_session_vars, mcp_metadata_scope
++            with self._profile_scope(request_profile), admission_scope(request_memory_admission), mcp_metadata_scope(request_mcp_metadata):
+                 tokens = self._bind_api_server_session(
+                     chat_id=session_id or "", session_key=gateway_session_key or session_id or "",
+                     session_id=session_id or "", profile=request_profile or "",
+diff --git a/gateway/platforms/api_server_mcp_metadata.py b/gateway/platforms/api_server_mcp_metadata.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..71186a8180076a316151f246545cdcf53e11833e
+--- /dev/null
++++ b/gateway/platforms/api_server_mcp_metadata.py
+@@ -0,0 +1,29 @@
++"""Validation of transient API-to-native-MCP metadata (not model/tool arguments)."""
++import json
++from typing import Any
++
++
++def request_mcp_metadata(body: Any, *, authenticated: bool) -> dict | None:
++    """Call only after request authentication; return a detached finite JSON object."""
++    if not isinstance(body, dict):
++        raise ValueError("Request body must be an object")
++    if "metadata" not in body:
++        return None
++    metadata = body["metadata"]
++    if not isinstance(metadata, dict):
++        raise ValueError("metadata must be an object")
++    if "mcp" not in metadata:
++        return None
++    if not authenticated:
++        raise ValueError("metadata.mcp requires authenticated API access")
++    value = metadata["mcp"]
++    if not isinstance(value, dict):
++        raise ValueError("metadata.mcp must be an object")
++    try:
++        encoded = json.dumps(value, ensure_ascii=False, allow_nan=False)
++        size = len(encoded.encode("utf-8"))
++    except (ValueError, TypeError, RecursionError, UnicodeError):
++        raise ValueError("metadata.mcp must contain valid JSON") from None
++    if size > 16 * 1024:
++        raise ValueError("metadata.mcp exceeds 16 KiB")
++    return json.loads(encoded)
+diff --git a/gateway/platforms/api_server_runs.py b/gateway/platforms/api_server_runs.py
+index 93e096d92342dba3a2073cc66b78a4814d4aff07..7c0f8ee2d879eb0926891c665adeee30862c4e57 100644
+--- a/gateway/platforms/api_server_runs.py
++++ b/gateway/platforms/api_server_runs.py
+@@ -505,6 +505,7 @@ class _RunLaunch:
+     turn_author: Optional[dict[str, Any]] = None  # memory-attribution label only; grants nothing
+     requested_runtime: Optional[dict[str, Any]] = None
+     route_source: Optional[str] = None
++    mcp_metadata: Optional[dict[str, Any]] = None
+ 
+     @property
+     def approval_session_key(self) -> str:
+@@ -669,6 +670,7 @@ async def _prepare_persisted_run_selection(self, session_id, body, route, overri
+ 
+ async def _handle_runs(self, request: web.Request, *, _api_server) -> web.Response:
+     """POST /v1/runs — start an agent run, return run_id immediately."""
++    from gateway.session_context import get_mcp_metadata
+     _openai_error = _api_server._openai_error
+     # Long-term memory scope header (see chat_completions for details).
+     gateway_session_key, key_err = self._parse_session_key_header(request)
+@@ -794,6 +796,7 @@ async def _handle_runs(self, request: web.Request, *, _api_server) -> web.Respon
+         requested_runtime=session_selection["requested_runtime"],
+         route_source=session_selection["route_source"] if selected_session_id else None,
+         request_profile=_api_server._api_request_profile.get(),
++        mcp_metadata=get_mcp_metadata(),
+         browser_control_principal=_api_server._api_request_browser_control_principal.get(),
+         browser_control_transport_family=_api_server._api_request_browser_control_transport_family.get(),
+         turn_author=turn_author)
+@@ -838,7 +841,7 @@ def _served_runtime(agent) -> dict[str, str]:
+ 
+ def _run_agent_sync(self, run: _RunLaunch, agent, approval_notify, *, _api_server):
+     """Executor-thread body of one run; returns ``(result, usage, served_runtime)``."""
+-    from gateway.session_context import clear_session_vars
++    from gateway.session_context import clear_session_vars, mcp_metadata_scope
+     from gateway.hosted_room_execution_policy import (
+         RoomExecutionPolicy, bind_room_execution_policy, reset_room_execution_policy)
+     # No eager slash-worker pre-warm: slash.exec spawns one on demand (its error path already relies on that
+@@ -853,7 +856,7 @@ def _run_agent_sync(self, run: _RunLaunch, agent, approval_notify, *, _api_serve
+     effective_task_id = session_id or run.run_id
+     # (token, reset) pairs unwound in the finally block; bound only once each step succeeds.
+     resets: list[tuple[Any, Callable]] = []
+-    with self._profile_scope(run.request_profile):
++    with self._profile_scope(run.request_profile), mcp_metadata_scope(run.mcp_metadata):
+         try:
+             # Contextvars, not process env: concurrent runs must not share identity.
+             resets.append((set_current_session_key(run.approval_session_key), reset_current_session_key))
+diff --git a/gateway/session_context.py b/gateway/session_context.py
+index 38af24a2055633960c87f5ad279bf3d36a84ce7d..0cf3862d6f89cd1943533ad08eef3b316649b045 100644
+--- a/gateway/session_context.py
++++ b/gateway/session_context.py
+@@ -8,8 +8,27 @@ other's routing ids.  ``get_session_env`` is a drop-in for ``os.getenv``.
+ import os
+ from contextlib import contextmanager
+ from contextvars import ContextVar
++from copy import deepcopy
+ from typing import Any, Iterator
+ 
++# Transient request authority: no environment, session-store or history fallback.
++_MCP_METADATA: ContextVar = ContextVar("mcp_request_metadata", default=None)
++
++
++@contextmanager
++def mcp_metadata_scope(metadata: dict | None):
++    """Bind a captured request snapshot and restore the prior scope on every exit."""
++    token = _MCP_METADATA.set(deepcopy(metadata))
++    try:
++        yield
++    finally:
++        _MCP_METADATA.reset(token)
++
++
++def get_mcp_metadata() -> dict | None:
++    """Return an isolated snapshot for capture before an executor/MCP loop hop."""
++    return deepcopy(_MCP_METADATA.get())
++
+ # "Never set here" (falls back to os.environ for CLI/cron) vs "" = explicitly cleared (no fallback).
+ _UNSET: Any = object()
+ 
+diff --git a/tests/gateway/test_api_mcp_metadata.py b/tests/gateway/test_api_mcp_metadata.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..38305819e5ced746a2dedccf15d6be0faf203d0f
+--- /dev/null
++++ b/tests/gateway/test_api_mcp_metadata.py
+@@ -0,0 +1,325 @@
++"""Authenticated API -> executor -> native MCP loop -> real SDK tools/call.
++
++Inference and transport are local fixtures. No provider, production MCP or board.
++Port of the reviewed monolithic suite; SDK 2 results are not rewritten.
++"""
++import asyncio
++from concurrent.futures import ThreadPoolExecutor
++import json
++import os
++from pathlib import Path
++import threading
++from types import SimpleNamespace
++from unittest.mock import AsyncMock
++
++import pytest
++from aiohttp import web
++from aiohttp.test_utils import TestClient, TestServer
++from mcp import ClientSession, types
++
++from gateway.config import PlatformConfig
++from gateway.platforms import api_server
++from tools import mcp_tool, mcp_tool_discovery, mcp_tool_handlers
++from tools.thread_context import propagate_context_to_thread
++from tests.waiting import async_wait_until
++
++
++@pytest.fixture
++def native(monkeypatch):
++    loop = asyncio.new_event_loop()
++    ready = threading.Event()
++
++    def serve():
++        asyncio.set_event_loop(loop)
++        loop.call_soon(ready.set)
++        loop.run_forever()
++
++    thread = threading.Thread(target=serve, daemon=True)
++    thread.start()
++    assert ready.wait(5)
++    monkeypatch.setattr(mcp_tool, "_mcp_loop", loop)
++    captured = []
++    sdk = ClientSession(read_stream=AsyncMock(), write_stream=AsyncMock())
++
++    async def send(request, *args, **kwargs):
++        captured.append(request.model_dump(by_alias=True, exclude_none=True))
++        return types.CallToolResult(content=[])
++
++    monkeypatch.setattr(sdk, "send_request", send)
++    validator = "validate_tool_result" if hasattr(sdk, "validate_tool_result") else "_validate_tool_result"
++    monkeypatch.setattr(sdk, validator, AsyncMock())
++    server = SimpleNamespace(session=sdk, _rpc_lock=asyncio.Lock(), _pending_call_context=None)
++    monkeypatch.setattr(mcp_tool_discovery, "_get_connected_server_for_call", lambda _: server)
++    monkeypatch.setattr(mcp_tool, "_server_error_counts", {})
++    handler = mcp_tool_handlers._make_tool_handler("fixture", "inspect", 5)
++    try:
++        yield handler, captured
++    finally:
++        loop.call_soon_threadsafe(loop.stop)
++        thread.join(5)
++        assert not thread.is_alive()
++        loop.close()
++
++
++def make_app(adapter):
++    app = web.Application()
++    app.router.add_post("/v1/runs", adapter._handle_runs)
++    app.router.add_get("/v1/runs/{run_id}", adapter._handle_get_run)
++    app.router.add_get("/v1/runs/{run_id}/events", adapter._handle_run_events)
++    app.router.add_post("/v1/chat/completions", adapter._handle_chat_completions)
++    app.router.add_post("/v1/responses", adapter._handle_responses)
++    app.router.add_post("/api/sessions/{session_id}/chat", adapter._handle_session_chat)
++    app.router.add_post("/api/sessions/{session_id}/chat/stream", adapter._handle_session_chat_stream)
++    return app
++
++
++AUTH = {"Authorization": "Bearer test-key"}
++ENDPOINTS = [
++    ("/v1/runs", {"input": "hello"}),
++    ("/v1/chat/completions", {"messages": [{"role": "user", "content": "hello"}]}),
++    ("/v1/responses", {"input": "hello"}),
++]
++
++
++async def finish(client, run_id):
++    async def terminal():
++        response = await client.get(f"/v1/runs/{run_id}", headers=AUTH)
++        status = await response.json()
++        if status["status"] in {"completed", "failed", "cancelled"}:
++            assert status["status"] == "completed", status
++            return True
++        return False
++    assert await async_wait_until(terminal, timeout=10)
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("path,payload", ENDPOINTS)
++async def test_auth_and_validation_before_effects(native, monkeypatch, path, payload):
++    _, captured = native
++    adapter = api_server.APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "test-key"}))
++
++    def forbidden(**kw):
++        pytest.fail("Invalid request created an agent")
++
++    monkeypatch.setattr(adapter, "_create_agent", forbidden)
++    async with TestClient(TestServer(make_app(adapter))) as client:
++        response = await client.post(path, data="not json")
++        assert response.status == 401
++        for body in ([], None):
++            response = await client.post(path, headers=AUTH, json=body)
++            assert response.status == 400
++        for metadata in (None, [], {"mcp": None}, {"mcp": []},
++                         {"mcp": {"huge": "é" * 9000}}, {"mcp": {"nan": float("nan")}},
++                         {"mcp": {"infinity": float("inf")}}, {"mcp": {"bad": "\ud800"}}):
++            response = await client.post(path, headers=AUTH, json=dict(payload, metadata=metadata))
++            assert response.status == 400, await response.text()
++        assert adapter._pending_agent_requests == 0
++    assert captured == []
++
++
++@pytest.mark.asyncio
++async def test_overlapping_runs_and_successor(native, monkeypatch):
++    from gateway.session_context import get_mcp_metadata
++    handler, captured = native
++    adapter = api_server.APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "test-key"}))
++    barrier = threading.Barrier(2)
++    db = await adapter._ensure_session_db_async()
++    assert db is not None
++    db.create_session("shared", "api_server")
++    observed_inputs = []
++
++    class Agent:
++        def run_conversation(self, **kwargs):
++            observed_inputs.append(kwargs)
++            if kwargs["user_message"] in {"first", "second"}:
++                barrier.wait(5)
++            with ThreadPoolExecutor(1) as pool:
++                result = pool.submit(propagate_context_to_thread(handler),
++                                     {"value": kwargs["user_message"]}, meta={"forged": True}).result(5)
++            assert "error" not in json.loads(result), result
++            return {"final_response": "done", "messages": []}
++
++    monkeypatch.setattr(adapter, "_create_agent", lambda **kw: Agent())
++    # Warm existing lazy imports before measuring environment invariance.
++    import gateway.run  # noqa: F401
++    handler({"value": "warmup"})
++    captured.clear()
++    before = dict(os.environ)
++    metas = [{"trace": {"id": "one", "nested": [1, True]}}, {"trace": {"id": "two"}}]
++    async with TestClient(TestServer(make_app(adapter))) as client:
++        ids = []
++        for text, meta in zip(("first", "second"), metas):
++            response = await client.post("/v1/runs", headers=AUTH, json={
++                "input": text, "session_id": "shared", "metadata": {"mcp": meta}})
++            assert response.status == 202, await response.text()
++            ids.append((await response.json())["run_id"])
++        await asyncio.gather(*(finish(client, rid) for rid in ids))
++        for text, metadata in (("successor", {"mcp": {"trace": "successor"}}), ("absent", None)):
++            body: dict = {"input": text, "session_id": "shared"}
++            if metadata is not None:
++                body["metadata"] = metadata
++            response = await client.post("/v1/runs", headers=AUTH, json=body)
++            assert response.status == 202, await response.text()
++            rid = (await response.json())["run_id"]
++            await finish(client, rid)
++            # Runs SSE consumes the same completed run, not a second authority.
++            events = await client.get(f"/v1/runs/{rid}/events", headers=AUTH)
++            assert events.status == 200
++            assert "run.completed" in await events.text()
++    by_value = {c["params"]["arguments"]["value"]: c for c in captured}
++    for text, meta in zip(("first", "second"), metas):
++        assert by_value[text] == {"method": "tools/call", "params": {
++            "name": "inspect", "arguments": {"value": text}, "_meta": meta}}
++    assert by_value["successor"]["params"]["_meta"] == {"trace": "successor"}
++    assert "_meta" not in by_value["absent"]["params"]
++    assert all(set(i) == {"user_message", "conversation_history", "task_id"} for i in observed_inputs)
++    assert get_mcp_metadata() is None
++    assert dict(os.environ) == before
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("path,payload", ENDPOINTS[1:])
++@pytest.mark.parametrize("stream", [False, True])
++async def test_sibling_endpoints(native, monkeypatch, path, payload, stream):
++    handler, captured = native
++    adapter = api_server.APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "test-key"}))
++
++    class Agent:
++        def run_conversation(self, **kw):
++            assert "metadata" not in kw
++            assert "error" not in json.loads(handler({"value": "hello"}))
++            return {"final_response": "done", "messages": []}
++
++    monkeypatch.setattr(adapter, "_create_agent", lambda **kw: Agent())
++    async with TestClient(TestServer(make_app(adapter))) as client:
++        previous_response_id = None
++        for metadata in ({"mcp": {"trace": "current"}}, None):
++            body = dict(payload, stream=stream)
++            if previous_response_id:
++                body["previous_response_id"] = previous_response_id
++            if metadata is not None:
++                body["metadata"] = metadata
++            response = await client.post(path, headers=AUTH, json=body)
++            assert response.status == 200, await response.text()
++            await response.read()
++            if path == "/v1/responses" and not stream:
++                previous_response_id = (await response.json())["id"]
++                stored = adapter._response_store.get(previous_response_id)
++                assert stored is not None
++                assert "metadata" not in stored
++                assert "mcp" not in stored
++    assert captured[0]["params"]["_meta"] == {"trace": "current"}
++    assert "_meta" not in captured[1]["params"]
++
++
++def test_scope_resets_after_failure_and_copies(native):
++    from gateway.session_context import get_mcp_metadata, mcp_metadata_scope
++    handler, captured = native
++    value = {"trace": {"id": "original"}}
++    with pytest.raises(RuntimeError):
++        with mcp_metadata_scope(value):
++            value["trace"]["id"] = "changed"
++            snapshot = get_mcp_metadata()
++            snapshot["trace"]["id"] = "forged"
++            assert "error" not in json.loads(handler({}))
++            with mcp_metadata_scope(None):
++                assert get_mcp_metadata() is None
++            assert get_mcp_metadata() == {"trace": {"id": "original"}}
++            raise RuntimeError("test cleanup")
++    assert get_mcp_metadata() is None
++    handler({"_meta": {"forged": True}}, meta={"forged": True}, metadata={"mcp": {"forged": True}})
++    assert captured[0]["params"]["_meta"] == {"trace": {"id": "original"}}
++    assert "_meta" not in captured[1]["params"]
++    assert captured[1]["params"]["arguments"] == {"_meta": {"forged": True}}
++
++
++@pytest.mark.asyncio
++async def test_no_key_and_empty_metadata(native):
++    from gateway.session_context import mcp_metadata_scope
++    handler, captured = native
++    adapter = api_server.APIServerAdapter(PlatformConfig(enabled=True))
++    async with TestClient(TestServer(make_app(adapter))) as client:
++        response = await client.post("/v1/runs", json={"input": "hello", "metadata": {"mcp": {}}})
++        assert response.status == 400
++    assert not captured
++    with mcp_metadata_scope({}):
++        assert "error" not in json.loads(handler({}))
++    assert captured[0]["params"]["_meta"] == {}
++
++
++@pytest.mark.asyncio
++async def test_executor_cleanup_on_exception(native, monkeypatch):
++    from gateway.session_context import get_mcp_metadata, mcp_metadata_scope
++    handler, captured = native
++    adapter = api_server.APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "test-key"}))
++
++    class Agent:
++        def run_conversation(self, **kw):
++            handler({})
++            raise RuntimeError("deliberate failure")
++
++    monkeypatch.setattr(adapter, "_create_agent", lambda **kw: Agent())
++    loop = asyncio.get_running_loop()
++    executor = ThreadPoolExecutor(1)
++    loop.set_default_executor(executor)
++    try:
++        with mcp_metadata_scope({"trace": "failure"}):
++            with pytest.raises(RuntimeError, match="deliberate failure"):
++                await adapter._run_agent("hello", [])
++        assert await loop.run_in_executor(None, get_mcp_metadata) is None
++        with pytest.raises(RuntimeError, match="deliberate failure"):
++            await adapter._run_agent("hello", [])
++        assert await loop.run_in_executor(None, get_mcp_metadata) is None
++        assert captured[0]["params"]["_meta"] == {"trace": "failure"}
++        assert "_meta" not in captured[1]["params"]
++    finally:
++        executor.shutdown(wait=True)
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("suffix", ["", "/stream"])
++async def test_native_session_chat(native, monkeypatch, suffix):
++    handler, captured = native
++    adapter = api_server.APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "test-key"}))
++    db = await adapter._ensure_session_db_async()
++    assert db is not None
++    db.create_session("native-session", "api_server")
++
++    class Agent:
++        def run_conversation(self, **kw):
++            assert "metadata" not in kw
++            assert "error" not in json.loads(handler({"value": "native"}))
++            return {"final_response": "done", "messages": []}
++
++    monkeypatch.setattr(adapter, "_create_agent", lambda **kw: Agent())
++    async with TestClient(TestServer(make_app(adapter))) as client:
++        path = "/api/sessions/native-session/chat" + suffix
++        for meta in ({"mcp": {"trace": "native"}}, None):
++            body: dict = {"message": "hello"}
++            if meta is not None:
++                body["metadata"] = meta
++            response = await client.post(path, headers=AUTH, json=body)
++            assert response.status == 200, await response.text()
++            assert "done" in await response.text()
++        invalid = await client.post(path, headers=AUTH, json={"message": "hello", "metadata": {"mcp": []}})
++        assert invalid.status == 400
++    assert captured[0]["params"]["_meta"] == {"trace": "native"}
++    assert "_meta" not in captured[1]["params"]
++    assert len(captured) == 2
++    assert all("metadata" not in row for row in db.get_messages("native-session"))
++
++
++def test_json_size_boundary():
++    from gateway.platforms.api_server_mcp_metadata import request_mcp_metadata
++    # json.dumps({"x": ""}) is 9 UTF-8 bytes, not compact wire encoding.
++    value = {"x": "a" * 16375}
++    assert request_mcp_metadata({"metadata": {"mcp": value}}, authenticated=True) == value
++    with pytest.raises(ValueError, match="16 KiB"):
++        request_mcp_metadata({"metadata": {"mcp": {"x": "a" * 16376}}}, authenticated=True)
++    assert request_mcp_metadata({"metadata": {"other": True}}, authenticated=False) is None
++
++
++def test_candidate_imports():
++    root = Path(__file__).resolve().parents[2]
++    assert Path(api_server.__file__).resolve().is_relative_to(root)
++    assert Path(mcp_tool.__file__).resolve().is_relative_to(root)
+diff --git a/tools/mcp_tool_handlers.py b/tools/mcp_tool_handlers.py
+index e5c4de2de050a50c7bb65f1940158b81e324008c..cd665376b9bc72cfb93d965dd48d1ef9111c56f7 100644
+--- a/tools/mcp_tool_handlers.py
++++ b/tools/mcp_tool_handlers.py
+@@ -379,7 +379,7 @@ async def _track_inflight_rpc(server: Any, server_name: str, op: str, *, retry_s
+             inflight.discard(task)
+ 
+ 
+-async def _call_tool_racing_stdio_death(server, server_name: str, tool_name: str, args: dict):
++async def _call_tool_racing_stdio_death(server, server_name: str, tool_name: str, args: dict, *, meta: dict | None = None):
+     """``session.call_tool`` that fails fast when the stdio child is/gets dead: pre-call (a dead
+     child must not hold the slot for the full timeout) and mid-call (race against
+     ``_watch_stdio_children``). Both raise :class:`_StdioChildExited` for the respawn path, which
+@@ -393,7 +393,8 @@ async def _call_tool_racing_stdio_death(server, server_name: str, tool_name: str
+             f"MCP stdio subprocess for '{server_name}' had already exited when the call was dispatched",
+             in_flight=False,
+         )
+-    _call_coro = server.session.call_tool(tool_name, arguments=args)
++    call_kwargs = {"meta": meta} if meta is not None else {}
++    _call_coro = server.session.call_tool(tool_name, arguments=args, **call_kwargs)
+     _watch_children = getattr(server, "_watch_stdio_children", None)
+     if not (inspect.iscoroutinefunction(_watch_children) and asyncio.iscoroutine(_call_coro)):
+         # Stubbed sessions return a non-awaitable, or there is no child-watcher to race: plain await.
+@@ -582,12 +583,15 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float, *,
+         # pre-dispatch so the auth recoverer keeps its retry for every tool.
+         read_only = _tool_is_read_only(server_name, tool_name)
+         image_paths: list[str] = []  # the LAST attempt's cached images (a recoverer may retry _call)
++        # Capture in the agent thread, never from model arguments/dispatcher kwargs.
++        from gateway.session_context import get_mcp_metadata
++        mcp_metadata = get_mcp_metadata()
+ 
+         async def _call():
+             async with server._rpc_lock, _track_inflight_rpc(server, server_name, op, retry_safe=read_only):
+                 server._pending_call_context = contextvars.copy_context()  # for the elicitation callback
+                 try:
+-                    result = await _call_tool_racing_stdio_death(server, server_name, tool_name, args)
++                    result = await _call_tool_racing_stdio_death(server, server_name, tool_name, args, meta=mcp_metadata)
+                 finally:
+                     server._pending_call_context = None
+             if getattr(server, "_mark_session_proven", None) is not None:  # round-trip done: transport healthy
+diff --git a/website/docs/user-guide/features/api-server.md b/website/docs/user-guide/features/api-server.md
+index 82bd01f0447a56ef29b74c77e15bc321d72f75f4..b7de2743293fe47f9bef9aebdf869edd2d40883f 100644
+--- a/website/docs/user-guide/features/api-server.md
++++ b/website/docs/user-guide/features/api-server.md
+@@ -53,6 +53,44 @@ curl http://localhost:8642/v1/chat/completions \
+ 
+ Or connect Open WebUI, LobeChat, or any other frontend — see the [Open WebUI integration guide](../messaging/open-webui.md) for step-by-step instructions.
+ 
++## Per-request native MCP metadata
++
++Authenticated in-process agent turns (`/v1/runs`, `/v1/chat/completions`,
++`/v1/responses`, and native session chat, including SSE) accept an optional
++`metadata.mcp` JSON object. For example:
++
++```json
++{"input":"Check the task","metadata":{"mcp":{"example/run-context":{"runId":"caller-id"}}}}
++```
++
++The native MCP client passes this object through the official SDK
++`call_tool(..., meta=...)` parameter as `params._meta`, separate from tool
++arguments. Model arguments and dispatcher kwargs cannot set or override it.
++The receiving server must authorize any claimed context: a gateway API token
++does not validate a vendor-specific schema or grant server permissions.
++
++Authentication precedes body parsing. A configured API key is required to
++supply `metadata.mcp`, including on manually wired no-key test listeners.
++`metadata` and `metadata.mcp`, if present, must be objects. MCP metadata must
++be finite JSON and at most 16 KiB of UTF-8 JSON using Python `json.dumps` with
++`ensure_ascii=False` (default separators); invalid values return HTTP 400
++before agent/tool execution. Other metadata keys are not forwarded.
++
++Snapshots are request-local, copied across executor/native MCP loop boundaries
++and reset on failure. They are not injected into prompts, history, response
++snapshots, session state or environment. Send them again on every turn:
++continuing a session or `previous_response_id` does not restore them. Missing
++metadata omits `_meta`; an explicit empty object sends `{}`. Idempotency replay
++can return an existing run without executing tools again.
++
++This transport ends at the in-process native MCP client. It does not forward
++metadata to a separate Desktop/live Bot Chat owner, a subprocess inference
++worker or an external relay. In particular, an already live canonical Bot Chat
++retains its existing owner handoff behavior, which carries only the message and
++author, **not** this transient context. Do not target that handoff for a
++metadata-dependent operation. No MCP plugin/bridge or vendor-specific runtime
++configuration is installed by this feature.
++
+ ## Endpoints
+ 
+ ### POST /v1/chat/completions

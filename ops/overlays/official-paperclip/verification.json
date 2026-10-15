@@ -1,0 +1,177 @@
+{
+  "schema": 1,
+  "kind": "implementation execution evidence, not independent review or production approval",
+  "python": "3.14.7",
+  "test_dependencies": {
+    "mcp": "2.0.0",
+    "aiohttp": "3.14.3",
+    "pytest": "8.4.2",
+    "pytest-asyncio": "1.2.0",
+    "anyio": "4.14.2"
+  },
+  "variants": {
+    "moss": {
+      "source_commit": "00804cc8eb12e9bae6807c5da4a7ea7d0080c553",
+      "files_tested": 7,
+      "passed": 269,
+      "failed": 0,
+      "new_metadata_tests_passed": 15,
+      "full_suite_run": false,
+      "local_test_log": "/opt/data/profiles/moss/cache/scratch/tac246-hermes-overlay/final-moss.log",
+      "log_sha256": "da81aa5508ad11d54e1586b4a059f6bdeb014a4a6b758c417ce8e7089e28a69b",
+      "composition": {
+        "composition": "authenticated API -> executor -> native MCP -> stdio -> HTTP fixture",
+        "catalogObserved": 44,
+        "httpRequests": 15,
+        "overlapIsolation": true,
+        "successorIsolation": true,
+        "taskDocumentApiWritesAndReadback": true,
+        "missingMalformedWrongIdentityNoHttp": true,
+        "productionWrites": 0,
+        "inference": "explicit local fixture",
+        "stdioCleanupVerified": true
+      },
+      "composition_log_sha256": "480a206f1298e87ebaf91cd544b9e1178e7242da99cffca99e6121b66a93bb7c"
+    },
+    "non-moss": {
+      "source_commit": "c3a645452d6cae7b613f8b664311ed234c7816c0",
+      "files_tested": 7,
+      "passed": 266,
+      "failed": 3,
+      "new_metadata_tests_passed": 15,
+      "full_suite_run": false,
+      "local_test_log": "/opt/data/profiles/moss/cache/scratch/tac246-hermes-overlay/final-non-moss.log",
+      "log_sha256": "f2f09881b578d65012be5c287e1a32d54fda57747826238e262d60938417900d",
+      "composition": {
+        "composition": "authenticated API -> executor -> native MCP -> stdio -> HTTP fixture",
+        "catalogObserved": 44,
+        "httpRequests": 15,
+        "overlapIsolation": true,
+        "successorIsolation": true,
+        "taskDocumentApiWritesAndReadback": true,
+        "missingMalformedWrongIdentityNoHttp": true,
+        "productionWrites": 0,
+        "inference": "explicit local fixture",
+        "stdioCleanupVerified": true
+      },
+      "composition_log_sha256": "480a206f1298e87ebaf91cd544b9e1178e7242da99cffca99e6121b66a93bb7c"
+    }
+  },
+  "baseline_non_moss_reproduction": {
+    "base_commit": "2dfcdbfe4ef79cef7ec4c40783d56561f8518849",
+    "snapshot": "/opt/data/profiles/moss/cache/scratch/tac246-hermes-overlay/non-moss-baseline",
+    "passed": 0,
+    "failed": 3,
+    "evidence": "Observed canonical-runner output from Git-metadata-free preimage export; README lists exact cases",
+    "cause": "Baseline rejects explicit non-existent session IDs with 404; preserved, not upgraded"
+  },
+  "installed_modules": {
+    "moss_preimages_preserved": true,
+    "denholm_preimages_preserved": "Read-only SSH sha256sum rechecked against manifest; no runtime mutation",
+    "other_personas_live_sdk_tested": false
+  },
+  "overlay_matrix": {
+    "passed_cases": 16,
+    "cases": [
+      {
+        "variant": "moss",
+        "scenario": "apply",
+        "passed": true
+      },
+      {
+        "variant": "moss",
+        "scenario": "source-patch",
+        "passed": true
+      },
+      {
+        "variant": "moss",
+        "scenario": "bytes-drift",
+        "passed": true
+      },
+      {
+        "variant": "moss",
+        "scenario": "mode-drift",
+        "passed": true
+      },
+      {
+        "variant": "moss",
+        "scenario": "new-file-present",
+        "passed": true
+      },
+      {
+        "variant": "moss",
+        "scenario": "wrong-variant",
+        "passed": true
+      },
+      {
+        "variant": "moss",
+        "scenario": "symlink",
+        "passed": true
+      },
+      {
+        "variant": "moss",
+        "scenario": "patch-drift",
+        "passed": true
+      },
+      {
+        "variant": "non-moss",
+        "scenario": "apply",
+        "passed": true
+      },
+      {
+        "variant": "non-moss",
+        "scenario": "source-patch",
+        "passed": true
+      },
+      {
+        "variant": "non-moss",
+        "scenario": "bytes-drift",
+        "passed": true
+      },
+      {
+        "variant": "non-moss",
+        "scenario": "mode-drift",
+        "passed": true
+      },
+      {
+        "variant": "non-moss",
+        "scenario": "new-file-present",
+        "passed": true
+      },
+      {
+        "variant": "non-moss",
+        "scenario": "wrong-variant",
+        "passed": true
+      },
+      {
+        "variant": "non-moss",
+        "scenario": "symlink",
+        "passed": true
+      },
+      {
+        "variant": "non-moss",
+        "scenario": "patch-drift",
+        "passed": true
+      }
+    ],
+    "runtime_touched": false
+  },
+  "overlay_matrix_log_sha256": "5ea0aac4745b3d0d7f46be40d867da1d364082fbef68ccca6a8623fc028607a3",
+  "paperclip_fixture": {
+    "commit": "0ff581a76449667a1c5a56da1f71d9e899af95ed",
+    "tree": "f1e34f8ff03567533fadea53331ad5ed1d968eba",
+    "rebuilt_by_this_task": false,
+    "existing_dist_sha256": {
+      "packages/mcp-server/dist/stdio.js": "8a639aefc9ba223c80ca9c940fa86e70fc6bb04072d93aad8f8da22319827e06",
+      "packages/mcp-server/dist/client.js": "68d84275aad841152e0386bf1dedb1847ed95d7a8d9fd7dc954b825360f15647"
+    }
+  },
+  "side_effects": {
+    "docker_build": false,
+    "push": false,
+    "runtime_promotion": false,
+    "lifecycle": false,
+    "production_http_writes": 0,
+    "persistent_skill_rules_changed": false
+  }
+}

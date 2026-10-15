@@ -1,0 +1,172 @@
+{
+  "schema": 1,
+  "purpose": "Source-only split Hermes metadata.mcp native transport; no deployment approval",
+  "reviewed_monolithic_reference": "bd55bc0c527539f18beee35835cbdd1a978db92f",
+  "forward_port_independent_review": "pending",
+  "variants": {
+    "moss": {
+      "base_commit": "e8cebcaf7c83780ee2d52e19ad8b8850ed6193e9",
+      "source_commit": "00804cc8eb12e9bae6807c5da4a7ea7d0080c553",
+      "source_tree": "3c5c184a2e70e14f26e8e0f8b13fb3cfce7b2d35",
+      "runtime_patch": {
+        "path": "runtime-moss.patch",
+        "sha256": "e6ff1af5931a272b58b3edd6637c1a5dcee29f71135c4e79c0610f8afb181305"
+      },
+      "source_patch": {
+        "path": "source-moss.patch",
+        "sha256": "44bb41f3bdd2cc80ad9cee5071ed9bd53d7080ab779c475f60b581a5a1696314"
+      },
+      "files": {
+        "gateway/platforms/api_server.py": {
+          "pre": "14cb5bd6db65e0a54b4f57e8bcb775a9d87824fde9c700d231883463a695bf2d",
+          "post": "9a54fdefde00aa420da2fd268491431a9e20626a432ff99eac643d0aaf43e81a",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_runs.py": {
+          "pre": "213548876720db9ba26021035359c8986b35322f9cdc9bd92471794133916afc",
+          "post": "bb4558267c2748fa00134ce4576f2e38d0efb20314adf450ffea412c7e1323fb",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_mcp_metadata.py": {
+          "pre": null,
+          "post": "525f9d6e923c95d8fac9bd6c84082d6cabffff989126ca5cbdca096621dc76df",
+          "mode": 420
+        },
+        "gateway/session_context.py": {
+          "pre": "76cb6383168db1c6fd8f70f963e1436b101a9f810f13724cd812bf57a777dbe2",
+          "post": "7c614a61fdec89ae8757a5734a136a50f35f45a4e69cae220bdd68dbff25dd73",
+          "mode": 420
+        },
+        "tools/mcp_tool_handlers.py": {
+          "pre": "d3f99c5832dd7a99b0a39447f97981281cccd13ba582587b97f914c726cdb5d6",
+          "post": "401592985558c7bb79f024a4559ccc05f7c657c4025296fc7e455939e67060a8",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_openai_routes.py": {
+          "pre": "1a98b0d1973f1a5e2d14daaca1b4f7e167f072c7ca6ec379523246187796e4a8",
+          "post": "1a98b0d1973f1a5e2d14daaca1b4f7e167f072c7ca6ec379523246187796e4a8",
+          "mode": 420
+        }
+      },
+      "source_files": {
+        "gateway/platforms/api_server.py": {
+          "pre": "14cb5bd6db65e0a54b4f57e8bcb775a9d87824fde9c700d231883463a695bf2d",
+          "post": "9a54fdefde00aa420da2fd268491431a9e20626a432ff99eac643d0aaf43e81a",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_mcp_metadata.py": {
+          "pre": null,
+          "post": "525f9d6e923c95d8fac9bd6c84082d6cabffff989126ca5cbdca096621dc76df",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_runs.py": {
+          "pre": "213548876720db9ba26021035359c8986b35322f9cdc9bd92471794133916afc",
+          "post": "bb4558267c2748fa00134ce4576f2e38d0efb20314adf450ffea412c7e1323fb",
+          "mode": 420
+        },
+        "gateway/session_context.py": {
+          "pre": "76cb6383168db1c6fd8f70f963e1436b101a9f810f13724cd812bf57a777dbe2",
+          "post": "7c614a61fdec89ae8757a5734a136a50f35f45a4e69cae220bdd68dbff25dd73",
+          "mode": 420
+        },
+        "tests/gateway/test_api_mcp_metadata.py": {
+          "pre": null,
+          "post": "7cc0de7f1872810594f3e26ca6f79346e8436a394dfe6abcebf11883da848c40",
+          "mode": 420
+        },
+        "tools/mcp_tool_handlers.py": {
+          "pre": "d3f99c5832dd7a99b0a39447f97981281cccd13ba582587b97f914c726cdb5d6",
+          "post": "401592985558c7bb79f024a4559ccc05f7c657c4025296fc7e455939e67060a8",
+          "mode": 420
+        },
+        "website/docs/user-guide/features/api-server.md": {
+          "pre": "0fd3754a5bb066b4d4f3dc64d2c9f9f0989630fa5928330bf43e8803eed1abe4",
+          "post": "e1b8ae09b2724919bbf4d52dd3577233f69f64916efb99b122ae900f66643210",
+          "mode": 420
+        }
+      }
+    },
+    "non-moss": {
+      "base_commit": "2dfcdbfe4ef79cef7ec4c40783d56561f8518849",
+      "source_commit": "c3a645452d6cae7b613f8b664311ed234c7816c0",
+      "source_tree": "417eb88358f45f738b65d3ec6c7846d164fa6eab",
+      "runtime_patch": {
+        "path": "runtime-non-moss.patch",
+        "sha256": "bce3771edfcb7be4350c36eb3df6a687600abb9e807604c0224ce9b88b4b30f6"
+      },
+      "source_patch": {
+        "path": "source-non-moss.patch",
+        "sha256": "8b3423679b55b55b94480f0774ad6ead05d1b8977a1fcb9be39544def70caecc"
+      },
+      "files": {
+        "gateway/platforms/api_server.py": {
+          "pre": "de120ddf39dce6c5a80413458a80ff2cc9ac74217823ac204a53372a0546a595",
+          "post": "cc090cf26d76169b87d9838b161b3b22f13ab75da731a1b4b70d5c528200c533",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_runs.py": {
+          "pre": "0fe247df1a32dc2108560543eb094bfcfd382ccc5ebb013bbf63f207d389aee2",
+          "post": "b08f104e88f5f6bfcccf457c717fe6362af4881c24a0a49656480ed70d918faf",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_mcp_metadata.py": {
+          "pre": null,
+          "post": "525f9d6e923c95d8fac9bd6c84082d6cabffff989126ca5cbdca096621dc76df",
+          "mode": 420
+        },
+        "gateway/session_context.py": {
+          "pre": "76cb6383168db1c6fd8f70f963e1436b101a9f810f13724cd812bf57a777dbe2",
+          "post": "7c614a61fdec89ae8757a5734a136a50f35f45a4e69cae220bdd68dbff25dd73",
+          "mode": 420
+        },
+        "tools/mcp_tool_handlers.py": {
+          "pre": "d3f99c5832dd7a99b0a39447f97981281cccd13ba582587b97f914c726cdb5d6",
+          "post": "401592985558c7bb79f024a4559ccc05f7c657c4025296fc7e455939e67060a8",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_openai_routes.py": {
+          "pre": "1a98b0d1973f1a5e2d14daaca1b4f7e167f072c7ca6ec379523246187796e4a8",
+          "post": "1a98b0d1973f1a5e2d14daaca1b4f7e167f072c7ca6ec379523246187796e4a8",
+          "mode": 420
+        }
+      },
+      "source_files": {
+        "gateway/platforms/api_server.py": {
+          "pre": "de120ddf39dce6c5a80413458a80ff2cc9ac74217823ac204a53372a0546a595",
+          "post": "cc090cf26d76169b87d9838b161b3b22f13ab75da731a1b4b70d5c528200c533",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_mcp_metadata.py": {
+          "pre": null,
+          "post": "525f9d6e923c95d8fac9bd6c84082d6cabffff989126ca5cbdca096621dc76df",
+          "mode": 420
+        },
+        "gateway/platforms/api_server_runs.py": {
+          "pre": "0fe247df1a32dc2108560543eb094bfcfd382ccc5ebb013bbf63f207d389aee2",
+          "post": "b08f104e88f5f6bfcccf457c717fe6362af4881c24a0a49656480ed70d918faf",
+          "mode": 420
+        },
+        "gateway/session_context.py": {
+          "pre": "76cb6383168db1c6fd8f70f963e1436b101a9f810f13724cd812bf57a777dbe2",
+          "post": "7c614a61fdec89ae8757a5734a136a50f35f45a4e69cae220bdd68dbff25dd73",
+          "mode": 420
+        },
+        "tests/gateway/test_api_mcp_metadata.py": {
+          "pre": null,
+          "post": "7cc0de7f1872810594f3e26ca6f79346e8436a394dfe6abcebf11883da848c40",
+          "mode": 420
+        },
+        "tools/mcp_tool_handlers.py": {
+          "pre": "d3f99c5832dd7a99b0a39447f97981281cccd13ba582587b97f914c726cdb5d6",
+          "post": "401592985558c7bb79f024a4559ccc05f7c657c4025296fc7e455939e67060a8",
+          "mode": 420
+        },
+        "website/docs/user-guide/features/api-server.md": {
+          "pre": "0fd3754a5bb066b4d4f3dc64d2c9f9f0989630fa5928330bf43e8803eed1abe4",
+          "post": "e1b8ae09b2724919bbf4d52dd3577233f69f64916efb99b122ae900f66643210",
+          "mode": 420
+        }
+      }
+    }
+  }
+}
