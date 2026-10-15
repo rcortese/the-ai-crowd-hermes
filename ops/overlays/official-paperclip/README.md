@@ -169,3 +169,20 @@ Paperclip existente: commit `0ff581a76449667a1c5a56da1f71d9e899af95ed`, tree
   re-hasheada ao final e continua nos preimages do manifest, em Moss e Denholm.
 - Revisão independente deve vincular os dois commits fonte **e** este overlay.
   Push/integração/build/lifecycle ficam com o pai e seus gates próprios.
+
+## Correção F1 da revisão independente
+
+A revisão `REQUEST_CHANGES` identificou que o helper assíncrono `finish()` passava
+uma coroutine a um wait-helper síncrono, sem consultar o status. O integrador
+reproduziu quatro falhas causais e corrigiu somente o teste nas duas fontes:
+Moss `bcbc54719bd55738a5e57ce35acc605ded4ddf2e` (tree
+`eb7d4c2323ab535894013ee8efc671432538faf5`) e non-Moss
+`4b5fcf4e1d7e53de9b46803d301e206542ee2c89` (tree
+`7a86fe2ab79143cd42f18142751bd7931f6a1220`). O loop aguarda GET real, distingue
+ativo/completed/failed/cancelled e possui deadline de 10 s. Os 19 testes focados
+passaram em cada variante com RuntimeWarning e PytestUnraisableExceptionWarning
+tratados como erro. Patches fonte e manifest foram regenerados; todos os hashes
+runtime e patches runtime continuam idênticos aos da entrega original.
+`verification.json` e as contagens da seção anterior são evidências históricas
+vinculadas aos candidatos originais, não ao helper corrigido. A revisão final
+renovada e a ativação permanecem gates separados; a correção não é autoaprovação.

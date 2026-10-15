@@ -6,15 +6,15 @@
   "variants": {
     "moss": {
       "base_commit": "e8cebcaf7c83780ee2d52e19ad8b8850ed6193e9",
-      "source_commit": "00804cc8eb12e9bae6807c5da4a7ea7d0080c553",
-      "source_tree": "3c5c184a2e70e14f26e8e0f8b13fb3cfce7b2d35",
+      "source_commit": "bcbc54719bd55738a5e57ce35acc605ded4ddf2e",
+      "source_tree": "eb7d4c2323ab535894013ee8efc671432538faf5",
       "runtime_patch": {
         "path": "runtime-moss.patch",
         "sha256": "e6ff1af5931a272b58b3edd6637c1a5dcee29f71135c4e79c0610f8afb181305"
       },
       "source_patch": {
         "path": "source-moss.patch",
-        "sha256": "44bb41f3bdd2cc80ad9cee5071ed9bd53d7080ab779c475f60b581a5a1696314"
+        "sha256": "be3ae1df1638144d145169e6561f37e32db001ffdb3a6578d8880da36a0766da"
       },
       "files": {
         "gateway/platforms/api_server.py": {
@@ -71,7 +71,7 @@
         },
         "tests/gateway/test_api_mcp_metadata.py": {
           "pre": null,
-          "post": "7cc0de7f1872810594f3e26ca6f79346e8436a394dfe6abcebf11883da848c40",
+          "post": "69a323b26bba44674964309394f8f93fd57b4090413a047ec06b977a0313718d",
           "mode": 420
         },
         "tools/mcp_tool_handlers.py": {
@@ -88,15 +88,15 @@
     },
     "non-moss": {
       "base_commit": "2dfcdbfe4ef79cef7ec4c40783d56561f8518849",
-      "source_commit": "c3a645452d6cae7b613f8b664311ed234c7816c0",
-      "source_tree": "417eb88358f45f738b65d3ec6c7846d164fa6eab",
+      "source_commit": "4b5fcf4e1d7e53de9b46803d301e206542ee2c89",
+      "source_tree": "7a86fe2ab79143cd42f18142751bd7931f6a1220",
       "runtime_patch": {
         "path": "runtime-non-moss.patch",
         "sha256": "bce3771edfcb7be4350c36eb3df6a687600abb9e807604c0224ce9b88b4b30f6"
       },
       "source_patch": {
         "path": "source-non-moss.patch",
-        "sha256": "8b3423679b55b55b94480f0774ad6ead05d1b8977a1fcb9be39544def70caecc"
+        "sha256": "315c43a25c8462509c9e1c083cb01ab6f6f0d90485bbb2c576ee79f1fefdb224"
       },
       "files": {
         "gateway/platforms/api_server.py": {
@@ -153,7 +153,7 @@
         },
         "tests/gateway/test_api_mcp_metadata.py": {
           "pre": null,
-          "post": "7cc0de7f1872810594f3e26ca6f79346e8436a394dfe6abcebf11883da848c40",
+          "post": "69a323b26bba44674964309394f8f93fd57b4090413a047ec06b977a0313718d",
           "mode": 420
         },
         "tools/mcp_tool_handlers.py": {
