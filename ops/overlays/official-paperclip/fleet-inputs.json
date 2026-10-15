@@ -1,0 +1,12 @@
+{
+  "nodeRecipeCommit": "17a3022cddc5d0df2d76dab1957cfe5c21a05040",
+  "pythonOverlayCommit": "7ae52c78183f4a5165b161800b466b5b3ece1498",
+  "roles": {
+    "moss": {"variant": "moss", "nodeImage": "sha256:020b5d43fb2542542d0ddad8995f290fb1877dc51a5b42cc7acbdfd4a0be7d61"},
+    "denholm": {"variant": "non-moss", "nodeImage": "sha256:bab6772d1a5a99a96e2835dbc25be4b46e69ba50c14b6aecbfe0dd962a024334"},
+    "jen": {"variant": "non-moss", "nodeImage": "sha256:57816dec2708cf3af48773fb79a5fd74737081097c176c62b5d585ac309bc61f"},
+    "richmond": {"variant": "non-moss", "nodeImage": "sha256:261925998627e49a37b6c7bbf3cabae6d9035101a0866a852e8ada8bda37b1c9"}
+  },
+  "effect": "isolated-build-only; no config, deployment or lifecycle",
+  "sourceStatus": "private downstream candidate, not upstream release"
+}
