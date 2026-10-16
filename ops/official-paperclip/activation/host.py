@@ -162,7 +162,8 @@ def validate_plan(p):
          re.fullmatch('[A-Za-z0-9_-]{8,128}', p['continuation']['session']) and
          p['continuation']['session'] != 'df6e86989771', 'CONTINUATION_SESSION_INPUT')
     hashed(p['continuation']['session_sha']); evidence(p['continuation']['memory_off_evidence'])
-    need(set(p['catalog']) == {'count','sha'} and type(p['catalog']['count']) is int, 'CATALOG_INPUT')
+    need(set(p['catalog']) == {'count','sha'} and type(p['catalog']['count']) is int and
+         p['catalog']['count'] > 0, 'CATALOG_INPUT')
     hashed(p['catalog']['sha'])
     need(set(p['files']) == {'config', 'compose', 'override', 'transformer'}, 'FILE_ALLOWLIST')
     for k, path in {'config': CONFIG, 'compose': COMPOSE, 'override': OVERRIDE,
@@ -175,8 +176,7 @@ def validate_plan(p):
              'HASH_REQUIRED')
     need(p['preimage']['image'] == PREIMAGE and set(p['siblings']) == set(SIBLINGS), 'IDENTITY_REQUIRED')
     manifest = json.loads((Path(__file__).parent / 'candidate.json').read_bytes())
-    need(p['installed'] == manifest['installed'] and p['catalog']['count'] == manifest['catalogCount'],
-         'CANDIDATE_MANIFEST_CAS')
+    need(p['installed'] == manifest['installed'], 'CANDIDATE_MANIFEST_CAS')
     need(p['files']['compose']['pre'] == p['files']['compose']['post'] and
          p['files']['transformer']['pre'] == p['files']['transformer']['post'], 'UNSCOPED_FILE_DELTA')
     need(p['files']['transformer']['pre'] ==
@@ -420,11 +420,16 @@ async def main():
   async with stdio_client(StdioServerParameters(command=server['command'],args=[],env=env),errlog=err) as (r,w):
    async with ClientSession(r,w) as session:
     init=await session.initialize(); assert init.serverInfo.name=='paperclip'
-    tools=[]; cursor=None
+    tools=[]; cursor=None; seen=set()
     while True:
-     page=await session.list_tools(cursor=cursor); tools.extend(t.name for t in page.tools)
+     page=await session.list_tools(cursor=cursor)
+     names=[t.name for t in page.tools]
+     assert names and all(isinstance(n,str) and n for n in names)
+     tools.extend(names)
      cursor=page.nextCursor
-     if not cursor: break
+     if cursor is None: break
+     assert isinstance(cursor,str) and cursor and cursor not in seen
+     seen.add(cursor)
     assert len(tools)==len(set(tools))
     canonical=json.dumps(sorted(tools),sort_keys=True,separators=(',',':')).encode()
     assert len(tools)==p['catalog']['count'] and hashlib.sha256(canonical).hexdigest()==p['catalog']['sha']

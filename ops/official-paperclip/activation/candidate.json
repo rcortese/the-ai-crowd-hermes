@@ -7,7 +7,6 @@
   "preimage": "sha256:e5dc456e2eca82a2f955506abba9f90d19c9280cdbfa56d4fff163c2439cccad",
   "image": "sha256:4e5d39b682ff055b847ca16f9658f9b34415b708c0d38ab500930c1c3c83f51c",
   "adapterProducerImage": "sha256:b9ad3a9483657cf25cc345310e1ad0801d926f6e43564c7aba06b5e8bdd416aa",
-  "catalogCount": 44,
   "installed": {
     "gateway/platforms/api_server.py": "9a54fdefde00aa420da2fd268491431a9e20626a432ff99eac643d0aaf43e81a",
     "gateway/platforms/api_server_mcp_metadata.py": "525f9d6e923c95d8fac9bd6c84082d6cabffff989126ca5cbdca096621dc76df",

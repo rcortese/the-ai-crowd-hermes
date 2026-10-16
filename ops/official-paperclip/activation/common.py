@@ -117,10 +117,15 @@ def reap_group(p, grace=2):
 
 
 def command(argv, timeout=30, raw=None):
-    # Probe output is kept only in memory. Effect output goes to /dev/null.
+    # Under child_run, commands must stay in the executor's supervised group.
+    # Creating another session here would escape the supervisor on executor death.
+    supervised = os.environ.get('TAC246_SUPERVISED_COMMANDS') == '1'
+    env = dict(ENV)
+    if supervised:
+        env['TAC246_SUPERVISED_COMMANDS'] = '1'
     p = subprocess.Popen(argv, stdin=subprocess.PIPE if raw is not None else subprocess.DEVNULL,
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                         env=ENV, start_new_session=True)
+                         env=env, start_new_session=not supervised)
     try:
         out, _ = p.communicate(raw, timeout=timeout)
         need(p.returncode == 0, 'COMMAND_FAILED')
@@ -129,7 +134,15 @@ def command(argv, timeout=30, raw=None):
     except subprocess.TimeoutExpired:
         raise RuntimeError('COMMAND_TIMEOUT') from None
     finally:
-        reap_group(p)
+        if supervised:
+            # Never kill our shared executor PGID from inside it. Its external
+            # supervisor owns TERM/KILL/adoption/reap of the entire phase group,
+            # including command descendants, on success, error or timeout.
+            if p.poll() is None:
+                p.kill()
+            p.wait(timeout=2)
+        else:
+            reap_group(p)
 
 
 def code_hash():

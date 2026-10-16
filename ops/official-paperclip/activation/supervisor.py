@@ -24,7 +24,7 @@ def child_run(argv, root, phase, timeout, *, pass_fds=()):
     # No raw stdout/stderr, even on errors. Child's structured receipt is the channel.
     p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, start_new_session=True,
-                         env=ENV, pass_fds=pass_fds)
+                         env=dict(ENV, TAC246_SUPERVISED_COMMANDS='1'), pass_fds=pass_fds)
     evidence = dict(pid=p.pid, pgid=p.pid, argv=digest(argv), started=time.time(), state='RUNNING')
     try:
         evidence['start'] = process_token(p.pid)

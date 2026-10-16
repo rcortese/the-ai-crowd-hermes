@@ -31,7 +31,9 @@ class Fake:
         self.fail_verify = False
         self.posts = []
         self.status = ['running', 'completed']
-        self.session = {'object': 'hermes.session', 'session': {'id': 'correct-existing-session', 'source': 'api_server'}}
+        self.session = {'object': 'hermes.session', 'session': {
+            'id': 'correct-existing-session', 'source': 'api_server', 'user_id': None,
+            'started_at': 90.0, 'parent_session_id': None, 'is_internal_child': False}}
         self.root = None
         self.fail_admission = False
         self.cas_calls = 0
@@ -287,6 +289,88 @@ class TransactionTests(RootCase):
         self.assertEqual(len(b.posts), 1)
         self.assertEqual(b.events.count('recreate'), 1)
 
+    def test_R2_submitted_and_completed_recover_with_mutable_session(self):
+        b = Fake(); plan = fake_plan(b); path = self.root / 'continuation.json'
+        b.status = ['running'] * 100
+        with self.assertRaisesRegex(RuntimeError, 'CONTINUATION_INCOMPLETE'):
+            resume(b, plan, 'same-run', path, children_reaped=True)
+        submitted = read_json(path)
+        b.session['session'].update(message_count=11, last_active=101, preview='changed',
+                                    input_tokens=300, actual_cost_usd=0.1, title='new title')
+        b.status = ['completed']
+        completed = resume(b, plan, 'same-run', path, children_reaped=True)
+        self.assertEqual(completed['state'], 'COMPLETED')
+        self.assertEqual(completed['run_id'], submitted['run_id'])
+        for field in ('key', 'payload', 'plan'):
+            self.assertEqual(completed[field], submitted[field])
+        b.session['session'].update(message_count=12, last_active=102)
+        self.assertEqual(resume(b, plan, 'same-run', path, children_reaped=True), completed)
+        self.assertEqual(len(b.posts), 1)
+        self.assertIn('http:GET:/v1/runs/fake-run-123', b.events)
+
+    def test_R2_recovery_rejects_identity_memory_and_receipt_rebinding(self):
+        for bad in ('id', 'source', 'user_id', 'started_at', 'parent_session_id',
+                    'is_internal_child', 'memory', 'plan', 'run', 'receipt-owner'):
+            with self.subTest(bad=bad):
+                b = Fake(); plan = fake_plan(b); path = self.root / (bad + '.json')
+                b.status = ['running'] * 100
+                with self.assertRaisesRegex(RuntimeError, 'CONTINUATION_INCOMPLETE'):
+                    resume(b, plan, 'same-run', path, children_reaped=True)
+                if bad in b.session['session']:
+                    b.session['session'][bad] = 'foreign'
+                elif bad == 'memory':
+                    def reject(entry): raise RuntimeError('MEMORY_OFF_UNPROVEN')
+                    b.memory_off = reject
+                elif bad == 'plan':
+                    plan['timeouts']['continuation'] += 1
+                run = 'different-run' if bad == 'run' else 'same-run'
+                before = len(b.events)
+                if bad == 'receipt-owner':
+                    # No chown/privilege required: assert exact uid validation call.
+                    def wrong_owner(target, mode=None, uid=None, directory=False):
+                        self.assertEqual(uid, os.getuid())
+                        raise RuntimeError('PATH_OWNER')
+                    with patch('continuation.secure', wrong_owner):
+                        with self.assertRaises(RuntimeError):
+                            resume(b, plan, run, path, children_reaped=True)
+                else:
+                    with self.assertRaises(RuntimeError):
+                        resume(b, plan, run, path, children_reaped=True)
+                self.assertEqual(len(b.posts), 1)
+                self.assertNotIn('http:GET:/v1/runs/fake-run-123', b.events[before:])
+                self.assertEqual(read_json(path)['state'], 'SUBMITTED')
+
+    def test_R2_completed_receipt_still_checks_identity_memory_and_custody(self):
+        for bad in ('user_id', 'started_at', 'memory', 'receipt-owner'):
+            with self.subTest(bad=bad):
+                b = Fake(); plan = fake_plan(b); path = self.root / ('done-' + bad + '.json')
+                done = resume(b, plan, 'same-run', path, children_reaped=True)
+                if bad in b.session['session']:
+                    b.session['session'][bad] = 'foreign'
+                if bad == 'memory':
+                    def reject(entry): raise RuntimeError('MEMORY_OFF_UNPROVEN')
+                    b.memory_off = reject
+                if bad == 'receipt-owner':
+                    def wrong_owner(target, mode=None, uid=None, directory=False):
+                        self.assertEqual(uid, os.getuid())
+                        raise RuntimeError('PATH_OWNER')
+                    with patch('continuation.secure', wrong_owner):
+                        with self.assertRaises(RuntimeError):
+                            resume(b, plan, 'same-run', path, children_reaped=True)
+                else:
+                    with self.assertRaises(RuntimeError):
+                        resume(b, plan, 'same-run', path, children_reaped=True)
+                self.assertEqual(read_json(path), done)
+                self.assertEqual(len(b.posts), 1)
+
+    def test_R2_initial_snapshot_remains_exact_CAS(self):
+        b = Fake(); plan = fake_plan(b)
+        b.session['session']['message_count'] = 1
+        with self.assertRaisesRegex(RuntimeError, 'SESSION_BINDING'):
+            resume(b, plan, 'same-run', self.root / 'initial.json', children_reaped=True)
+        self.assertFalse((self.root / 'initial.json').exists())
+        self.assertEqual(b.posts, [])
+
     def test_callback_wrong_session_no_post(self):
         b = Fake(); p = fake_plan(b); b.session['session']['source'] = 'webui'
         with self.assertRaisesRegex(RuntimeError, 'SESSION_BINDING'):
@@ -335,6 +419,68 @@ class TransactionTests(RootCase):
 
 
 class TransportTests(RootCase):
+    def test_R1_composed_command_timeout_reaps_actual_pid(self):
+        self.assertEqual(ctypes.CDLL(None).prctl(36, 1, 0, 0, 0), 0)
+        pidfile = self.root / 'owned-command-pid'
+        payload = ('import os,time;from pathlib import Path;'
+                   'Path(%r).write_text(str(os.getpid()));time.sleep(30)' % str(pidfile))
+        source = str(Path(__file__).parent)
+        worker = ('import sys;sys.path.insert(0,%r);from common import command;'
+                  'command([sys.executable,"-B","-c",%r],timeout=20)' % (source, payload))
+        pid = None
+        try:
+            with self.assertRaisesRegex(RuntimeError, 'CHILD_TIMEOUT'):
+                child_run([sys.executable, '-B', '-c', worker], self.root, 'composed', 1)
+            pid = int(pidfile.read_text())
+            receipt = read_json(self.root / 'composed-process.json')
+            self.assertTrue(receipt['reaped'])
+            self.assertEqual(receipt['state'], 'TIMEOUT')
+            with self.assertRaises(ProcessLookupError):
+                os.kill(pid, 0)
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(receipt['pgid'], 0)
+        finally:
+            # RED must also clean only the exact process created by this fixture.
+            if pid is None and pidfile.exists():
+                pid = int(pidfile.read_text())
+            if pid is not None:
+                try: os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError: pass
+                try: os.waitpid(pid, 0)
+                except ChildProcessError: pass
+
+    def test_R1_command_timeout_and_success_with_descendant_keep_supervisor_alive(self):
+        self.assertEqual(ctypes.CDLL(None).prctl(36, 1, 0, 0, 0), 0)
+        for mode in ('command-timeout', 'success-with-descendant'):
+            with self.subTest(mode=mode):
+                pidfile = self.root / (mode + '-pid')
+                payload = ('import os,time;from pathlib import Path;pid=os.fork();'
+                           'Path(%r).write_text(str(pid)) if pid else None;'
+                           'os.close(1) if not pid else None;'
+                           'time.sleep(30) if not pid or %r else None' %
+                           (str(pidfile), mode == 'command-timeout'))
+                worker = ('import sys;sys.path.insert(0,%r);from common import command;\n'
+                          'try: command([sys.executable,"-B","-c",%r],timeout=0.3)\n'
+                          'except RuntimeError as e: assert str(e)=="COMMAND_TIMEOUT"\n'
+                          'print("executor survived command cleanup")' % (str(Path(__file__).parent), payload))
+                pid = None
+                try:
+                    # Local command cleanup must not kill its executor. Both the
+                    # timed-out command and successful leader leave an owned child.
+                    result = child_run([sys.executable, '-B', '-c', worker], self.root, mode, 5)
+                    pid = int(pidfile.read_text())
+                    self.assertEqual(result['state'], 'EXITED')
+                    self.assertEqual(result['rc'], 0)
+                    self.assertTrue(result['reaped'])
+                    with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
+                finally:
+                    if pid is None and pidfile.exists(): pid = int(pidfile.read_text())
+                    if pid is not None:
+                        try: os.kill(pid, signal.SIGKILL)
+                        except ProcessLookupError: pass
+                        try: os.waitpid(pid, 0)
+                        except ChildProcessError: pass
+
     def test_secret_output_is_discarded_and_child_reaped(self):
         secret = 'fixture-sensitive-output-NEVER-PERSIST'
         result = child_run([sys.executable, '-c', 'import sys;print(%r);print(%r,file=sys.stderr)' % (secret,secret)],
@@ -540,9 +686,9 @@ class WorkerTests(RootCase):
 
 
 class ApplicationProbeTests(RootCase):
-    def test_complete_fake_sdk_and_rejects_static_context_bridge_or_old_bytes(self):
-        names=['paperclipMe']+['fixtureTool%02d'%i for i in range(43)]
-        catalog=dict(count=44,sha=digest(sorted(names)))
+    def application_probe(self, variant='good', count=44):
+        names=['paperclipMe']+['fixtureTool%02d'%i for i in range(count-1)]
+        catalog=dict(count=len(names),sha=digest(sorted(names)))
         (self.root/'config.yaml').write_text('{}')
         (self.root/'installed.py').write_text('# fixture installed bytes\n')
         installed={'installed.py':sha((self.root/'installed.py').read_bytes())}
@@ -563,7 +709,9 @@ class Session:
  async def __aenter__(self): return self
  async def __aexit__(self,*a): pass
  async def initialize(self): return N(serverInfo=N(name='paperclip'))
- async def list_tools(self,**kw): return N(tools=[N(name=x) for x in NAMES],nextCursor=None)
+ async def list_tools(self,**kw):
+  cursor=kw['cursor']; names,nxt=PAGES[cursor]
+  return N(tools=[N(name=x) for x in names],nextCursor=nxt)
  async def call_tool(self,name,args):
   assert name=='paperclipMe' and args=={}
   return N(isError=True,error='Missing paperclip/run-context')
@@ -574,20 +722,49 @@ sys.modules.update({'mcp':mcp,'mcp.client':client,'mcp.client.stdio':stdio})
 '''
         script=APP_VERIFY.replace("pathlib.Path('/opt/data/profiles/moss')",'pathlib.Path('+repr(str(self.root))+')')
         script=script.replace("pathlib.Path('/opt/hermes')",'pathlib.Path('+repr(str(self.root))+')')
+        c=copy.deepcopy(cfg); ins=dict(installed)
+        pages={None: (names[:1], 'page-two'), 'page-two': (names[1:], None)}
+        if variant=='static-context': c['mcp_servers']['paperclip']['env']['PAPERCLIP_RUN_ID']='stale'
+        if variant=='bridge': c['plugins']['enabled']=['paperclip_access']
+        if variant=='old-bytes': ins['installed.py']='a'*64
+        if variant=='reduced': pages={None: (names[:-1], None)}
+        if variant=='incomplete': pages={None: (names[:1], None)}
+        if variant=='duplicate': pages['page-two']=(names, None)
+        if variant=='wrong-digest': catalog['sha']='a'*64
+        if variant=='wrong-count': catalog['count']+=1
+        if variant=='empty-cursor': pages={None: (names, '')}
+        if variant=='empty-page': pages={None: ([], 'page-two'), 'page-two': (names, None)}
+        if variant=='cursor-cycle': pages['page-two']=(names[1:], 'page-two')
+        if variant=='cursor-type': pages={None: (names, 0)}
+        source='CONFIG='+repr(c)+'\nPAGES='+repr(pages)+'\n'+prefix+'\nos.environ["HERMES_HOME"]='+repr(str(self.root))+'\n'+script
+        try:
+            return subprocess.run([sys.executable,'-B','-c',source],input=encoded(dict(installed=ins,catalog=catalog)),
+                                  stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=2)
+        except subprocess.TimeoutExpired:
+            self.fail('R4 pagination must reject adversarial cursor before local timeout')
+
+    def test_complete_fake_sdk_and_rejects_static_context_bridge_or_old_bytes(self):
         for variant in ('good','static-context','bridge','old-bytes'):
-            c=copy.deepcopy(cfg); ins=dict(installed)
-            if variant=='static-context': c['mcp_servers']['paperclip']['env']['PAPERCLIP_RUN_ID']='stale'
-            if variant=='bridge': c['plugins']['enabled']=['paperclip_access']
-            if variant=='old-bytes': ins['installed.py']='a'*64
-            source='CONFIG='+repr(c)+'\nNAMES='+repr(names)+'\n'+prefix+'\nos.environ["HERMES_HOME"]='+repr(str(self.root))+'\n'+script
-            result=subprocess.run([sys.executable,'-B','-c',source],input=encoded(dict(installed=ins,catalog=catalog)),
-                                  stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=10)
+            result=self.application_probe(variant)
             with self.subTest(variant=variant):
                 if variant=='good':
                     self.assertEqual(result.returncode,0)
                     self.assertEqual(json.loads(result.stdout),dict(bytes=True,context=True,bridgeInactive=True,catalog=True))
                 else:
                     self.assertNotEqual(result.returncode,0)
+
+    def test_R4_complete_paginated_catalog_at_distinct_cardinalities(self):
+        for count in (3, 44, 45, 61):
+            with self.subTest(count=count):
+                p=complete_plan(); p['catalog']['count']=count
+                validate_plan(p)
+                self.assertEqual(self.application_probe(count=count).returncode, 0)
+
+    def test_R4_catalog_requires_completeness_not_just_cardinality(self):
+        for variant in ('reduced','incomplete','duplicate','wrong-digest','wrong-count',
+                        'empty-cursor','empty-page','cursor-cycle','cursor-type'):
+            with self.subTest(variant=variant):
+                self.assertNotEqual(self.application_probe(variant).returncode, 0)
 
 
 class MutationTests(RootCase):
@@ -600,7 +777,19 @@ class MutationTests(RootCase):
                ('host.py',"'api_runs': d['api_server']['active_runs']","'api_runs': q['active_api_runs']",
                 'HostContractTests.test_native_shape_snapshot_keeps_total_api_counter'),
                ('continuation.py',"need(children_reaped is True, 'CHILD_NOT_REAPED')",
-                "need(True, 'CHILD_NOT_REAPED')",'TransactionTests.test_callback_requires_reaped_and_rejects_failed')]
+                "need(True, 'CHILD_NOT_REAPED')",'TransactionTests.test_callback_requires_reaped_and_rejects_failed'),
+               ('supervisor.py', "env=dict(ENV, TAC246_SUPERVISED_COMMANDS='1'), pass_fds=pass_fds)",
+                'env=ENV, pass_fds=pass_fds)',
+                'TransportTests.test_R1_composed_command_timeout_reaps_actual_pid'),
+               ('continuation.py', "preflight(backend, plan, identity=previous['session_identity'])",
+                'preflight(backend, plan)',
+                'TransactionTests.test_R2_submitted_and_completed_recover_with_mutable_session'),
+               ('host.py', 'if cursor is None: break', 'if not cursor: break',
+                'ApplicationProbeTests.test_R4_catalog_requires_completeness_not_just_cardinality'),
+               ('host.py', ' and cursor not in seen', '',
+                'ApplicationProbeTests.test_R4_catalog_requires_completeness_not_just_cardinality'),
+               ('host.py', " and hashlib.sha256(canonical).hexdigest()==p['catalog']['sha']", '',
+                'ApplicationProbeTests.test_R4_catalog_requires_completeness_not_just_cardinality')]
         source=Path(__file__).parent
         for i,(name,before,after,target) in enumerate(cases):
             with self.subTest(mutant=i,oracle=target):
@@ -612,7 +801,7 @@ class MutationTests(RootCase):
                 proc=subprocess.run([sys.executable,'-B','-m','unittest','test_activation.'+target],
                                     cwd=dest,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=30)
                 self.assertNotEqual(proc.returncode,0)
-                self.assertIn(b'FAIL:',proc.stdout)
+                self.assertIn(b'FAILED (',proc.stdout)
                 self.assertIn(target.split('.')[-1].encode(),proc.stdout)
 
 

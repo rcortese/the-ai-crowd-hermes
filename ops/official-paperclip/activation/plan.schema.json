@@ -37,7 +37,7 @@
                   "additionalProperties": {"$ref": "#/$defs/sha"}},
     "catalog": {
       "type": "object", "additionalProperties": false, "required": ["count","sha"],
-      "properties": {"count": {"const": 44}, "sha": {"$ref": "#/$defs/sha"}}
+      "properties": {"count": {"type": "integer", "minimum": 1}, "sha": {"$ref": "#/$defs/sha"}}
     },
     "continuation": {
       "type": "object", "additionalProperties": false, "required": ["session","session_sha","memory_off_evidence"],

@@ -8,6 +8,46 @@ Este diretório pertence ao candidato isolado
 A revisão F1 `67fd517` altera testes/metadados, não os runtime patches/hashes/imagens
 `353b802`; a reconciliação desses metadados pertence ao coordenador.
 
+## Delta R1/R2/R4 — revisão ainda pendente
+
+O parecer independente sobre `199d98ea4f67d46a0c067191b90654c70f34afa2`
+(tree `a57bc2550a71d925c8bd94ff54ffbac1db323234`) permanece **REQUEST_CHANGES**.
+Este delta source-only foi autorizado somente para **R1/P1, R2/P1 e R4/P2**, no
+clone independente `/opt/data/profiles/moss/runtime/execution-candidates/tac246-activation-r314dd718`.
+O candidato original não foi alterado. **R3/P1 permanece contido, sem bypass;
+prontidão operacional BLOCKED.** Correções aqui não são autoaprovação nem ativação.
+
+- **R1:** `child_run` marca seus comandos como supervisionados; `common.command`
+  conserva esse PGID, sem abrir outra sessão. Seu cleanup local termina/reapa o
+  líder do comando sem matar o executor; o supervisor externo termina/reapa o grupo
+  inteiro, inclusive descendentes adotados, antes de `reaped:true`. Comandos fora
+  desse envelope conservam seu grupo exclusivo e cleanup próprio. Isso cobre os
+  comandos fechados deste pacote, não processos arbitrários que deliberadamente
+  daemonizem com `setsid`. O teste composto usa PID real local, timeout externo,
+  timeout interno e líder bem-sucedido com descendente; também limpa o caso RED.
+  Encerrar Docker CLI **não** prova cancelamento no daemon/container.
+- **R2:** o primeiro INTENT conserva CAS do snapshot integral; persiste somente SHA
+  da identidade estável real (`id/source/user_id/started_at/parent_session_id/
+  is_internal_child`). Recovery lê receipt privado do uid atual antes do preflight,
+  revalida capabilities, memória-off e identidade, mas não compara contadores,
+  custos, preview ou título com o preimage. `user_id` pode ser null na API real:
+  não é atestação fictícia de principal; a autoridade continua o namespace da API
+  autenticada no container fixo e o snapshot inicial autorizado. Sem trocar sessão,
+  plano, payload, idempotency-key ou run aceito, sem POST em SUBMITTED/COMPLETED.
+  Receipts antigos sem binding estável falham fechado; não são migrados/adivinhados.
+- **R4:** a contagem do plano é observação externa do catálogo completo, não pin
+  histórico. O SDK percorre todas as páginas até `nextCursor is None`, rejeita
+  nomes vazios/duplicados, páginas vazias e cursores inválidos/repetidos; calcula
+  contagem e digest de todos os nomes e compara ambos com o plano aprovado.
+  Aceitar outra cardinalidade no schema **não** certifica completude: catálogo
+  reduzido ou página faltante continua falhando no digest/contagem vinculados.
+  O catálogo oficial externo ainda não foi fornecido; fixtures não o substituem.
+
+Evidência RED/GREEN e execução local: arquivos no scratch com prefixo
+`/opt/data/profiles/moss/cache/scratch/tac246-r314dd718-`.
+Parecer/probes/resultados originais preservados sob `tac246-review-199d98e*`.
+Novo aceite exige revisão independente do commit/tree/digest deste delta.
+
 ## Limite e bloqueios reais
 
 Somente executor de **Moss**, imagem já construída + transformação MCP aprovada.
@@ -104,8 +144,11 @@ Sem descontar processos/turnos de controle.
 stdlib mais restrita: caminhos exatos por papel, preimage/image/transformer pinados,
 source.paths completo/ordenado dos nove arquivos, nenhum comando arbitrário e
 `compose.pre == compose.post`, `transformer.pre == transformer.post`.
-`installed` deve coincidir integralmente com `candidate.json`; catálogo tem 44 nomes
-únicos e SHA-256 de `json.dumps(sorted(nomes), sort_keys=True, separators=(',', ':'))`.
+`installed` deve coincidir integralmente com `candidate.json`; catálogo exige todos
+os nomes únicos da observação completa, contagem derivada e SHA-256 de
+`json.dumps(sorted(nomes), sort_keys=True, separators=(',', ':'))`.
+A paginação deve terminar em cursor nulo, sem repetição, página vazia ou nomes
+vazios; contagem e digest são vinculados ao plano externo, nunca a um valor fixo.
 `source.commit/tree` são do commit **final revisado de ativação**, não do base dos pins.
 O check scoped de Git é complementado por comparação de cada blob HEAD com arquivo;
 `GIT_OPTIONAL_LOCKS=0`, sem trust Git global ou limpeza de dirty state alheio.
@@ -176,8 +219,10 @@ não fechou. Preservar receipts e reconciliar somente essa fase, não repetir li
 `COMPLETED`: verificação do executor e run de continuação terminal; não significa
 aceite humano, board concluído, review ou promoção dos outros três runtimes.
 
-Subprocessos têm PGID próprio, PID/start/argv SHA/rc e reap duráveis; TERM/KILL de
-seu grupo host é bounded, falha de cleanup não declara `reaped:true`. Stdout/stderr
+O executor tem PGID próprio, PID/start/argv SHA/rc e reap duráveis; seus comandos
+supervisionados herdam esse PGID. TERM/KILL e reap do grupo pelo supervisor externo
+são bounded; cleanup local de comando nunca sinaliza o grupo do próprio executor.
+Falha de cleanup não declara `reaped:true`. Stdout/stderr
 child são `/dev/null`; probes são capturados só em memória, nunca em receipts/logs;
 CLI só emite JSON com estado/digest/gate de allowlist, sem traceback/texto de erro raw.
 Matar cliente Docker não prova cancelamento de operação no daemon/container: estado
