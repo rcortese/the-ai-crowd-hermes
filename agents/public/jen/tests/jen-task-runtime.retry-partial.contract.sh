@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root=$(cd "$(dirname "$0")/.." && pwd)
+repo_root=${JEN_TEST_PUBLIC_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
 runtime="$repo_root/bin/jen-task-runtime"
 state_file=$(mktemp)
 mock_dir=$(mktemp -d)
@@ -107,9 +107,13 @@ first_retry_status=$?
 set -e
 assert_eq "$first_retry_status" "1" 'transient retry first attempt fails closed'
 assert_jq "$first_retry" '.status == "failed" and .failure_class == "network_failure"' 'transient retry first attempt records network failure'
+set +e
 second_retry=$(JEN_TASK_RUNTIME_TEST_MODE=retry_partial_transient JEN_TASK_RUNTIME_TEST_LOG="$transient_log" JEN_TASK_RUNTIME_TEST_MARKER="$transient_marker" JEN_IDEMPOTENCY_DIR="$mock_dir/idem-transient" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=dummy "$runtime" update-due --task-id retry-1 --due 2026-05-11)
-assert_jq "$second_retry" '.status == "ok" and .verified == true and .due_string == "2026-05-11" and .task.due.string == "2026-05-11"' 'transient retry second attempt succeeds'
-assert_eq "$(grep -c '^update-due retry-1 2026-05-11$' "$transient_log")" "2" 'transient retry path replays the adapter'
+second_retry_status=$?
+set -e
+assert_eq "$second_retry_status" "1" 'post-dispatch network uncertainty forbids mutating retry'
+assert_jq "$second_retry" '.status == "failed" and .failure_class == "unsafe_replay_state"' 'unknown intent requires reconciliation'
+assert_eq "$(grep -c '^update-due retry-1 2026-05-11$' "$transient_log")" "1" 'network uncertainty never reissues a mutation'
 
 rate_limited_log="$mock_dir/rate-limited.log"
 rate_limited_marker="$mock_dir/rate-limited.marker"
@@ -119,9 +123,13 @@ first_rate_limited_status=$?
 set -e
 assert_eq "$first_rate_limited_status" "1" 'rate-limited retry first attempt fails closed'
 assert_jq "$first_rate_limited" '.status == "failed" and .failure_class == "rate_limited"' 'rate-limited retry first attempt records rate_limited'
+set +e
 second_rate_limited=$(JEN_TASK_RUNTIME_TEST_MODE=retry_partial_rate_limited JEN_TASK_RUNTIME_TEST_LOG="$rate_limited_log" JEN_TASK_RUNTIME_TEST_MARKER="$rate_limited_marker" JEN_IDEMPOTENCY_DIR="$mock_dir/idem-rate-limited" JEN_TASK_RUNTIME_STATE_FILE="$state_file" JEN_TASK_RUNTIME_TODOIST_SCRIPT="$mock_script" TODOIST_API_TOKEN=dummy "$runtime" update-due --task-id retry-rate --due 2026-05-11)
-assert_jq "$second_rate_limited" '.status == "ok" and .verified == true and .due_string == "2026-05-11" and .task.due.string == "2026-05-11"' 'rate-limited retry second attempt succeeds'
-assert_eq "$(grep -c '^update-due retry-rate 2026-05-11$' "$rate_limited_log")" "2" 'rate-limited retry path replays the adapter'
+second_rate_limited_status=$?
+set -e
+assert_eq "$second_rate_limited_status" "1" 'post-dispatch rate limit forbids blind mutating retry'
+assert_jq "$second_rate_limited" '.status == "failed" and .failure_class == "unsafe_replay_state"' 'rate limit needs exact-intent reconciliation'
+assert_eq "$(grep -c '^update-due retry-rate 2026-05-11$' "$rate_limited_log")" "1" 'rate limit never reissues a mutation'
 
 nontransient_log="$mock_dir/nontransient.log"
 nontransient_marker="$mock_dir/nontransient.marker"

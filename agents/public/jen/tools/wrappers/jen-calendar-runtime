@@ -1,6 +1,160 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Reads have a distinct fail-closed contract. Never infer empty data from rc=0.
+if [[ "${1:-}" == list-events || "${1:-}" == freebusy || "${1:-}" == get-event ]]; then
+  exec python3 - "$@" <<'PYREAD'
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import selectors
+import signal
+import subprocess
+import sys
+import time
+
+command = sys.argv[1]
+options = {}
+def instant(value):
+    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)', value):
+        raise ValueError('invalid_argument')
+    return dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+def utc():
+    return dt.datetime.now(dt.UTC).isoformat().replace('+00:00', 'Z')
+base = dict(contract_version='jen-calendar-runtime.v1', read_contract='jen-calendar-read.v1', command=command, source='live', complete=False, read_state='unknown')
+def emit(payload, rc):
+    text = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    if len(text) > 6000:
+        text = json.dumps(dict(base, status='failed', failure_class='envelope_limit', checked_at=utc()), separators=(',', ':'))
+        rc = 1
+    print(text)
+    raise SystemExit(rc)
+def fail(reason):
+    emit(dict(base, status='failed', failure_class=reason, checked_at=utc()), 1)
+
+# Capture with live bounds, not communicate()+a post-hoc length check. Kill the
+# entire provider process group on every exit, including descendants holding pipes.
+def fetch(argv, timeout):
+    process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+    output = bytearray()
+    sel = selectors.DefaultSelector()
+    for stream in (process.stdout, process.stderr):
+        os.set_blocking(stream.fileno(), False)
+        sel.register(stream, selectors.EVENT_READ)
+    deadline = time.monotonic() + timeout
+    try:
+        while sel.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ValueError('network_failure')
+            for key, _ in sel.select(remaining):
+                chunk = os.read(key.fileobj.fileno(), 65536)
+                if not chunk:
+                    sel.unregister(key.fileobj)
+                elif key.fileobj is process.stdout:
+                    output.extend(chunk)
+                    if len(output) > 1048576:
+                        raise ValueError('page_output_limit')
+                # stderr is drained but never persisted, echoed, or parsed as data.
+        rc = process.wait(timeout=max(.001, deadline-time.monotonic()))
+        if rc != 0:
+            raise ValueError('request_failure')
+        return json.loads(output)
+    finally:
+        sel.close()
+        try: os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError: pass
+        process.wait()
+        process.stdout.close()
+        process.stderr.close()
+
+try:
+    args = sys.argv[2:]
+    allowed = {'--calendar', '--from', '--to', '--max', '--query'} if command == 'list-events' else ({'--calendar','--from','--to'} if command == 'freebusy' else {'--calendar','--event-id'})
+    if len(args) % 2: fail('invalid_argument')
+    for key, value in zip(args[::2], args[1::2]):
+        if key not in allowed or key in options: fail('invalid_argument')
+        options[key] = value
+    calendar = options.get('--calendar')
+    if not calendar: fail('invalid_argument')
+    base['calendar_id'] = calendar
+    if command != 'get-event':
+        start, end = options.get('--from'), options.get('--to')
+        if instant(end) <= instant(start): fail('invalid_argument')
+        base.update({'from':start, 'to':end, 'checked_from':utc()})
+    maximum = options.get('--max', '10')
+    if not re.fullmatch(r'[0-9]+', maximum) or not 1 <= int(maximum) <= 50: fail('invalid_argument')
+    maximum = int(maximum)
+    gog = os.environ.get('JEN_CALENDAR_RUNTIME_GOG', 'gog')
+    common = ['--no-input','--json','--client',os.environ.get('JEN_CALENDAR_RUNTIME_GOG_CLIENT','jen-google')]
+    if os.environ.get('GOG_ACCOUNT'): common += ['--account',os.environ['GOG_ACCOUNT']]
+    deadline = time.monotonic() + 35
+    if command == 'list-events':
+        events, tokens, identities = [], set(), set()
+        token = ''
+        pages = 0
+        stop = 'exhausted'
+        while True:
+            remaining = deadline-time.monotonic()
+            if remaining <= 0: fail('network_failure')
+            argv = [gog,'calendar','events',calendar,'--from',start,'--to',end,'--max',str(maximum-len(events)),*common]
+            if '--query' in options: argv += ['--query',options['--query']]
+            if token: argv += ['--page',token]  # opaque, literal, never logged
+            raw = fetch(argv,min(10,remaining))
+            pages += 1
+            if not isinstance(raw,dict) or not isinstance(raw.get('events'),list) or not isinstance(raw.get('nextPageToken'),str): fail('invalid_read_response')
+            # Validate adverse/typed adapter signals before canonicalization.
+            # They cannot be erased to manufacture a complete empty response.
+            if 'errors' in raw and (not isinstance(raw['errors'],list) or raw['errors']): fail('invalid_read_response')
+            if 'status' in raw and raw['status'] != 'ok': fail('invalid_read_response')
+            if 'complete' in raw and raw['complete'] is not True: fail('invalid_read_response')
+            if any(key in raw and raw[key] is not False for key in ('preview','cut','truncated')): fail('invalid_read_response')
+            if 'has_more' in raw and raw['has_more'] is not bool(raw['nextPageToken']): fail('invalid_read_response')
+            page = raw['events']
+            for event in page:
+                if not isinstance(event,dict) or not isinstance(event.get('id'),str) or not event['id'] or event['id'] in identities: fail('duplicate_or_invalid_event')
+                identities.add(event['id'])
+            next_token = raw['nextPageToken']
+            if next_token and next_token in tokens: fail('pagination_cycle')
+            if next_token: tokens.add(next_token)
+            available = maximum-len(events)
+            events.extend(page[:available])
+            more = bool(next_token) or len(page)>available
+            if not more: break
+            if len(events)>=maximum:
+                stop='total_cap'; break
+            if pages>=5:
+                stop='page_cap'; break
+            token=next_token
+        complete = stop=='exhausted'
+        if time.monotonic() > deadline: fail('network_failure')
+        canonical = json.dumps(events,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
+        emit(dict(base,status='ok' if complete else 'partial',read_state='complete' if complete else 'partial',complete=complete,truncated=not complete,has_more=not complete,returned_count=len(events),pages_read=pages,stop_reason=stop,events=events,checked_at=utc(),z_integrity=dict(contract_version='jen-calendar-read-integrity.v1',count=len(events),sha256=hashlib.sha256(canonical).hexdigest(),canonicalization='json-utf8-sort_keys-compact.v1')),0 if complete else 2)
+    elif command=='freebusy':
+        raw=fetch([gog,'calendar','freebusy',calendar,'--from',start,'--to',end,*common],10)
+        if not isinstance(raw,dict) or raw.get('errors') or instant(raw.get('timeMin'))!=instant(start) or instant(raw.get('timeMax'))!=instant(end): fail('invalid_read_response')
+        calendars=raw.get('calendars')
+        if not isinstance(calendars,dict) or set(calendars)!={calendar}: fail('invalid_read_response')
+        entry=calendars[calendar]
+        if not isinstance(entry,dict) or entry.get('errors') or not isinstance(entry.get('busy'),list): fail('invalid_read_response')
+        busy=entry['busy']
+        for block in busy:
+            if not isinstance(block,dict) or instant(block.get('end'))<=instant(block.get('start')): fail('invalid_read_response')
+        emit(dict(base,status='ok',read_state='complete',complete=True,busy=busy,checked_at=utc()),0)
+    else:
+        event_id=options.get('--event-id')
+        if not event_id: fail('invalid_argument')
+        raw=fetch([gog,'calendar','event',calendar,event_id,*common],10)
+        if not isinstance(raw,dict) or raw.get('id')!=event_id: fail('invalid_read_response')
+        emit(dict(base,status='ok',read_state='complete',complete=True,event=raw,event_id=event_id,checked_at=utc()),0)
+except (ValueError, TypeError, KeyError, UnicodeError, OSError, subprocess.TimeoutExpired) as exc:
+    reason=str(exc) if isinstance(exc,ValueError) and str(exc) in {'invalid_argument','network_failure','page_output_limit','request_failure'} else 'invalid_read_response'
+    fail(reason)
+PYREAD
+fi
+
 CONTRACT_VERSION="jen-calendar-runtime.v1"
 AUTHORITY="workspace-calendar-runtime"
 ADAPTER_NAME="gog"
@@ -20,7 +174,7 @@ base_gog_args() {
 }
 
 valid_rfc3339_tz() {
-  [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})$ ]]
+  python3 -c 'import datetime,re,sys; s=sys.argv[1]; assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)",s); datetime.datetime.fromisoformat(s.replace("Z","+00:00"))' "$1" >/dev/null 2>&1
 }
 
 map_error() {
@@ -60,7 +214,7 @@ cmd_health() {
   local checked adapter status posture live probe stderr_file stdout_file doctor combined cls
   checked="$(now_utc)"; adapter="$(adapter_path)"
   if ! command -v "$GOG_BIN" >/dev/null 2>&1; then
-    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" '{contract_version:$cv,command:"health",status:"unavailable",posture:"unavailable",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"failed",checked_at:$checked},live_read_status:"unavailable",failure_reason:"adapter_missing"}'
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" '{contract_version:$cv,command:"health",read_contract:"jen-calendar-read.v1",source:"live",complete:false,read_state:"unknown",status:"unavailable",posture:"unavailable",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"failed",checked_at:$checked},live_read_status:"unavailable",failure_reason:"adapter_missing"}'
     return 0
   fi
   stdout_file="$(mktemp)"; stderr_file="$(mktemp)"; trap 'rm -f "$stdout_file" "$stderr_file"' RETURN
@@ -71,7 +225,7 @@ cmd_health() {
   combined="$(cat "$stdout_file" "$stderr_file" 2>/dev/null || true)"
   if grep -q $'status\terror' <<<"$combined" || grep -q 'status error' <<<"$combined"; then
     cls="$(map_error "$combined")"
-    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" --arg cls "$cls" '{contract_version:$cv,command:"health",status:"degraded",posture:"degraded",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"failed",checked_at:$checked},live_read_status:$cls,failure_reason:"auth_doctor_error"}'
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" --arg cls "$cls" '{contract_version:$cv,command:"health",read_contract:"jen-calendar-read.v1",source:"live",complete:false,read_state:"unknown",status:"degraded",posture:"degraded",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"failed",checked_at:$checked},live_read_status:$cls,failure_reason:"auth_doctor_error"}'
     return 0
   fi
   read_nul_args gog_args
@@ -79,55 +233,12 @@ cmd_health() {
   "$GOG_BIN" calendar time "${gog_args[@]}" >"$stdout_file" 2>"$stderr_file"
   rc=$?
   set -e
-  if [[ $rc -eq 0 ]]; then
-    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" '{contract_version:$cv,command:"health",status:"ok",posture:"available",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"ok",checked_at:$checked},live_read_status:"ok"}'
+  if [[ $rc -eq 0 ]] && jq -e 'type == "object" and length > 0' "$stdout_file" >/dev/null 2>&1; then
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" '{contract_version:$cv,command:"health",read_contract:"jen-calendar-read.v1",source:"live",complete:true,read_state:"complete",status:"ok",posture:"available",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"ok",checked_at:$checked},live_read_status:"ok"}'
   else
     cls="$(map_error "$(cat "$stderr_file" "$stdout_file" 2>/dev/null || true)")"
-    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" --arg cls "$cls" '{contract_version:$cv,command:"health",status:"degraded",posture:"degraded",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"failed",checked_at:$checked},live_read_status:$cls}'
+    jq -nc --arg cv "$CONTRACT_VERSION" --arg adapter "$ADAPTER_NAME" --arg path "$adapter" --arg checked "$checked" --arg cls "$cls" '{contract_version:$cv,command:"health",read_contract:"jen-calendar-read.v1",source:"live",complete:false,read_state:"unknown",status:"degraded",posture:"degraded",authority:"workspace-calendar-runtime",adapter:$adapter,adapter_path:$path,checked_at:$checked,probe:{class:"calendar-time",status:"failed",checked_at:$checked},live_read_status:$cls}'
   fi
-}
-cmd_list_events() {
-  require_jq list-events; need_adapter list-events
-  local calendar_id="" from="" to="" query="" max="$DEFAULT_MAX"
-  while (($#)); do case "$1" in --calendar) calendar_id="${2:-}"; shift 2;; --from) from="${2:-}"; shift 2;; --to) to="${2:-}"; shift 2;; --query) query="${2:-}"; shift 2;; --max) max="${2:-}"; shift 2;; *) fail_json list-events invalid_argument;; esac; done
-  [[ -n "$calendar_id" && -n "$from" && -n "$to" ]] || fail_json list-events invalid_argument
-  valid_rfc3339_tz "$from" && valid_rfc3339_tz "$to" || fail_json list-events invalid_argument
-  read_nul_args gog_args
-  local out err rc cls checked; out="$(mktemp)"; err="$(mktemp)"; trap 'rm -f "$out" "$err"' RETURN
-  local args=(calendar events "$calendar_id" --from "$from" --to "$to" --max "$max" "${gog_args[@]}")
-  [[ -n "$query" ]] && args+=(--query "$query")
-  set +e; "$GOG_BIN" "${args[@]}" >"$out" 2>"$err"; rc=$?; set -e
-  checked="$(now_utc)"
-  if [[ $rc -eq 0 ]]; then
-    jq -nc --arg cv "$CONTRACT_VERSION" --arg cal "$calendar_id" --arg from "$from" --arg to "$to" --arg checked "$checked" --argjson raw "$(cat "$out")" '{contract_version:$cv,command:"list-events",status:"ok",source:"live",calendar_id:$cal,from:$from,to:$to,checked_at:$checked,events:(if ($raw|type)=="array" then $raw elif ($raw.events? | type)=="array" then $raw.events else [] end)}'
-  else cls="$(map_error "$(cat "$err" "$out")")"; fail_json list-events "$cls"; fi
-}
-cmd_freebusy() {
-  require_jq freebusy; need_adapter freebusy
-  local calendar_id="" from="" to=""
-  while (($#)); do case "$1" in --calendar) calendar_id="${2:-}"; shift 2;; --from) from="${2:-}"; shift 2;; --to) to="${2:-}"; shift 2;; *) fail_json freebusy invalid_argument;; esac; done
-  [[ -n "$calendar_id" && -n "$from" && -n "$to" ]] || fail_json freebusy invalid_argument
-  valid_rfc3339_tz "$from" && valid_rfc3339_tz "$to" || fail_json freebusy invalid_argument
-  read_nul_args gog_args
-  local out err rc cls checked; out="$(mktemp)"; err="$(mktemp)"; trap 'rm -f "$out" "$err"' RETURN
-  set +e; "$GOG_BIN" calendar freebusy "$calendar_id" --from "$from" --to "$to" "${gog_args[@]}" >"$out" 2>"$err"; rc=$?; set -e
-  checked="$(now_utc)"
-  if [[ $rc -eq 0 ]]; then
-    jq -nc --arg cv "$CONTRACT_VERSION" --arg cal "$calendar_id" --arg from "$from" --arg to "$to" --arg checked "$checked" --argjson raw "$(cat "$out")" '{contract_version:$cv,command:"freebusy",status:"ok",source:"live",calendar_id:$cal,from:$from,to:$to,checked_at:$checked,busy:(if ($raw.busy? | type)=="array" then $raw.busy elif ($raw.calendars?[$cal].busy? | type)=="array" then $raw.calendars[$cal].busy else [] end)}'
-  else cls="$(map_error "$(cat "$err" "$out")")"; fail_json freebusy "$cls"; fi
-}
-cmd_get_event() {
-  require_jq get-event; need_adapter get-event
-  local calendar_id="" event_id=""
-  while (($#)); do case "$1" in --calendar) calendar_id="${2:-}"; shift 2;; --event-id) event_id="${2:-}"; shift 2;; *) fail_json get-event invalid_argument;; esac; done
-  [[ -n "$calendar_id" && -n "$event_id" ]] || fail_json get-event invalid_argument
-  read_nul_args gog_args
-  local out err rc cls checked; out="$(mktemp)"; err="$(mktemp)"; trap 'rm -f "$out" "$err"' RETURN
-  set +e; "$GOG_BIN" calendar event "$calendar_id" "$event_id" "${gog_args[@]}" >"$out" 2>"$err"; rc=$?; set -e
-  checked="$(now_utc)"
-  if [[ $rc -eq 0 ]]; then
-    jq -nc --arg cv "$CONTRACT_VERSION" --arg cal "$calendar_id" --arg checked "$checked" --argjson raw "$(cat "$out")" '{contract_version:$cv,command:"get-event",status:"ok",source:"live",calendar_id:$cal,checked_at:$checked,event:$raw}'
-  else cls="$(map_error "$(cat "$err" "$out")")"; fail_json get-event "$cls"; fi
 }
 cmd_capture_event() {
   require_jq capture-event; need_adapter capture-event
@@ -146,9 +257,10 @@ cmd_capture_event() {
   done
   [[ -n "$calendar_id" && -n "$summary" && -n "$from" && -n "$to" ]] || fail_json capture-event invalid_argument
   if [[ "$all_day" -eq 1 ]]; then
-    [[ "$from" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$to" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$from" < "$to" ]] || fail_json capture-event invalid_argument
+    python3 -c 'import datetime,re,sys; a,b=sys.argv[1:]; assert all(re.fullmatch(r"\d{4}-\d{2}-\d{2}",s) for s in (a,b)); assert datetime.date.fromisoformat(b)>datetime.date.fromisoformat(a)' "$from" "$to" >/dev/null 2>&1 || fail_json capture-event invalid_argument
   else
     valid_rfc3339_tz "$from" && valid_rfc3339_tz "$to" || fail_json capture-event invalid_argument
+    python3 -c 'import datetime,sys; a,b=[datetime.datetime.fromisoformat(s.replace("Z","+00:00")) for s in sys.argv[1:]]; assert b>a' "$from" "$to" >/dev/null 2>&1 || fail_json capture-event invalid_argument
   fi
   read_nul_args gog_args
   local out err rc cls checked
@@ -190,9 +302,7 @@ cmd_delete_event() {
 }
 case "${1:-}" in
   health) shift; cmd_health "$@";;
-  list-events) shift; cmd_list_events "$@";;
-  freebusy) shift; cmd_freebusy "$@";;
-  get-event) shift; cmd_get_event "$@";;
+
   capture-event) shift; cmd_capture_event "$@";;
   delete-event) shift; cmd_delete_event "$@";;
   set-reminders) fail_json "${1}" unavailable;;

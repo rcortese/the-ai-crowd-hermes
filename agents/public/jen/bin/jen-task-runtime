@@ -4,6 +4,7 @@ set -euo pipefail
 CONTRACT_VERSION="jen-task-runtime.v1"
 AUTHORITY="workspace-todoist-adapter"
 WORKSPACE_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+export JEN_TODOIST_NOW_UTC="${JEN_TODOIST_NOW_UTC:-${JEN_TASK_RUNTIME_NOW_UTC:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}}"
 # shellcheck source=../lib/jen-path-policy.sh
 source "$WORKSPACE_ROOT/lib/jen-path-policy.sh"
 STATE_FILE="${JEN_TASK_RUNTIME_STATE_FILE:-/opt/data/state/jen/heartbeat-state.json}"
@@ -224,107 +225,16 @@ valid_date_ymd() {
 }
 
 normalize_due_phrase_json() {
-  local raw_due="$1" base_date="${2:-}"
-  [[ -n "$base_date" ]] || base_date="$(date -u -d "$(now_utc)" +%F 2>/dev/null || true)"
-  [[ -n "$base_date" ]] || return 1
-  python3 - "$raw_due" "$base_date" <<'PY'
-import datetime as dt
-import json
-import re
-import sys
-import unicodedata
-
-raw_due = sys.argv[1].strip()
-base_date_raw = sys.argv[2]
-
-def canonical(text: str) -> str:
-    text = unicodedata.normalize('NFKD', text or '').encode('ascii', 'ignore').decode('ascii')
-    text = text.lower().strip().replace('_', ' ')
-    text = re.sub(r'[-]+', ' ', text)
-    text = re.sub(r'[^\w\s]+', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text
-
-def valid_date(text: str) -> bool:
-    try:
-        return dt.date.fromisoformat(text).isoformat() == text
-    except ValueError:
-        return False
-
-def next_weekday(base: dt.date, weekday: int) -> str:
-    offset = (weekday - base.weekday()) % 7
-    if offset == 0:
-        offset = 7
-    return (base + dt.timedelta(days=offset)).isoformat()
-
-try:
-    base_date = dt.date.fromisoformat(base_date_raw)
-except ValueError:
-    raise SystemExit(1)
-
-canon = canonical(raw_due)
-weekday_aliases = {
-    0: {'monday', 'mon', 'segunda', 'segunda feira', 'seg', '2a feira'},
-    1: {'tuesday', 'tue', 'tues', 'terca', 'terca feira', 'ter', '3a feira'},
-    2: {'wednesday', 'wed', 'quarta', 'quarta feira', 'qua', '4a feira'},
-    3: {'thursday', 'thu', 'thur', 'thurs', 'quinta', 'quinta feira', 'qui', '5a feira'},
-    4: {'friday', 'fri', 'sexta', 'sexta feira', 'sex', '6a feira'},
-    5: {'saturday', 'sat', 'sabado', 'sab'},
-    6: {'sunday', 'sun', 'domingo', 'dom'},
-}
-ambiguous_standalone_ordinals = {'2a', '3a', '4a', '5a', '6a'}
-weekday_map = {
-    alias: weekday
-    for weekday, aliases in weekday_aliases.items()
-    for alias in aliases
-}
-relative_prefixes = ('next ', 'proxima ', 'proximo ', 'prox ')
-
-recognized = False
-ambiguous = False
-normalized_due = raw_due
-target_date = None
-
-if valid_date(raw_due):
-    recognized = True
-    normalized_due = raw_due
-    target_date = raw_due
-elif canon in {'today', 'hoje'}:
-    recognized = True
-    normalized_due = 'today'
-    target_date = base_date.isoformat()
-elif canon in {'tomorrow', 'amanha'}:
-    recognized = True
-    normalized_due = 'tomorrow'
-    target_date = (base_date + dt.timedelta(days=1)).isoformat()
-elif canon in {'day after tomorrow', 'depois de amanha'}:
-    recognized = True
-    normalized_due = (base_date + dt.timedelta(days=2)).isoformat()
-    target_date = normalized_due
-else:
-    lookup = canon
-    for prefix in relative_prefixes:
-        if lookup.startswith(prefix):
-            lookup = lookup[len(prefix):].strip()
-            break
-    if lookup in ambiguous_standalone_ordinals:
-        ambiguous = True
-    else:
-        weekday = weekday_map.get(lookup)
-        if weekday is not None:
-            recognized = True
-            normalized_due = next_weekday(base_date, weekday)
-            target_date = normalized_due
-
-print(json.dumps({
-    'recognized': recognized,
-    'ambiguous': ambiguous,
-    'raw_due': raw_due,
-    'canonical': canon,
-    'normalized_due': normalized_due,
-    'target_date': target_date,
-}, ensure_ascii=False))
-PY
+  # One clock is inherited by all façade children and command preflights.
+  # base_date is intentionally not a timezone authority.
+  local output status=0
+  output="$(python3 "$WORKSPACE_ROOT/bin/jen-todoist-temporal.py" "$1" "$JEN_TODOIST_NOW_UTC" "${JEN_TODOIST_TIMEZONE:-}")" || status=$?
+  if [[ "$status" -eq 2 ]]; then
+    printf '%s\n' "$output"
+    return 0
+  fi
+  [[ "$status" -eq 0 ]] || return "$status"
+  printf '%s\n' "$output"
 }
 
 normalize_due_string_if_supported() {
@@ -706,7 +616,39 @@ adapter_run() {
   "${cmd[@]}" >"$stdout_file" 2>"$stderr_file"
   local status=$?
   set -e
-  return "$status"
+  [[ "$status" -eq 0 ]] || return "$status"
+  if [[ "$1" == task ]]; then
+    jq -e --arg id "$2" 'type == "object" and .id == $id' "$stdout_file" >/dev/null 2>&1 || { printf '{"error":"verification_failed"}\n' >"$stderr_file"; return 5; }
+  fi
+  local operation="$1" expected_id='' read_stdout read_stderr attempt
+  local -a fields=()
+  case "$operation" in
+    add-task)
+      expected_id="$(jq -r '.id | select(type == "string" and test("^[A-Za-z0-9_-]+$"))' "$stdout_file" 2>/dev/null)" || expected_id=''
+      fields=("$2") ;;
+    update-task-fields|update-description|update-due|update-deadline-date|clear-deadline|update-labels|move-task|move-task-parent)
+      expected_id="$2"; fields=("${@:3}")
+      if ! jq -e --arg id "$expected_id" '.id == $id' "$stdout_file" >/dev/null 2>&1; then
+        printf '{"error":"verification_failed"}\n' >"$stderr_file"; return 5
+      fi ;;
+    *) return 0 ;;
+  esac
+  [[ -n "$expected_id" ]] || { printf '{"error":"verification_failed"}\n' >"$stderr_file"; return 5; }
+  read_stdout=$(mktemp); read_stderr=$(mktemp)
+  for attempt in 1 2 3; do
+    if "$TODOIST_SCRIPT" task "$expected_id" >"$read_stdout" 2>"$read_stderr" && python3 "$WORKSPACE_ROOT/bin/jen-todoist-proof.py" "$operation" "$expected_id" "${fields[@]}" <"$read_stdout"; then
+      # Keep recurrence/deadline invariants as well as all changed fields.
+      if [[ "$operation" == update-due && -n "${pre_state:-${task_json:-}}" ]]; then
+        jq -e --argjson before "${pre_state:-$task_json}" '.deadline == $before.deadline' "$read_stdout" >/dev/null || continue
+      fi
+      cp "$read_stdout" "$stdout_file"
+      cleanup_files "$read_stdout" "$read_stderr"
+      return 0
+    fi
+  done
+  cleanup_files "$read_stdout" "$read_stderr"
+  printf '{"error":"verification_failed"}\n' >"$stderr_file"
+  return 5
 }
 
 update_runtime_failure() {
@@ -1186,7 +1128,7 @@ capture_task_command() {
     normalized_due="$(normalize_due_string_if_supported "$due_string" "$command_base_date")" || normalized_due_status=$?
     case "$normalized_due_status" in
       0) due_string="$normalized_due" ;;
-      2) ;;
+      2) emit_failed capture-task invalid_argument ;;
       *) emit_failed capture-task request_failure ;;
     esac
   fi
@@ -1221,7 +1163,10 @@ capture_task_command() {
     unsafe_replay_state)
       emit_failed capture-task unsafe_replay_state "$mutation_extra"
       ;;
-    execute|retry_partial)
+    retry_partial)
+      emit_failed capture-task unsafe_replay_state "$mutation_extra"
+      ;;
+    execute)
       ;;
     *)
       emit_failed capture-task request_failure "$mutation_extra"
@@ -1439,14 +1384,36 @@ task_completion_command() {
     emit_failed "$command" "$failure_class" "$mutation_extra"
   fi
 
-  if [[ -s "$action_stdout" ]]; then
+  # Prefer an explicit adapter acknowledgement bound to the canonical provider
+  # identity. Otherwise perform finite GETs of the exact target, never 404-based
+  # inference and never a second mutating call.
+  local proof_json='' observed_id='' read_stdout read_stderr read_status attempt
+  if [[ -s "$action_stdout" ]] && jq -e --arg id "$task_id" --arg action "$action" '.proof.verified == true and .proof.acknowledged == true and .proof.provenance == "provider_ack" and .proof.operation == $action and .proof.observed_task_id == $id' "$action_stdout" >/dev/null 2>&1; then
     task_payload="$(cat "$action_stdout")"
+    proof_json="$(jq -c '.proof' "$action_stdout")"
   else
-    task_payload="$(jq -nc --arg id "$task_id" --arg command "$command" '{id:$id,verified:true,command:$command}')"
+    read_stdout=$(mktemp); read_stderr=$(mktemp)
+    for attempt in 1 2 3; do
+      read_status=0
+      adapter_run "$read_stdout" "$read_stderr" task "$task_id" || read_status=$?
+      if [[ "$read_status" -eq 0 ]] && jq -e --arg id "$task_id" --arg action "$action" --argjson pre "$pre_state" '.id == $id and (if $action == "reopen" then .is_completed == false else .is_completed == true and ($pre.due.is_recurring != true) end)' "$read_stdout" >/dev/null 2>&1; then
+        task_payload="$(cat "$read_stdout")"
+        observed_id="$(jq -r '.id' "$read_stdout")"
+        proof_json="$(jq -nc --arg id "$observed_id" --arg operation "$action" '{verified:true,provenance:"state_readback",operation:$operation,observed_task_id:$id}')"
+        break
+      fi
+    done
+    cleanup_files "$read_stdout" "$read_stderr"
+  fi
+  if [[ -z "$proof_json" ]]; then
+    result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --arg id "$task_id" --arg command "$command" '{runtime_schema:$runtime_schema,partial:{external_object_id:$id,failed_step:$command,failure_class:"verification_failed"}}')"
+    mutation_record_status "$gateway_plan" failed "$result_json" || emit_failed "$command" state_write_failed "$mutation_extra"
+    cleanup_files "$pre_stdout" "$pre_stderr" "$action_stdout" "$action_stderr"
+    emit_failed "$command" verification_failed "$mutation_extra"
   fi
   runtime_json="$(runtime_with_updates --arg ts "$ts" '.last_verified_at = $ts | .last_failure_class = null')"
   state_write_runtime "$runtime_json" || emit_failed "$command" state_write_failed "$mutation_extra"
-  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command "$command" --arg status ok --arg operation "$command" --argjson verified true --argjson task "$task_payload" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,task:$task} + $mutation')"
+  output_json="$(jq -nc --arg contract_version "$CONTRACT_VERSION" --arg command "$command" --arg status ok --arg operation "$command" --argjson verified true --argjson task "$task_payload" --argjson proof "$proof_json" --argjson mutation "$mutation_extra" '{contract_version:$contract_version,command:$command,status:$status,operation:$operation,verified:$verified,task:$task,proof:$proof} + $mutation')"
   result_json="$(jq -nc --arg runtime_schema "$CONTRACT_VERSION" --argjson output "$output_json" '{runtime_schema:$runtime_schema,verified:true,output:$output}')"
   mutation_record_status "$gateway_plan" verified "$result_json" || emit_failed "$command" state_write_failed "$mutation_extra"
   cleanup_files "$pre_stdout" "$pre_stderr" "$action_stdout" "$action_stderr"
@@ -1531,15 +1498,7 @@ update_due_command() {
       emit_failed update-due idempotency_collision "$mutation_extra"
       ;;
     retry_partial)
-      partial_failure_class="$(jq -r '.idempotency.record.result.partial.failure_class // empty' <<<"$prepare_json")"
-      partial_failed_step="$(jq -r '.idempotency.record.result.partial.failed_step // empty' <<<"$prepare_json")"
-      case "${partial_failed_step}:${partial_failure_class}" in
-        update-due:network_failure|update-due:rate_limited)
-          ;;
-        *)
-          emit_failed update-due unsafe_replay_state "$mutation_extra"
-          ;;
-      esac
+      emit_failed update-due unsafe_replay_state "$mutation_extra"
       ;;
     unsafe_replay_state)
       emit_failed update-due unsafe_replay_state "$mutation_extra"

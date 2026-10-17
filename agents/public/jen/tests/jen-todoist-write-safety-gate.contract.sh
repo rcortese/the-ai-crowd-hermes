@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${JEN_TEST_PUBLIC_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BIN="$ROOT/bin/jen-todoist-write-safety-gate"
-FAKE_SECRET="FAKE_TODOIST_TOKEN_"'SHOULD_BE_REDACTED'
+FAKE_SECRET="FAKE_TODOIST_TOKEN_SHOULD_BE_REDACTED"
 
 run_gate() {
   local payload="$1"
@@ -63,9 +63,9 @@ jq -e '.status == "blocked" and .reason == "read_after_write_not_found"' <<<"$no
 mismatch=$(run_gate '{"intent":{"labels":["task_capture"]},"todoist_write":{"status":"created","id":"abc"},"read_after_write":{"found":true,"id":"other"}}')
 assert_nonempty_output "$mismatch" 'mismatch decision should not be silent'
 assert_common "$mismatch"
-jq -e '.status == "blocked" and .reason == "read_after_write_id_mismatch"' <<<"$mismatch" >/dev/null
+jq -e '.status == "blocked" and .reason == "identity_or_provenance_invalid"' <<<"$mismatch" >/dev/null
 
-verified=$(run_gate '{"intent":{"labels":["task_capture"]},"todoist_write":{"status":"created","id":"abc","content":"almoçar"},"read_after_write":{"found":true,"id":"abc","content":"almoçar"}}')
+verified=$(run_gate '{"intent":{"labels":["task_capture"],"operation":"capture"},"todoist_write":{"status":"created","id":"abc","expected_task_id":"abc","content":"almoçar"},"read_after_write":{"found":true,"id":"abc","observed_task_id":"abc","verified":true,"operation":"capture","provenance":"state_readback","fields_match":true,"content":"almoçar"}}')
 assert_nonempty_output "$verified" 'verified decision should not be silent'
 assert_common "$verified"
 jq -e '.status == "verified" and .copy_state == "post_write_verified" and .requires == "verified_write_result"' <<<"$verified" >/dev/null

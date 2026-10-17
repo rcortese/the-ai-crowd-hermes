@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="${JEN_TEST_PUBLIC_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 RUNTIME="$ROOT/tools/wrappers/jen-calendar-runtime"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -20,13 +20,21 @@ if [[ "${1:-}" == "calendar" && "${2:-}" == "time" ]]; then
   printf '{"now":"2026-05-24T12:00:00Z"}\n'; exit 0
 fi
 if [[ "${1:-}" == "calendar" && "${2:-}" == "events" ]]; then
-  printf '{"events":[{"id":"evt1","summary":"Focus","start":{"dateTime":"2026-05-24T13:00:00-03:00"}}]}\n'; exit 0
+  printf '{"events":[{"id":"evt1","summary":"Focus","start":{"dateTime":"2026-05-24T13:00:00-03:00"}}],"nextPageToken":""}\n'; exit 0
 fi
 if [[ "${1:-}" == "calendar" && "${2:-}" == "freebusy" ]]; then
-  printf '{"calendars":{"primary":{"busy":[{"start":"2026-05-24T13:00:00-03:00","end":"2026-05-24T14:00:00-03:00"}]}}}\n'; exit 0
+  printf '{"timeMin":"2026-05-24T00:00:00-03:00","timeMax":"2026-05-25T00:00:00-03:00","calendars":{"primary":{"busy":[{"start":"2026-05-24T13:00:00-03:00","end":"2026-05-24T14:00:00-03:00"}]}}}\n'; exit 0
 fi
 if [[ "${1:-}" == "calendar" && "${2:-}" == "event" ]]; then
   printf '{"id":"evt1","summary":"Focus"}\n'; exit 0
+fi
+if [[ "${1:-}" == calendar && "${2:-}" == create ]]; then
+  [[ "${3:-}" == primary ]] || exit 2
+  printf '{"id":"created-synthetic"}\n'; exit 0
+fi
+if [[ "${1:-}" == calendar && "${2:-}" == delete ]]; then
+  [[ "${3:-}" == primary && "${4:-}" == evt1 ]] || exit 2
+  printf '{}\n'; exit 0
 fi
 printf 'unexpected gog args: %s\n' "$*" >&2
 exit 2
@@ -57,6 +65,10 @@ unset FAKE_GOG_AUTH_STATUS
 list="$($RUNTIME list-events --calendar primary --from 2026-05-24T00:00:00-03:00 --to 2026-05-25T00:00:00-03:00 --max 5)"
 assert_json_field "$list" '.status' ok
 assert_json_field "$list" '.events[0].id' evt1
+assert_json_field "$list" '.read_contract' jen-calendar-read.v1
+assert_json_field "$list" '.read_state' complete
+assert_json_field "$list" '.complete' true
+assert_json_field "$list" '.z_integrity.count' 1
 
 busy="$($RUNTIME freebusy --calendar primary --from 2026-05-24T00:00:00-03:00 --to 2026-05-25T00:00:00-03:00)"
 assert_json_field "$busy" '.status' ok
@@ -71,7 +83,10 @@ capture="$($RUNTIME capture-event --summary x --from 2026-05-24T13:00:00-03:00 -
 rc=$?
 set -e
 [[ $rc -ne 0 ]] || { echo "capture-event unexpectedly succeeded" >&2; exit 1; }
-assert_json_field "$capture" '.failure_class' unavailable
+assert_json_field "$capture" '.failure_class' invalid_argument
+# This negative was historically an obsolete mutator fixture, not an outage.
+created="$($RUNTIME capture-event --calendar primary --summary x --from 2026-05-24T13:00:00-03:00 --to 2026-05-24T14:00:00-03:00)"
+assert_json_field "$created" '.event.id' created-synthetic
 
 set +e
 bad_range="$($RUNTIME list-events --calendar primary --from 2026-05-24 --to 2026-05-25)"
@@ -85,9 +100,14 @@ cap_wrap="$($ROOT/tools/wrappers/jen-calendar-capture --summary x --from 2026-05
 cap_wrap_rc=$?
 set -e
 [[ $cap_wrap_rc -ne 0 ]] || { echo "jen-calendar-capture unexpectedly succeeded" >&2; exit 1; }
-assert_json_field "$cap_wrap" '.failure_class' unavailable
+assert_json_field "$cap_wrap" '.failure_class' invalid_argument
+wrapped="$($ROOT/tools/wrappers/jen-calendar-capture --calendar primary --summary x --from 2026-05-24T13:00:00-03:00 --to 2026-05-24T14:00:00-03:00)"
+assert_json_field "$wrapped" '.event.id' created-synthetic
 
-for mut in set-reminders delete-event; do
+deleted="$($RUNTIME delete-event --calendar primary --event-id evt1)"
+assert_json_field "$deleted" '.event_id' evt1
+assert_json_field "$deleted" '.status' ok
+for mut in set-reminders; do
   set +e
   mut_out="$($RUNTIME "$mut" --calendar primary --event-id evt1)"
   mut_rc=$?

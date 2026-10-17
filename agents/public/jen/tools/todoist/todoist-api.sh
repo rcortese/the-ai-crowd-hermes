@@ -105,14 +105,20 @@ api_request() {
     5*) error_json "server_error" "$http_status" ;;
     *) error_json "request_failed" "$http_status" ;;
   esac
-  if [[ -n "$body" ]]; then
-    printf '%s\n' "$body" >&2
-  fi
+  # Provider error bodies can contain credentials or personal content.
   exit 4
 }
 
 api_get() {
-  api_request GET "$1"
+  local url="$1" response identity
+  response="$(api_request GET "$url")" || return $?
+  if [[ "$url" == "$BASE_URL/tasks/"* && "$url" != *'?'* ]]; then
+    identity="${url#"$BASE_URL/tasks/"}"
+    if [[ "$identity" != */* ]]; then
+      jq -e --arg id "$identity" 'type == "object" and .id == $id' <<<"$response" >/dev/null || { error_json verification_failed; return 5; }
+    fi
+  fi
+  printf '%s\n' "$response"
 }
 
 api_post() {
@@ -365,7 +371,7 @@ case "$cmd" in
       fi
       iso_date=true
     fi
-    payload=$(jq -nc --arg due_string "$due_string" '{due_string:$due_string}')
+    payload=$(jq -nc --arg due_string "$due_string" --argjson iso_date "$iso_date" 'if $iso_date then {due_date:$due_string} else {due_string:$due_string} end')
     api_post "$BASE_URL/tasks/$task_id" "$payload" >/dev/null
     expected_due="$(jq -nc --arg due "$due_string" '$due')"
     actual_task="$(api_get "$BASE_URL/tasks/$task_id")"
@@ -460,8 +466,12 @@ case "$cmd" in
   close-task)
     task_id="${2:-}"
     require_arg "$task_id" "task_id"
+    canonical_task="$(api_get "$BASE_URL/tasks/$task_id")"
+    observed_id="$(jq -r '.id' <<<"$canonical_task")"
     api_post "$BASE_URL/tasks/$task_id/close" >/dev/null
-    echo '{}'
+    # A successful close acknowledgement is not a claim that a recurring task
+    # disappeared or remains completed. The ID came from the provider GET.
+    jq -nc --arg id "$observed_id" '{task:{id:$id},proof:{verified:true,acknowledged:true,provenance:"provider_ack",operation:"complete",observed_task_id:$id}}'
     ;;
   reopen-task)
     task_id="${2:-}"

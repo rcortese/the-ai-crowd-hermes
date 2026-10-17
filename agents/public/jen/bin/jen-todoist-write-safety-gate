@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from typing import Any
 
@@ -16,11 +17,17 @@ CONTRACT_VERSION = "jen-todoist-write-safety-gate.v1"
 
 
 def decision(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload,dict) or not isinstance(payload.get('intent',{}),dict):
+        return base(status='blocked',reason='invalid_evidence',copy_state='write_unverified')
     intent = payload.get("intent") or {}
     write = payload.get("todoist_write")
     verify = payload.get("read_after_write")
+    if write is not None and not isinstance(write,dict):
+        return base(status='blocked',reason='invalid_evidence',copy_state='write_unverified')
 
     labels = intent.get("labels") or []
+    if not isinstance(labels,list) or any(not isinstance(label,str) for label in labels):
+        return base(status='blocked',reason='invalid_evidence',copy_state='write_unverified')
     if "task_capture" not in labels and "ambiguous_task_capture" not in labels:
         return base(
             status="blocked",
@@ -45,7 +52,7 @@ def decision(payload: dict[str, Any]) -> dict[str, Any]:
             status="failed",
             copy_state="write_failed",
             reason="todoist_write_failed",
-            allowed_copy="Não consegui confirmar o registro no Todoist. Quer que eu tente de novo?",
+            allowed_copy="Não consegui confirmar o efeito no Todoist. Reconcilie a intenção exata antes de outra mutação.",
             forbidden_phrases=["registrei", "anotei"],
         )
 
@@ -67,7 +74,7 @@ def decision(payload: dict[str, Any]) -> dict[str, Any]:
             forbidden_phrases=["registrei", "anotei"],
         )
 
-    if not verify.get("found"):
+    if not isinstance(verify, dict) or verify.get("found") is not True:
         return base(
             status="blocked",
             copy_state="write_unverified",
@@ -76,9 +83,21 @@ def decision(payload: dict[str, Any]) -> dict[str, Any]:
             forbidden_phrases=["registrei", "anotei"],
         )
 
-    write_id = write.get("id")
-    verify_id = verify.get("id")
-    if write_id and verify_id and write_id != verify_id:
+    write_id = write.get("expected_task_id")
+    verify_id = verify.get("observed_task_id")
+    operation = intent.get('operation')
+    valid_id = lambda value: isinstance(value,str) and bool(re.fullmatch(r'[A-Za-z0-9_-]+',value))
+    provenance = verify.get('provenance')
+    action = operation in {'complete','reopen'}
+    if (not valid_id(write_id) or not valid_id(verify_id) or write_id != verify_id
+            or write.get('id') != write_id or verify.get('id') != verify_id
+            or verify.get('verified') is not True or verify.get('operation') != operation
+            or operation not in {'capture','update','complete','reopen'}
+            or provenance not in ({'provider_ack','state_readback'} if action else {'state_readback'})
+            or (provenance == 'provider_ack' and verify.get('acknowledged') is not True)
+            or (not action and verify.get('fields_match') is not True)):
+        return base(status='blocked',copy_state='write_unverified',reason='identity_or_provenance_invalid',allowed_copy='O efeito não está comprovado; reconcilie antes de outra mutação.',forbidden_phrases=['registrei','anotei'])
+    if write_id != verify_id:
         return base(
             status="blocked",
             copy_state="write_unverified",

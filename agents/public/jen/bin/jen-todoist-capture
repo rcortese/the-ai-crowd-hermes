@@ -4,6 +4,9 @@ set -euo pipefail
 CONTRACT_VERSION="jen-todoist-capture.v2"
 workspace_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 runtime="${JEN_TODOIST_CAPTURE_TASK_RUNTIME:-$workspace_root/bin/jen-task-runtime}"
+export JEN_TODOIST_NOW_UTC="${JEN_TODOIST_NOW_UTC:-${JEN_TASK_RUNTIME_NOW_UTC:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}}"
+mutation_attempted=false
+idempotency_hint=''
 # shellcheck source=../lib/jen-envelope-emit.sh
 source "$workspace_root/lib/jen-envelope-emit.sh"
 
@@ -51,8 +54,8 @@ emit_failed() {
     --arg raw_failure_class "$raw_failure_class" \
     --arg safe_summary "$message" \
     --arg detail_text "$(sanitize_text "$detail_text")" \
-    --arg mutation_state unknown \
-    '{wrapper_name:$wrapper_name,mutation_attempted:false,mutation_state:$mutation_state,safe_summary:$safe_summary,detail:(if $detail_text != "" then $detail_text else null end),raw_failure_class:$raw_failure_class}')"
+    --arg mutation_state unknown --argjson attempted "$mutation_attempted" \
+    '{wrapper_name:$wrapper_name,mutation_attempted:$attempted,mutation_state:$mutation_state,safe_summary:$safe_summary,detail:(if $detail_text != "" then $detail_text else null end),raw_failure_class:$raw_failure_class}')"
   extra_json='{"handoff_required":true}'
   json_out "$(jen_emit_envelope "$CONTRACT_VERSION" failed failed "$failure_class" "$( [[ "$failure_class" == "policy_blocked" ]] && printf explain_policy_boundary || printf stop_and_handoff_to_moss )" "$message" "$handoff_id" "$detail_json" "$extra_json")"
   exit 1
@@ -69,6 +72,7 @@ run_live_runtime_json() {
   local output_file="$1"
   shift
   set +e
+  mutation_attempted=true
   "$runtime" "$@" >"$output_file" 2>/dev/null
   local status=$?
   set -e
@@ -191,6 +195,10 @@ while (($#)); do
       due="${2:-}"
       shift 2
       ;;
+    --idempotency-hint)
+      idempotency_hint="${2:-}"
+      shift 2
+      ;;
     --deadline|--deadline-date)
       deadline="${2:-}"
       shift 2
@@ -244,6 +252,7 @@ if [[ -n "$input_file" ]]; then
   [[ -n "$due" ]] || due="$(jq -r '.due // .due_string // empty' "$input_file")"
   [[ -n "$deadline" ]] || deadline="$(jq -r '.deadline // .deadline_date // empty' "$input_file")"
   [[ -n "$existing_task_id" ]] || existing_task_id="$(jq -r '.existing_task_id // .existing_item_id // .task_id // empty' "$input_file")"
+  [[ -n "$idempotency_hint" ]] || idempotency_hint="$(jq -r '.idempotency_hint // empty' "$input_file")"
   if [[ "$technical_failure" == false ]]; then
     technical_failure="$(jq -r '(.technical_failure // .simulate_failure // false) | if . then "true" else "false" end' "$input_file")"
   fi
@@ -308,10 +317,12 @@ elif [[ -n "$existing_task_id" && -n "$due" ]]; then
 else
   [[ -n "$content" ]] || emit_failed invalid_argument "content required for capture"
   runtime_status=0
+  capture_args=(capture-task --content "$content")
+  [[ -z "$idempotency_hint" ]] || capture_args+=(--idempotency-hint "$idempotency_hint")
   if [[ -n "$due" ]]; then
-    run_live_runtime_json "$runtime_file" capture-task --content "$content" --due "$due" || runtime_status=$?
+    run_live_runtime_json "$runtime_file" "${capture_args[@]}" --due "$due" || runtime_status=$?
   else
-    run_live_runtime_json "$runtime_file" capture-task --content "$content" || runtime_status=$?
+    run_live_runtime_json "$runtime_file" "${capture_args[@]}" || runtime_status=$?
   fi
 fi
 
@@ -321,6 +332,9 @@ if [[ "$runtime_status" != "0" ]]; then
   emit_failed "$runtime_failure_class" "runtime wrapper failed"
 fi
 runtime_output="$(cat "$runtime_file")"
+if ! jq -e '.contract_version == "jen-task-runtime.v1" and .status == "ok" and .verified == true and (.task.id | type == "string" and length > 0)' <<<"$runtime_output" >/dev/null 2>&1; then
+  emit_failed verification_failed 'unproven runtime response'
+fi
 runtime_output="$(sanitize_json "$runtime_output")"
 
 if [[ -n "$existing_task_id" && -n "$deadline" ]]; then
