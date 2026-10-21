@@ -1,0 +1,21 @@
+# Narrow derivative. Verify this local base tag against the recorded immutable image ID.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+ARG WEBUI_REV
+ARG MCP_REV
+COPY webui/api/ /opt/hermes-webui/api/
+COPY mcp/ /opt/paperclip-mcp/node_modules/@paperclipai/mcp-server/dist/
+COPY shared/ /opt/paperclip-mcp/node_modules/@paperclipai/shared/dist/
+RUN /opt/hermes/.venv/bin/python -m py_compile \
+      /opt/hermes-webui/api/paperclip_origin.py \
+      /opt/hermes-webui/api/source_turn.py \
+      /opt/hermes-webui/api/routes.py \
+      /opt/hermes-webui/api/models.py \
+      /opt/hermes-webui/api/gateway_chat.py \
+    && node --input-type=module -e "import('/opt/paperclip-mcp/node_modules/@paperclipai/mcp-server/dist/index.js').then(m=>{const s=m.createPaperclipMcpServer({apiUrl:'http://fixture.invalid/api',apiKey:'fixture',companyId:null,agentId:null,runId:null,runContextMode:'request-or-external'});if(!s.tools.some(t=>t.name==='paperclipMe'))process.exit(1);console.log('external_origin_import_smoke_ok')})" \
+    && chown 99:100 /opt/hermes-webui/api/paperclip_origin.py /opt/hermes-webui/api/source_turn.py /opt/hermes-webui/api/routes.py /opt/hermes-webui/api/models.py /opt/hermes-webui/api/gateway_chat.py
+LABEL the-ai-crowd.webui-source="${WEBUI_REV}" \
+      ing.paperclip.official-mcp.source="${MCP_REV}" \
+      io.moss.external-origin.scope="moss-only"
+WORKDIR /agents/moss/private
