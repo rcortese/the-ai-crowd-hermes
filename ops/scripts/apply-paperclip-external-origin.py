@@ -78,10 +78,14 @@ def main():
         fd = os.open(KEY, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o640)
         try:
             os.fchown(fd, 99, 1000)
+            os.fchmod(fd, 0o640)
             os.write(fd, os.urandom(32))
             os.fsync(fd)
         finally:
             os.close(fd)
+        custody = KEY.stat()
+        if (custody.st_size, custody.st_uid, custody.st_gid, custody.st_mode & 0o777) != (32, 99, 1000, 0o640):
+            p.error('secret custody readback failed')
         spec.update(environment={
             'PAPERCLIP_EXTERNAL_ORIGIN_COMPANY_ID': COMPANY,
             'PAPERCLIP_EXTERNAL_ORIGIN_AGENT_ID': AGENT,
@@ -126,14 +130,36 @@ def main():
         info['configPostimageHash'] = hashlib.sha256(CONFIG.read_bytes()).hexdigest()
         save(receipt, info)
     try:
-        subprocess.run(effective + ['up', '-d', '--no-build', '--no-deps', '--force-recreate', service], check=True)
+        try:
+            subprocess.run(effective + ['up', '-d', '--no-build', '--no-deps', '--force-recreate', service], check=True)
+        except subprocess.CalledProcessError:
+            # A command error is not itself an outage. Reconcile the actual service.
+            try:
+                observed = inspect(name)
+            except subprocess.CalledProcessError:
+                info['status'] = 'apply-command-failed-state-inconclusive'
+                save(receipt, info)
+                raise
+            health = observed['State'].get('Health', {}).get('Status')
+            if observed['State']['Running'] and health != 'unhealthy':
+                info['status'] = 'apply-command-failed-service-running'
+                save(receipt, info)
+                raise
+            raise RuntimeError('essential service failed during apply')
         deadline = time.monotonic() + 150
         while time.monotonic() < deadline:
-            state = inspect(name)
+            try:
+                state = inspect(name)
+            except subprocess.CalledProcessError:
+                info['status'] = 'applied-observation-inconclusive'
+                save(receipt, info)
+                raise
             if state['Image'] != IMAGES[a.component]:
-                raise RuntimeError('wrong active image')
+                info['status'] = 'unexpected-image-reconcile-required'
+                save(receipt, info)
+                raise SystemExit('unexpected active image; reconcile concurrent deployment')
             health = state['State'].get('Health', {}).get('Status')
-            if health == 'healthy':
+            if health == 'healthy' and state['State']['Running']:
                 info.update(status='applied-ready-not-accepted', containerId=state['Id'])
                 save(receipt, info)
                 print(json.dumps({'receipt': str(receipt), 'status': info['status']}))
@@ -141,20 +167,36 @@ def main():
             if not state['State']['Running'] or health == 'unhealthy':
                 raise RuntimeError('essential service failed startup')
             time.sleep(2)
-        # An inconclusive check is not evidence for automatic rollback.
         info['status'] = 'applied-readiness-inconclusive'
         save(receipt, info)
         raise SystemExit('readiness inconclusive; inspect service; no automatic rollback')
-    except (RuntimeError, subprocess.CalledProcessError) as exc:
-        # Actual process/start failure, not an acceptance-test failure.
+    except RuntimeError as exc:
+        # Only observed essential process/start failure enters recovery.
         if old_config is not None:
             if hashlib.sha256(CONFIG.read_bytes()).hexdigest() != info['configPostimageHash']:
                 raise RuntimeError('config changed concurrently; recovery requires reconciliation') from exc
             CONFIG.write_bytes(old_config)
         rollback = STATE / (a.component + '.rollback.json')
         save(rollback, {'services': {service: {'image': old['Image']}}})
-        subprocess.run(command + ['-f', str(rollback), 'up', '-d', '--no-build', '--no-deps', '--force-recreate', service], check=True)
-        info['status'] = 'startup-failed-recovered-previous-image'
+        info['status'] = 'startup-failed-recovery-started'
+        save(receipt, info)
+        try:
+            subprocess.run(command + ['-f', str(rollback), 'up', '-d', '--no-build', '--no-deps', '--force-recreate', service], check=True)
+            deadline = time.monotonic() + 150
+            while time.monotonic() < deadline:
+                recovered = inspect(name)
+                health = recovered['State'].get('Health', {}).get('Status')
+                if recovered['Image'] != old['Image'] or not recovered['State']['Running'] or health == 'unhealthy':
+                    info['status'] = 'recovery-failed-essential-state'
+                    break
+                if health == 'healthy':
+                    info.update(status='startup-failed-recovered-previous-image', recoveryContainerId=recovered['Id'])
+                    break
+                time.sleep(2)
+            else:
+                info['status'] = 'recovery-readiness-inconclusive'
+        except subprocess.CalledProcessError:
+            info['status'] = 'recovery-command-or-observation-inconclusive'
         save(receipt, info)
         raise
 
