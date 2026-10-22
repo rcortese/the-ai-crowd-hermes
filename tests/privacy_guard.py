@@ -35,6 +35,9 @@ RULES = [
 # unverified historical literal even outside assignment syntax; never allow it
 # merely because it is in a test, a printf argument, or split shell quotes.
 BLOCKED_LITERAL_SHA256 = frozenset({'ccf017d39475a4bf58a8f290c75b8d07fb9783ca05f3fb98ccc5a95aa9f026d6'})
+# Exact whole-line fingerprint of the existing offline mock assignment. This
+# does not exempt a variable name, prefix, path, blob, or another detector rule.
+SYNTHETIC_ASSIGNMENT_LINE_SHA256 = frozenset({'7f8845203eab5216a32f88d50cb7abac08402ac14cf20f2f2fc9c9637871c69d'})
 PROTECTED = {'private', 'runtime', 'state', 'env', 'auth', 'logs', 'cache', 'sessions', 'checkpoints', 'memories', 'secrets'}
 FORBIDDEN_NAMES = {'.env', 'auth.json', 'auth.lock', 'config.yaml', '.anthropic_oauth.json'}
 WITHDRAWN_PREFIXES = ('ops/moss-', 'ops/delegation-categories/', 'ops/providers/',
@@ -69,8 +72,15 @@ class Gate:
                 self.fail(surface, locator, 'blocked-literal-digest')
         text = data.decode('utf-8', errors='replace')
         for rule, pattern in RULES:
-            if re.search(pattern, text):
+            for match in re.finditer(pattern, text):
+                if rule == 'credential':
+                    start = text.rfind('\n', 0, match.start()) + 1
+                    end = text.find('\n', match.end())
+                    line = text[start:end if end != -1 else len(text)]
+                    if hashlib.sha256(line.encode()).hexdigest() in SYNTHETIC_ASSIGNMENT_LINE_SHA256:
+                        continue
                 self.fail(surface, locator, rule)
+                break
 
     def path(self, surface: str, name: str, mode: str = ''):
         self.scan(surface, name, name.encode())

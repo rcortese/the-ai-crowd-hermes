@@ -47,6 +47,29 @@ class PrivacyTests(unittest.TestCase):
         self.assertEqual(cp.returncode, 0, cp.stdout)
         self.assertEqual(result['counts']['commits'], 1)
 
+    def test_exact_mock_assignment_is_not_a_credential(self):
+        fixture = SCRIPT.parent.parent / 'agents/public/jen/tests/jen-todoist-write-safety-gate.contract.sh'
+        line = fixture.read_bytes().splitlines()[4]
+        self.assertEqual(module.hashlib.sha256(line).hexdigest(),
+                         '7f8845203eab5216a32f88d50cb7abac08402ac14cf20f2f2fc9c9637871c69d')
+        self.save('fixture.sh', line.decode() + '\n')
+        self.commit()
+        self.assertEqual(self.gate()[0].returncode, 0)
+
+    def test_mock_assignment_exemption_is_exact_and_does_not_hide_neighbors(self):
+        fixture = SCRIPT.parent.parent / 'agents/public/jen/tests/jen-todoist-write-safety-gate.contract.sh'
+        line = fixture.read_bytes().splitlines()[4]
+        different = b'FAKE_' + b'SECRET=' + b'syntheticDifferentValue123456789'
+        variants = [different, line + b' ', b' ' + line,
+                    line.replace(b'FAKE_', b'OTHER_', 1),
+                    line + b'\n' + different,
+                    b'FAKE_' + b'SECRET=\n' + b'syntheticDifferentValue123456789']
+        for data in variants:
+            with self.subTest(fingerprint=module.hashlib.sha256(data).hexdigest()):
+                gate = module.Gate()
+                gate.scan('fixture', 'synthetic', data)
+                self.assertIn('credential', {f['rule'] for f in gate.report()['findings']})
+
     def test_dirty_tree_is_not_head(self):
         self.save('pending.txt', '/' + 'mnt/' + 'user/fixture')
         self.assertEqual(self.gate('tree')[0].returncode, 1)
